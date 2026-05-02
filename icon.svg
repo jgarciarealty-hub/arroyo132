@@ -1,0 +1,9 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512">
+  <rect width="512" height="512" rx="80" fill="#0f2040"/>
+  <rect x="0" y="0" width="512" height="8" fill="#c9a84c"/>
+  <rect x="0" y="504" width="512" height="8" fill="#c9a84c"/>
+  <text x="256" y="220" font-family="serif" font-size="180" font-weight="bold" fill="#c9a84c" text-anchor="middle">132</text>
+  <text x="256" y="310" font-family="serif" font-size="52" fill="#f4f1ea" text-anchor="middle">Arroyo</text>
+  <text x="256" y="370" font-family="sans-serif" font-size="28" fill="#7a8799" text-anchor="middle" letter-spacing="4">JGARCÍA REALTY</text>
+  <text x="256" y="430" font-family="serif" font-size="22" fill="#c9a84c" text-anchor="middle" font-style="italic">✝ DLBM</text>
+</svg>
