@@ -26,7 +26,7 @@ html{scroll-behavior:smooth;}
 body{background:var(--navy);color:var(--white);font-family:'DM Sans',sans-serif;min-height:100vh;font-size:14px;}
 
 /* SIDEBAR */
-.sidebar{position:fixed;left:0;top:0;bottom:0;width:220px;background:var(--navy2);border-right:1px solid rgba(201,168,76,0.15);z-index:100;display:flex;flex-direction:column;transition:transform 0.3s;overflow-y:auto;overscroll-behavior:contain;}
+.sidebar{position:fixed;left:0;top:0;bottom:0;width:220px;background:var(--navy2);border-right:1px solid rgba(201,168,76,0.15);z-index:100;display:flex;flex-direction:column;transition:transform 0.3s;}
 .sidebar-logo{padding:24px 20px 20px;border-bottom:1px solid rgba(201,168,76,0.1);}
 .logo-main{font-family:'Cormorant Garamond',serif;font-size:20px;font-weight:700;color:var(--gold);line-height:1.2;}
 .logo-sub{font-size:10px;color:var(--gray);letter-spacing:2px;text-transform:uppercase;margin-top:4px;}
@@ -143,17 +143,6 @@ textarea{resize:vertical;min-height:60px;}
 .upload-zone:hover{border-color:var(--gold);background:rgba(201,168,76,0.04);}
 .upload-zone input[type=file]{position:absolute;inset:0;opacity:0;cursor:pointer;border:none;background:transparent;}
 .upload-icon{font-size:32px;margin-bottom:8px;}
-.upload-mini-btn{display:inline-flex;align-items:center;gap:8px;padding:8px 14px;border:1px dashed rgba(201,168,76,0.4);border-radius:8px;cursor:pointer;font-size:12px;color:var(--gold);transition:all 0.2s;width:auto;}
-.upload-mini-btn:hover{background:rgba(201,168,76,0.08);}
-.check-label{display:flex;align-items:center;gap:10px;cursor:pointer;font-size:13px;color:var(--light);padding:6px 0;}
-.check-label input[type=checkbox]{width:16px;height:16px;accent-color:var(--gold);cursor:pointer;flex-shrink:0;}
-.abono-panel{background:rgba(201,168,76,0.05);border:1px solid rgba(201,168,76,0.2);border-radius:8px;padding:14px;display:grid;grid-template-columns:1fr 1fr;gap:12px;}
-.cuenta-row{display:flex;align-items:center;justify-content:space-between;padding:10px 14px;background:rgba(255,255,255,0.03);border-radius:8px;margin-bottom:6px;border-left:3px solid var(--gold);gap:10px;}
-.cuenta-row.saldado{border-left-color:var(--green);opacity:0.75;}
-.doc-chip{display:inline-flex;align-items:center;gap:8px;padding:6px 10px;background:rgba(201,168,76,0.1);border:1px solid rgba(201,168,76,0.25);border-radius:20px;font-size:11px;color:var(--gold);max-width:100%;overflow:hidden;}
-.doc-chip span{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;max-width:200px;}
-.doc-chip-x{cursor:pointer;font-size:14px;color:var(--gray);flex-shrink:0;line-height:1;padding:0 2px;}
-.doc-chip-x:hover{color:var(--red);}
 .upload-text{font-size:13px;color:var(--gray);}
 .upload-text span{color:var(--gold);}
 
@@ -280,25 +269,6 @@ textarea{resize:vertical;min-height:60px;}
 </head>
 <body>
 
-<!-- Bypass inmediato en modo local — corre antes de cualquier otro script -->
-<script>
-(function(){
-  var proto=window.location.protocol;
-  var host=window.location.hostname;
-  if(proto==='file:'||host==='localhost'||host==='127.0.0.1'){
-    document.addEventListener('DOMContentLoaded',function(){
-      var ls=document.getElementById('lockScreen');
-      if(ls){ls.style.display='none';ls.style.opacity='0';}
-    });
-    // También ocultar antes del DOMContentLoaded si ya existe
-    window.addEventListener('load',function(){
-      var ls=document.getElementById('lockScreen');
-      if(ls){ls.style.display='none';}
-    });
-  }
-})();
-</script>
-
 <!-- ===== PANTALLA DE SEGURIDAD ===== -->
 <div id="lockScreen" style="
   position:fixed;inset:0;z-index:9999;
@@ -343,7 +313,7 @@ textarea{resize:vertical;min-height:60px;}
     </div>
   </div>
 
-  <div style="position:absolute;bottom:20px;font-size:11px;color:#c9a84c;font-style:italic;">JGarcía Realty · Acceso Privado</div>
+  <div style="position:absolute;bottom:20px;font-size:11px;color:#c9a84c;font-style:italic;">✝ Dios Le Bendiga Muchísimo</div>
 </div>
 
 <style>
@@ -368,7 +338,7 @@ textarea{resize:vertical;min-height:60px;}
   <div class="sidebar-logo">
     <div class="logo-main">Arroyo 132</div>
     <div class="logo-sub">JGarcía Realty · PR</div>
-    <div class="logo-dlbm">Proyecto Lote 132 · Arroyo PR</div>
+    <div class="logo-dlbm">✝ Dios Le Bendiga Muchísimo</div>
   </div>
 
   <div class="nav-section">
@@ -376,7 +346,6 @@ textarea{resize:vertical;min-height:60px;}
     <div class="nav-item active" onclick="showSection('resumen')"><span class="nav-icon">🏛️</span>Resumen Ejecutivo</div>
     <div class="nav-item" onclick="showSection('dashboard')"><span class="nav-icon">📊</span>Dashboard</div>
     <div class="nav-item" onclick="showSection('timeline')"><span class="nav-icon">📅</span>Timeline</div>
-    <div class="nav-item" onclick="showSection('fases')"><span class="nav-icon">🏗️</span>Fases de Obra</div>
   </div>
 
   <div class="nav-section">
@@ -392,6 +361,7 @@ textarea{resize:vertical;min-height:60px;}
     <div class="nav-item" onclick="showSection('graficas')"><span class="nav-icon">📈</span>Gráficas</div>
     <div class="nav-item" onclick="showSection('financiamiento')"><span class="nav-icon">🏦</span>Tu Coop / Línea</div>
     <div class="nav-item" onclick="showSection('viajes')"><span class="nav-icon">🚗</span>Gastos de Viaje</div>
+    <div class="nav-item" onclick="showSection('banco')"><span class="nav-icon">🏦</span>Reporte para Banco</div>
   </div>
 
   <div class="nav-section">
@@ -422,13 +392,6 @@ textarea{resize:vertical;min-height:60px;}
         <div class="status-dot"></div>Activo
       </div>
       <button class="btn btn-sm btn-outline" onclick="exportCSV()">📥 CSV</button>
-      <button class="btn btn-sm btn-outline" onclick="entradaRapida()" title="Entrada rápida de recibos" style="color:var(--blue)">⚡ Recibos</button>
-      <button class="btn btn-sm btn-outline" onclick="exportarBackup()" title="Descargar backup completo" style="color:var(--green)">💾 Backup</button>
-      <button class="btn btn-sm btn-ghost" onclick="diagnosticarDatos()" title="Ver diagnóstico de datos" style="color:var(--blue)">🔍</button>
-      <button class="btn btn-sm btn-ghost" onclick="recuperarBackupAuto()" title="Recuperar backup automático" style="color:var(--gold)">♻️</button>
-      <label class="btn btn-sm btn-ghost" title="Restaurar desde archivo backup" style="cursor:pointer">
-        📂<input type="file" accept=".json" style="display:none" onchange="restaurarBackup(this)">
-      </label>
       <button class="btn btn-sm btn-ghost" onclick="window.print()">🖨️</button>
       <button class="btn btn-sm btn-ghost" onclick="manualLock()" title="Bloquear app" style="color:var(--gold)">🔒</button>
     </div>
@@ -440,8 +403,8 @@ textarea{resize:vertical;min-height:60px;}
     <div id="sec-resumen" class="section active">
       <div class="exec-header">
         <div class="exec-prop">Proyecto Lote 132</div>
-        <div class="exec-addr">📍 <b>132-A:</b> 132 Calle Pomarrosa, Parcelas Viejas, Bo. Las Palmas, Arroyo PR 00714</div>
-        <div class="exec-addr" style="margin-top:4px">📍 <b>132-B:</b> Calle Anón, Bo. Las Palmas, Arroyo PR 00714</div>
+        <div class="exec-addr">📍 <b>132-A:</b> Bo. Las Palmas, Calle (10) Pomarrosa, Arroyo PR</div>
+        <div class="exec-addr" style="margin-top:4px">📍 <b>132-B:</b> Bo. Las Palmas, Ramal 9, Arroyo PR</div>
         <div class="exec-tags" style="margin-top:12px">
           <span class="badge badge-green">✓ Activo</span>
           <span class="badge badge-A">Parcela 132A</span>
@@ -511,39 +474,26 @@ textarea{resize:vertical;min-height:60px;}
 
       <div class="cards cards-4">
         <div class="card gold">
-          <div class="card-label">Total Pagado</div>
+          <div class="card-label">Total Gastos</div>
           <div class="card-value gold" id="d-total">$0</div>
-          <div class="card-sub">Salidas reales de efectivo</div>
+          <div class="card-sub">Reparaciones + Servicios</div>
         </div>
-        <div class="card red">
-          <div class="card-label">Balance Pendiente</div>
-          <div class="card-value red" id="d-pendiente">$0</div>
-          <div class="card-sub">Por pagar — servicios</div>
+        <div class="card green">
+          <div class="card-label">Ganancia Proyectada</div>
+          <div class="card-value green" id="d-gan">$260,000</div>
+          <div class="card-sub">Venta $320k − Inversión</div>
         </div>
         <div class="card loteA">
-          <div class="card-label">Lote 132A — Invertido</div>
+          <div class="card-label">Lote 132A</div>
           <div class="card-value white" id="d-loteA">$30,000</div>
           <div class="card-sub">Incl. 50% compra</div>
           <div class="prog-bar"><div class="prog-fill" id="prog-A" style="background:var(--loteA);width:0%"></div></div>
         </div>
         <div class="card loteB">
-          <div class="card-label">Lote 132B — Invertido</div>
+          <div class="card-label">Lote 132B</div>
           <div class="card-value white" id="d-loteB">$30,000</div>
           <div class="card-sub">Incl. 50% compra</div>
           <div class="prog-bar"><div class="prog-fill" id="prog-B" style="background:var(--loteB);width:0%"></div></div>
-        </div>
-      </div>
-      <div class="card green" style="margin-bottom:14px">
-        <div class="card-label">Ganancia Proyectada</div>
-        <div class="card-value green" id="d-gan">$260,000</div>
-        <div class="card-sub">Venta estimada $320k − Total invertido hasta hoy</div>
-      </div>
-      <div class="panel" style="margin-bottom:14px">
-        <div class="panel-title">🎯 Presupuesto vs. Real por Categoría</div>
-        <div style="font-size:11px;color:var(--gray);margin-bottom:12px">Escribe el presupuesto en cada campo — la barra muestra cuánto llevas gastado.</div>
-        <div id="presupuesto-bars"></div>
-        <div class="form-actions" style="margin-top:10px">
-          <button class="btn btn-sm btn-gold" onclick="guardarPresupuesto()">💾 Guardar presupuestos</button>
         </div>
       </div>
 
@@ -574,24 +524,6 @@ textarea{resize:vertical;min-height:60px;}
       </div>
     </div>
 
-    <!-- ===== FASES DE OBRA ===== -->
-    <div id="sec-fases" class="section">
-      <div class="page-header">
-        <div class="page-title">Fases de Construcción</div>
-        <div class="page-sub">Estado y avance por fase — 132A y 132B</div>
-      </div>
-      <div class="cards cards-2">
-        <div class="panel">
-          <div class="panel-title" style="color:var(--loteA)">🏠 Lote 132A</div>
-          <div id="fases-panel-A"></div>
-        </div>
-        <div class="panel">
-          <div class="panel-title" style="color:var(--loteB)">🏠 Lote 132B</div>
-          <div id="fases-panel-B"></div>
-        </div>
-      </div>
-    </div>
-
     <!-- ===== REGISTRAR ===== -->
     <div id="sec-registrar" class="section">
       <div class="page-header">
@@ -616,30 +548,17 @@ textarea{resize:vertical;min-height:60px;}
         <div class="panel-title">✏️ Entrada Manual / Efectivo</div>
         <div class="form-grid">
           <div class="fg"><label>Fecha</label><input type="date" id="f-fecha"></div>
-          <div class="fg"><label>Monto ($) — total a pagar</label><input type="number" id="f-monto" placeholder="0.00" step="0.01" oninput="calcIVU()"></div>
-          <div class="fg" style="display:flex;flex-direction:column;justify-content:flex-end">
-            <label class="check-label"><input type="checkbox" id="f-ivu" onchange="toggleIVU()"> Incluye IVU 11.5%</label>
-          </div>
-          <div class="fg full" id="f-ivu-desglose" style="display:none">
-            <div style="background:rgba(201,168,76,0.06);border:1px solid rgba(201,168,76,0.2);border-radius:8px;padding:10px 14px">
-              <div class="roi-row"><span class="roi-label">Subtotal (sin IVU)</span><span class="mono" id="ivu-subtotal">$0.00</span></div>
-              <div class="roi-row"><span class="roi-label">IVU 11.5%</span><span class="mono" id="ivu-amount" style="color:var(--red)">$0.00</span></div>
-              <div class="roi-row hl"><span class="roi-label"><b>Total guardado</b></span><span class="mono gold" id="ivu-total">$0.00</span></div>
-            </div>
-          </div>
+          <div class="fg"><label>Monto ($)</label><input type="number" id="f-monto" placeholder="0.00" step="0.01"></div>
           <div class="fg"><label>Contratista / Proveedor</label><input type="text" id="f-cont" placeholder="Ej: Juan Electricista"></div>
-          <div class="fg"><label>Teléfono (opcional)</label><input type="tel" id="f-tel" placeholder="(787) 000-0000" oninput="fmtTel(this)"></div>
+          <div class="fg"><label>Teléfono (opcional)</label><input type="tel" id="f-tel" placeholder="(787) 000-0000"></div>
           <div class="fg"><label>Método de Pago</label>
-            <select id="f-metodo" onchange="toggleCheque()">
+            <select id="f-metodo">
               <option value="efectivo">💵 Efectivo</option>
               <option value="ath">ATH Móvil</option>
               <option value="cheque">Cheque</option>
               <option value="tarjeta">Tarjeta</option>
               <option value="transferencia">Transferencia</option>
             </select>
-          </div>
-          <div class="fg" id="f-cheque-wrap" style="display:none"><label># de Cheque</label>
-            <input type="text" id="f-cheque" placeholder="Ej: 2099">
           </div>
           <div class="fg"><label>Asignar a</label>
             <select id="f-lote">
@@ -687,47 +606,6 @@ textarea{resize:vertical;min-height:60px;}
           <div class="fg full"><label>Descripción / Notas</label>
             <textarea id="f-desc" placeholder="Describe el trabajo realizado..."></textarea>
           </div>
-          <div class="fg full">
-            <label>Tipo de transacción</label>
-            <select id="f-subtipo" onchange="toggleSubtipo()">
-              <option value="normal">💵 Gasto normal</option>
-              <option value="reembolso">↩️ Reembolso / Crédito (resta del total)</option>
-              <option value="ayudante">👷 Pago a ayudante / sub-trabajador</option>
-              <option value="liquidacion">🤝 Liquidación de contratista</option>
-              <option value="orden_cambio">🔄 Orden de cambio (trabajo extra)</option>
-            </select>
-          </div>
-          <div class="fg full" id="f-subtipo-wrap" style="display:none">
-            <label>Contratista principal <span style="font-size:10px;color:var(--gray);text-transform:none">(al que pertenece este pago)</span></label>
-            <select id="f-cont-principal">
-              <option value="">— Seleccionar —</option>
-            </select>
-          </div>
-          <div class="fg full">
-            <label>Adjuntar Recibos / Facturas <span style="font-size:10px;color:var(--gray);text-transform:none;letter-spacing:0">(opcional · máx 1.5MB c/u · JPG, PNG, PDF)</span></label>
-            <div id="f-archivos-chips" style="display:flex;flex-wrap:wrap;gap:6px;margin-bottom:6px"></div>
-            <label class="upload-mini-btn" style="cursor:pointer">
-              <input type="file" id="f-archivo" accept="image/*,.pdf" style="display:none" onchange="handleArchivoManual(this)">
-              📎 Añadir documento
-            </label>
-            <div id="f-archivo-info" style="display:none;margin-top:5px;font-size:11px"></div>
-          </div>
-          <div class="fg full">
-            <label class="check-label">
-              <input type="checkbox" id="f-abono" onchange="toggleAbono()">
-              ¿Es pago parcial? — quedan abonos pendientes hasta saldar
-            </label>
-          </div>
-          <div id="f-abono-wrap" style="display:none" class="fg full">
-            <div class="abono-panel">
-              <div class="fg"><label>Nombre de cuenta / Referencia</label>
-                <input type="text" id="f-cuenta" placeholder="Ej: Agrimensor Pérez - Segregación">
-              </div>
-              <div class="fg"><label>Monto total acordado ($)</label>
-                <input type="number" id="f-total" placeholder="0.00" step="0.01">
-              </div>
-            </div>
-          </div>
         </div>
         <div class="form-actions">
           <button class="btn btn-ghost" onclick="clearForm()">Limpiar</button>
@@ -760,11 +638,6 @@ textarea{resize:vertical;min-height:60px;}
         </select>
         <button class="btn btn-sm btn-outline" onclick="exportCSV()">📥 CSV</button>
         <button class="btn btn-sm btn-ghost" onclick="window.print()">🖨️</button>
-      </div>
-
-      <div id="panel-cuentas" class="panel" style="display:none;margin-bottom:14px">
-        <div class="panel-title">💳 Cuentas con Abonos</div>
-        <div id="lista-cuentas"></div>
       </div>
 
       <div class="table-wrap">
@@ -890,66 +763,6 @@ textarea{resize:vertical;min-height:60px;}
           💡 La inversión por lote incluye: 50% del precio de compra + reparaciones + servicios públicos + costos financieros Tu Coop.
         </div>
       </div>
-
-      <!-- CALCULADORA DE CIERRE Y GANANCIA DE CAPITAL -->
-      <div class="panel" style="margin-bottom:16px">
-        <div class="panel-title">🏦 Calculadora de Cierre & Ganancia de Capital</div>
-        <div style="font-size:12px;color:var(--gray);margin-bottom:16px">Estimado real de lo que recibirás al vender, después de retención de Hacienda e impuestos.</div>
-        <div class="form-grid" style="margin-bottom:16px">
-          <div class="fg"><label>Costos de Cierre Vendedor 132A ($)</label><input type="number" id="gc-cierreA" value="3000" step="500" oninput="calcROI()"></div>
-          <div class="fg"><label>Costos de Cierre Vendedor 132B ($)</label><input type="number" id="gc-cierreB" value="3000" step="500" oninput="calcROI()"></div>
-          <div class="fg"><label>Tiempo como dueño</label>
-            <select id="gc-tiempo" onchange="calcROI()">
-              <option value="15">Más de 1 año — 15% ganancia de capital</option>
-              <option value="33">Menos de 1 año — ~33% ingreso ordinario</option>
-            </select>
-          </div>
-          <div class="fg"><label>Fecha de Compra</label><input type="date" id="gc-fechaCompra" value="2025-01-01" oninput="calcROI()"></div>
-        </div>
-        <div class="cards cards-2" style="margin-bottom:14px">
-          <div>
-            <div style="font-size:12px;font-weight:600;color:var(--loteA);margin-bottom:10px;letter-spacing:1px;text-transform:uppercase">Lote 132A — Cierre</div>
-            <div class="roi-row"><span class="roi-label">Precio de venta</span><span class="roi-val gold" id="gc-vA">$0</span></div>
-            <div class="roi-row"><span class="roi-label">− Comisión corredor</span><span class="roi-val neg" id="gc-comA">$0</span></div>
-            <div class="roi-row"><span class="roi-label">− Costos de cierre</span><span class="roi-val neg" id="gc-ccA">$0</span></div>
-            <div class="roi-row"><span class="roi-label">− Retención Hacienda (12%)</span><span class="roi-val neg" id="gc-retA">$0</span></div>
-            <div class="roi-row hl"><span class="roi-label"><b>Efectivo al cierre</b></span><span class="roi-val" id="gc-netoA">$0</span></div>
-            <div style="height:1px;background:rgba(255,255,255,0.05);margin:10px 0"></div>
-            <div style="font-size:10px;text-transform:uppercase;letter-spacing:1px;color:var(--gray);margin-bottom:6px">Planilla — Ganancia de Capital</div>
-            <div class="roi-row"><span class="roi-label">Base del costo</span><span class="roi-val" id="gc-baseA">$0</span></div>
-            <div class="roi-row"><span class="roi-label">Ganancia de capital</span><span class="roi-val" id="gc-ganCapA">$0</span></div>
-            <div class="roi-row"><span class="roi-label">Impuesto (<span id="gc-tasaA">15</span>%)</span><span class="roi-val neg" id="gc-impA">$0</span></div>
-            <div class="roi-row"><span class="roi-label" id="gc-ajusteA-lbl">Ajuste en planilla</span><span class="roi-val" id="gc-ajusteA">$0</span></div>
-            <div class="roi-row hl"><span class="roi-label"><b>En tu bolsillo (final)</b></span><span class="roi-val pos" id="gc-finalA">$0</span></div>
-          </div>
-          <div>
-            <div style="font-size:12px;font-weight:600;color:var(--loteB);margin-bottom:10px;letter-spacing:1px;text-transform:uppercase">Lote 132B — Cierre</div>
-            <div class="roi-row"><span class="roi-label">Precio de venta</span><span class="roi-val gold" id="gc-vB">$0</span></div>
-            <div class="roi-row"><span class="roi-label">− Comisión corredor</span><span class="roi-val neg" id="gc-comB">$0</span></div>
-            <div class="roi-row"><span class="roi-label">− Costos de cierre</span><span class="roi-val neg" id="gc-ccB">$0</span></div>
-            <div class="roi-row"><span class="roi-label">− Retención Hacienda (12%)</span><span class="roi-val neg" id="gc-retB">$0</span></div>
-            <div class="roi-row hl"><span class="roi-label"><b>Efectivo al cierre</b></span><span class="roi-val" id="gc-netoB">$0</span></div>
-            <div style="height:1px;background:rgba(255,255,255,0.05);margin:10px 0"></div>
-            <div style="font-size:10px;text-transform:uppercase;letter-spacing:1px;color:var(--gray);margin-bottom:6px">Planilla — Ganancia de Capital</div>
-            <div class="roi-row"><span class="roi-label">Base del costo</span><span class="roi-val" id="gc-baseB">$0</span></div>
-            <div class="roi-row"><span class="roi-label">Ganancia de capital</span><span class="roi-val" id="gc-ganCapB">$0</span></div>
-            <div class="roi-row"><span class="roi-label">Impuesto (<span id="gc-tasaB">15</span>%)</span><span class="roi-val neg" id="gc-impB">$0</span></div>
-            <div class="roi-row"><span class="roi-label" id="gc-ajusteB-lbl">Ajuste en planilla</span><span class="roi-val" id="gc-ajusteB">$0</span></div>
-            <div class="roi-row hl"><span class="roi-label"><b>En tu bolsillo (final)</b></span><span class="roi-val pos" id="gc-finalB">$0</span></div>
-          </div>
-        </div>
-        <div style="background:rgba(201,168,76,0.07);border:1px solid rgba(201,168,76,0.25);border-radius:10px;padding:16px">
-          <div style="font-size:12px;font-weight:600;color:var(--gold);margin-bottom:12px">Resumen — Ambos Lotes</div>
-          <div class="roi-row"><span class="roi-label">Efectivo total al cierre</span><span class="roi-val gold" id="gc-totNeto">$0</span></div>
-          <div class="roi-row"><span class="roi-label">Total impuestos sobre ganancia</span><span class="roi-val neg" id="gc-totImp">$0</span></div>
-          <div class="roi-row hl"><span class="roi-label"><b>Total en tu bolsillo</b></span><span class="roi-val pos" id="gc-totFinal">$0</span></div>
-          <div style="margin-top:10px;font-size:11px;color:var(--gray);line-height:1.7">
-            ⚠️ <b>Retención 12%:</b> El abogado del comprador la retiene al cierre y la manda a Hacienda. En tu planilla anual, si el impuesto real es <b>menor</b> que la retención → Hacienda te <b>devuelve</b> la diferencia. Si es <b>mayor</b> → debes pagar la diferencia.<br>
-            📋 <b>Base del costo</b> = precio de compra + todas las mejoras + costos de adquisición. Cada gasto que registras en esta app <b>reduce</b> tu ganancia de capital y por lo tanto <b>reduce el impuesto</b>.
-          </div>
-        </div>
-      </div>
-
         <div class="roi-row"><span class="roi-label">Venta total estimada</span><span class="roi-val gold" id="r-totV">$320,000</span></div>
         <div class="roi-row"><span class="roi-label">Precio de compra</span><span class="roi-val neg">-$60,000</span></div>
         <div class="roi-row"><span class="roi-label">Total reparaciones</span><span class="roi-val neg" id="r-totRep">-$0</span></div>
@@ -1087,7 +900,7 @@ textarea{resize:vertical;min-height:60px;}
     <div id="sec-viajes" class="section">
       <div class="page-header">
         <div class="page-title">Gastos de Viaje</div>
-        <div class="page-sub">Peajes y gasolina — Bayamón → Arroyo, PR</div>
+        <div class="page-sub">Peajes, gasolina, comida y estadía — Bayamón → Arroyo, PR</div>
       </div>
 
       <!-- RESUMEN CARDS -->
@@ -1110,34 +923,36 @@ textarea{resize:vertical;min-height:60px;}
         <div class="card green">
           <div class="card-label">Costo Total Viajes</div>
           <div class="card-value green" id="v-total">$0</div>
-          <div class="card-sub">Peajes + Gasolina</div>
+          <div class="card-sub">Todo incluido</div>
+        </div>
+      </div>
+      <div class="cards cards-4" style="margin-top:-8px">
+        <div class="card" style="border-color:rgba(231,76,60,0.3)">
+          <div class="card-label">Comida</div>
+          <div class="card-value" style="color:#e74c3c" id="v-total-comida">$0</div>
+          <div class="card-sub">Desayuno, almuerzo, cena</div>
+        </div>
+        <div class="card" style="border-color:rgba(142,68,173,0.3)">
+          <div class="card-label">Estadía / Hospedaje</div>
+          <div class="card-value" style="color:#9b59b6" id="v-total-estadia">$0</div>
+          <div class="card-sub">Hotel, Airbnb, etc.</div>
+        </div>
+        <div class="card">
+          <div class="card-label">Otros Gastos</div>
+          <div class="card-value" style="color:var(--gray)" id="v-total-otros">$0</div>
+          <div class="card-sub">Misceláneos</div>
+        </div>
+        <div class="card" style="border-color:rgba(201,168,76,0.4)">
+          <div class="card-label">Promedio por Viaje</div>
+          <div class="card-value gold" id="v-promedio">$0</div>
+          <div class="card-sub">Costo promedio</div>
         </div>
       </div>
 
       <!-- CALCULADORA -->
       <div class="panel">
         <div class="panel-title">🧮 Calculadora de Viaje — Bayamón → Arroyo</div>
-        <div style="font-size:12px;color:var(--gray);margin-bottom:16px">Peajes actualizados a tarifas 2026 (Metropistas). Selecciona la ruta o ingresa manualmente.</div>
-        <div class="fg" style="margin-bottom:16px">
-          <label>Ruta rápida</label>
-          <select id="v-ruta" onchange="seleccionarRuta()">
-            <option value="">— Seleccionar destino —</option>
-            <optgroup label="🏠 Proyecto">
-              <option value="109|4.10|Bayamón → Arroyo (propiedad)">Bayamón → Arroyo — 109 km | $4.10 peajes</option>
-            </optgroup>
-            <optgroup label="👷 Contratistas / Gestiones">
-              <option value="110|4.10|Bayamón → Guayama (Carmelo agrimensor)">Bayamón → Guayama — 110 km | $4.10 peajes</option>
-              <option value="130|4.85|Bayamón → Ponce (banco / Tu Coop)">Bayamón → Ponce — 130 km | $4.85 peajes</option>
-              <option value="95|3.40|Bayamón → Salinas">Bayamón → Salinas — 95 km | $3.40 peajes</option>
-            </optgroup>
-            <optgroup label="🛒 Materiales / Gestiones">
-              <option value="32|1.90|Bayamón → Caguas (Home Depot / materiales)">Bayamón → Caguas — 32 km | $1.90 peajes</option>
-              <option value="15|0.75|Bayamón → San Juan (ARPE / permisos)">Bayamón → San Juan — 15 km | $0.75 peajes</option>
-              <option value="60|2.50|Bayamón → Humacao">Bayamón → Humacao — 60 km | $2.50 peajes</option>
-            </optgroup>
-            <option value="custom">✏️ Personalizado — ingreso manual</option>
-          </select>
-        </div>
+        <div style="font-size:12px;color:var(--gray);margin-bottom:16px">Peajes actualizados a tarifas 2026 (Metropistas). Ruta: PR-5 → PR-52.</div>
 
         <!-- PEAJES DETALLADOS -->
         <div style="background:var(--navy3);border:1px solid var(--border);border-radius:10px;padding:14px;margin-bottom:16px;">
@@ -1154,20 +969,16 @@ textarea{resize:vertical;min-height:60px;}
         <!-- CALCULADORA GASOLINA -->
         <div class="form-grid">
           <div class="fg">
-            <label>Distancia (km — ida)</label>
-            <input type="number" id="v-millas" value="109" oninput="calcViaje()" placeholder="Ej: 109">
-            <span style="font-size:10px;color:var(--gray)">Bayamón → Arroyo ≈ 109 km</span>
+            <label>Distancia aprox. (millas ida)</label>
+            <input type="number" id="v-millas" value="60" oninput="calcViaje()">
           </div>
           <div class="fg">
-            <label>Rendimiento del vehículo (km/litro)</label>
-            <input type="number" id="v-kml" value="12" min="1" max="30" step="0.5" oninput="calcViaje()" placeholder="Ej: 12">
-            <span style="font-size:10px;color:var(--gray)">Carros típicos en PR: 10–15 km/L</span>
+            <label>Rendimiento del vehículo (mpg)</label>
+            <input type="number" id="v-mpg" value="25" oninput="calcViaje()">
           </div>
           <div class="fg">
-            <label>Precio gasolina (¢/litro — centavos)</label>
-            <input type="number" id="v-precio-gas" value="108.7" min="50" max="300" step="0.1" oninput="calcViaje()" placeholder="Ej: 108.7">
-            <span style="font-size:10px;color:var(--gray)">Como aparece en el bombo — ej: 108.7¢ = $1.087/L</span>
-            <span id="v-precio-alerta" style="display:none;font-size:11px;color:var(--red);margin-top:3px">⚠️ Verifica el precio — debe ser en centavos (ej: 108.7)</span>
+            <label>Precio gasolina ($/galón)</label>
+            <input type="number" id="v-precio-gas" value="3.40" step="0.05" oninput="calcViaje()">
           </div>
           <div class="fg">
             <label>¿Ida y vuelta?</label>
@@ -1177,7 +988,6 @@ textarea{resize:vertical;min-height:60px;}
             </select>
           </div>
         </div>
-        <div id="v-ruta-info" style="display:none;font-size:11px;color:var(--gold);padding:6px 10px;background:rgba(201,168,76,0.07);border-radius:6px;margin-top:8px"></div>
 
         <!-- RESULTADO CALCULADORA -->
         <div style="background:var(--navy3);border:1px solid var(--border);border-radius:10px;padding:16px;margin-top:14px;">
@@ -1220,16 +1030,10 @@ textarea{resize:vertical;min-height:60px;}
           </div>
           <div class="fg"><label>Peajes ($)</label><input type="number" id="vf-peajes" value="8.20" step="0.10"></div>
           <div class="fg"><label>Gasolina ($)</label><input type="number" id="vf-gasolina" value="0" step="0.50"></div>
-          <div class="fg"><label>Otros gastos viaje ($)</label><input type="number" id="vf-otros" value="0" step="0.50"></div>
-          <div class="fg"><label>Notas</label><input type="text" id="vf-notas" placeholder="Ej: Reunión con electricista Juan"></div>
-          <div class="fg full">
-            <label>Documentos adjuntos <span style="font-size:10px;color:var(--gray);text-transform:none;letter-spacing:0">(recibos de peaje, gasolina, etc.)</span></label>
-            <div id="vf-chips" style="display:flex;flex-wrap:wrap;gap:6px;margin-bottom:6px"></div>
-            <label class="upload-mini-btn" style="cursor:pointer">
-              <input type="file" id="vf-archivo" accept="image/*,.pdf" style="display:none" onchange="handleViajeArchivo(this)">
-              📎 Añadir documento
-            </label>
-          </div>
+          <div class="fg"><label>Comida ($)</label><input type="number" id="vf-comida" value="0" step="0.50" placeholder="Desayuno, almuerzo, cena"></div>
+          <div class="fg"><label>Estadía / Hospedaje ($)</label><input type="number" id="vf-estadia" value="0" step="1.00" placeholder="Hotel, Airbnb, etc."></div>
+          <div class="fg"><label>Otros ($)</label><input type="number" id="vf-otros" value="0" step="0.50"></div>
+          <div class="fg full"><label>Notas</label><input type="text" id="vf-notas" placeholder="Ej: Reunión con electricista Juan — estadía en Arroyo"></div>
         </div>
         <div class="form-actions" style="margin-top:14px">
           <button class="btn btn-gold" onclick="guardarViaje()">💾 Guardar Viaje</button>
@@ -1241,11 +1045,124 @@ textarea{resize:vertical;min-height:60px;}
         <div class="panel-title">📋 Historial de Viajes</div>
         <div class="table-wrap">
           <table>
-            <thead><tr><th>Fecha</th><th>Propósito</th><th>Peajes</th><th>Gasolina</th><th>Otros</th><th>Total</th><th></th></tr></thead>
+            <thead><tr><th>Fecha</th><th>Propósito</th><th>Peajes</th><th>Gasolina</th><th>Comida</th><th>Estadía</th><th>Otros</th><th>Total</th><th></th></tr></thead>
             <tbody id="v-tabla"></tbody>
           </table>
         </div>
         <div style="text-align:right;margin-top:10px;font-size:13px;font-family:'DM Mono',monospace;color:var(--gold)" id="v-tabla-total"></div>
+      </div>
+    </div>
+
+    <!-- ===== REPORTE PARA BANCO ===== -->
+    <div id="sec-banco" class="section">
+      <div class="page-header" style="display:flex;align-items:flex-start;justify-content:space-between;flex-wrap:wrap;gap:12px">
+        <div>
+          <div class="page-title">Reporte para Banco / Prestamista</div>
+          <div class="page-sub">Resumen ejecutivo financiero — Proyecto Arroyo 132</div>
+        </div>
+        <div style="display:flex;gap:8px">
+          <button class="btn btn-gold" onclick="window.print()">🖨️ Imprimir / PDF</button>
+          <button class="btn btn-ghost" onclick="exportarBanco()">📊 Exportar CSV</button>
+        </div>
+      </div>
+
+      <!-- ENCABEZADO EJECUTIVO -->
+      <div style="background:linear-gradient(135deg,var(--navy2),var(--navy3));border:1px solid rgba(201,168,76,0.3);border-radius:14px;padding:28px;margin-bottom:20px;position:relative;overflow:hidden">
+        <div style="font-size:10px;text-transform:uppercase;letter-spacing:2px;color:var(--gold);margin-bottom:8px">Resumen Ejecutivo — Inversión Inmobiliaria</div>
+        <div style="font-family:'Cormorant Garamond',serif;font-size:26px;font-weight:700;color:var(--white);margin-bottom:4px">Proyecto Arroyo 132</div>
+        <div style="font-size:13px;color:var(--gray);margin-bottom:16px">Lote 132-A y 132-B · Bo. Las Palmas · Arroyo, PR 00714</div>
+        <div style="display:flex;gap:8px;flex-wrap:wrap">
+          <span class="badge badge-gold">2 Lotes Segregados</span>
+          <span class="badge badge-blue">Proyecto de Rehabilitación</span>
+          <span id="banco-fecha-reporte" class="badge" style="background:rgba(255,255,255,0.06);color:var(--gray)"></span>
+        </div>
+      </div>
+
+      <!-- KPIs BANCO -->
+      <div class="cards cards-4" style="margin-bottom:20px">
+        <div class="card gold">
+          <div class="card-label">Precio de Compra</div>
+          <div class="card-value gold">$60,000</div>
+          <div class="card-sub">Pagado: $28,000 · Debe: $32,000</div>
+        </div>
+        <div class="card red">
+          <div class="card-label">Total Invertido en Obra</div>
+          <div class="card-value red" id="banco-total-obra">$0</div>
+          <div class="card-sub">Reparaciones + materiales</div>
+        </div>
+        <div class="card blue">
+          <div class="card-label">Inversión Total Acumulada</div>
+          <div class="card-value" style="color:var(--blue)" id="banco-inversion-total">$0</div>
+          <div class="card-sub">Compra + obra + gastos</div>
+        </div>
+        <div class="card green">
+          <div class="card-label">Valor Estimado de Venta</div>
+          <div class="card-value green">$320,000</div>
+          <div class="card-sub">$160,000 por lote · estimado</div>
+        </div>
+      </div>
+
+      <!-- ROI PROYECTADO -->
+      <div class="panel" style="margin-bottom:16px">
+        <div class="panel-title">📈 Retorno Proyectado (ROI)</div>
+        <div class="roi-table" id="banco-roi-table">
+          <div class="roi-row"><span class="roi-label">Precio de compra</span><span class="roi-val mono">$60,000</span></div>
+          <div class="roi-row"><span class="roi-label">Gastos de cierre estimados</span><span class="roi-val mono">$3,500</span></div>
+          <div class="roi-row" id="banco-row-obra"><span class="roi-label">Reparaciones y materiales</span><span class="roi-val mono" id="banco-val-obra">$0</span></div>
+          <div class="roi-row" id="banco-row-viajes"><span class="roi-label">Gastos de viaje y gestión</span><span class="roi-val mono" id="banco-val-viajes">$0</span></div>
+          <div class="roi-row hl"><span class="roi-label"><b>Total invertido</b></span><span class="roi-val gold" id="banco-val-total"><b>$0</b></span></div>
+          <div class="roi-row" style="margin-top:8px"><span class="roi-label">Valor estimado lote 132-A</span><span class="roi-val mono green">$160,000</span></div>
+          <div class="roi-row"><span class="roi-label">Valor estimado lote 132-B</span><span class="roi-val mono green">$160,000</span></div>
+          <div class="roi-row hl"><span class="roi-label"><b>Valor total estimado de venta</b></span><span class="roi-val green"><b>$320,000</b></span></div>
+          <div class="roi-row hl" style="margin-top:8px"><span class="roi-label"><b>Ganancia neta proyectada</b></span><span class="roi-val gold" id="banco-ganancia"><b>$0</b></span></div>
+          <div class="roi-row"><span class="roi-label">ROI sobre inversión total</span><span class="roi-val green" id="banco-roi-pct">0%</span></div>
+        </div>
+      </div>
+
+      <!-- DESGLOSE POR CATEGORÍA -->
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:16px;margin-bottom:16px">
+        <div class="panel">
+          <div class="panel-title">🔨 Gastos por Categoría (Obra)</div>
+          <div id="banco-cat-table" class="roi-table"></div>
+        </div>
+        <div class="panel">
+          <div class="panel-title">🏘️ Gastos por Lote</div>
+          <div class="roi-table">
+            <div class="roi-row"><span class="roi-label">🟡 Lote 132-A (Pomarrosa)</span><span class="roi-val mono" id="banco-lote-a">$0</span></div>
+            <div class="roi-row"><span class="roi-label">🔵 Lote 132-B (Anón)</span><span class="roi-val mono" id="banco-lote-b">$0</span></div>
+            <div class="roi-row"><span class="roi-label">🔘 Compartido (ambos lotes)</span><span class="roi-val mono" id="banco-lote-c">$0</span></div>
+            <div class="roi-row hl"><span class="roi-label"><b>Total</b></span><span class="roi-val gold" id="banco-lote-total"><b>$0</b></span></div>
+          </div>
+        </div>
+      </div>
+
+      <!-- FINANCIAMIENTO -->
+      <div class="panel" style="margin-bottom:16px">
+        <div class="panel-title">🏦 Estado de Financiamiento — Tu Coop</div>
+        <div class="roi-table">
+          <div class="roi-row"><span class="roi-label">Línea de crédito aprobada</span><span class="roi-val mono" id="banco-linea">$0</span></div>
+          <div class="roi-row"><span class="roi-label">Balance utilizado</span><span class="roi-val red" id="banco-utilizado">$0</span></div>
+          <div class="roi-row"><span class="roi-label">Balance disponible</span><span class="roi-val green" id="banco-disponible">$0</span></div>
+          <div class="roi-row hl"><span class="roi-label"><b>Intereses pagados (estimado)</b></span><span class="roi-val mono" id="banco-intereses">$0</span></div>
+        </div>
+        <div style="margin-top:12px;padding:12px;background:rgba(201,168,76,0.08);border-radius:8px;font-size:12px;color:var(--gray)">
+          ℹ️ Para solicitar préstamo adicional, usar este reporte como anexo. El ROI proyectado demuestra viabilidad del proyecto.
+        </div>
+      </div>
+
+      <!-- CRONOGRAMA -->
+      <div class="panel">
+        <div class="panel-title">📅 Cronograma del Proyecto</div>
+        <div class="roi-table">
+          <div class="roi-row"><span class="roi-label">Fecha de compra</span><span class="roi-val mono">2022 – 2023</span></div>
+          <div class="roi-row"><span class="roi-label">Inicio de reparaciones</span><span class="roi-val mono" id="banco-inicio-obra">—</span></div>
+          <div class="roi-row"><span class="roi-label">Último gasto registrado</span><span class="roi-val mono" id="banco-ultimo-gasto">—</span></div>
+          <div class="roi-row"><span class="roi-label">Número de transacciones</span><span class="roi-val mono" id="banco-num-trans">0</span></div>
+          <div class="roi-row"><span class="roi-label">Total de viajes al proyecto</span><span class="roi-val mono" id="banco-num-viajes">0</span></div>
+        </div>
+        <div style="margin-top:14px;font-size:11px;color:var(--gray);border-top:1px solid rgba(255,255,255,0.06);padding-top:12px">
+          Preparado por: Jesvan García Rosa · JGarcía Realty · Lic. C-17195 · (787) 967-4000 · <span id="banco-hoy"></span>
+        </div>
       </div>
     </div>
 
@@ -1267,6 +1184,7 @@ textarea{resize:vertical;min-height:60px;}
     <div class="bnav-item" onclick="bnav('graficas',this)"><span class="bnav-icon">📈</span><span class="bnav-label">Gráficas</span></div>
     <div class="bnav-item" onclick="bnav('financiamiento',this)"><span class="bnav-icon">🏦</span><span class="bnav-label">Tu Coop</span></div>
     <div class="bnav-item" onclick="bnav('viajes',this)"><span class="bnav-icon">🚗</span><span class="bnav-label">Viajes</span></div>
+    <div class="bnav-item" onclick="bnav('banco',this)"><span class="bnav-icon">🏦</span><span class="bnav-label">Banco</span></div>
     <div class="bnav-item" onclick="bnav('contratistas',this)"><span class="bnav-icon">👷</span><span class="bnav-label">Equipo</span></div>
     <div class="bnav-item" onclick="bnav('documentos',this)"><span class="bnav-icon">📁</span><span class="bnav-label">Docs</span></div>
     <div class="bnav-item" onclick="bnav('timeline',this)"><span class="bnav-icon">📅</span><span class="bnav-label">Timeline</span></div>
@@ -1295,30 +1213,14 @@ let pinAttempts = parseInt(localStorage.getItem('a132_attempts')||'0');
 let isSettingPin = false;
 let pinConfirmBuffer = '';
 
-// Hash SHA-256 real usando Web Crypto API
-async function hashPin(pin){
-  try{
-    const salt = 'a132-jgarcia-realty-2025';
-    const data = new TextEncoder().encode(salt + pin);
-    const hashBuffer = await crypto.subtle.digest('SHA-256', data);
-    const hashArray = Array.from(new Uint8Array(hashBuffer));
-    return hashArray.map(b => b.toString(16).padStart(2,'0')).join('');
-  }catch{
-    // Fallback si crypto.subtle no está disponible (file://)
-    return hashPinSync(pin);
-  }
-}
-
-// Versión síncrona para compatibilidad (se reemplaza por async en processPin)
-function hashPinSync(pin){
+// Hash simple (SHA-256 no disponible sin libs, usamos hash personalizado)
+function hashPin(pin){
   let h = 0x9e3779b9;
-  const salt = 'a132-jgarcia-realty-2025';
-  const str = salt + pin;
-  for(let i=0;i<str.length;i++){
-    h = Math.imul(h ^ str.charCodeAt(i), 0x9e3779b9);
+  for(let i=0;i<pin.length;i++){
+    h = Math.imul(h ^ pin.charCodeAt(i), 0x9e3779b9);
     h = ((h<<13)|(h>>>19)) ^ (h+0x6c62272e);
   }
-  return (h>>>0).toString(16).padStart(8,'0');
+  return (h>>>0).toString(16).padStart(8,'0') + pin.split('').map(c=>c.charCodeAt(0).toString(16)).join('');
 }
 
 function checkLockout(){
@@ -1354,7 +1256,7 @@ function updateDots(state='normal'){
   }
 }
 
-async function processPin(){
+function processPin(){
   const stored = localStorage.getItem(PIN_KEY);
   if(!stored){
     // Primera vez — establecer PIN
@@ -1367,8 +1269,7 @@ async function processPin(){
       document.getElementById('pinError').textContent='';
     } else {
       if(pinBuffer===pinConfirmBuffer){
-        const hash = await hashPin(pinBuffer);
-        localStorage.setItem(PIN_KEY, hash);
+        localStorage.setItem(PIN_KEY, hashPin(pinBuffer));
         unlockApp();
       } else {
         updateDots('error');
@@ -1377,9 +1278,8 @@ async function processPin(){
       }
     }
   } else {
-    // Verificar PIN existente con SHA-256
-    const inputHash = await hashPin(pinBuffer);
-    if(inputHash===stored){
+    // Verificar PIN existente
+    if(hashPin(pinBuffer)===stored){
       pinAttempts=0;
       localStorage.setItem('a132_attempts','0');
       localStorage.removeItem('a132_lockuntil');
@@ -1431,22 +1331,8 @@ function lockApp(){
   document.getElementById('lockScreen').style.opacity='1';
 }
 
-// Soporte de teclado para el PIN
-document.addEventListener('keydown', function(e){
-  const ls = document.getElementById('lockScreen');
-  if(!ls || ls.style.display==='none') return;
-  if(e.key>='0'&&e.key<='9') pinKey(e.key);
-  else if(e.key==='Backspace') pinKey('back');
-  else if(e.key==='Escape'||e.key==='Delete') pinKey('clear');
-  e.preventDefault();
-});
-
 // Verificar sesión activa al cargar
-(async function initSecurity(){
-  // Modo local (file://) → saltar PIN, no hay crypto disponible
-  if(window.location.protocol==='file:'||window.location.hostname==='localhost'||window.location.hostname==='127.0.0.1'){
-    unlockApp();return;
-  }
+(function initSecurity(){
   if(checkLockout()) return;
   const stored = localStorage.getItem(PIN_KEY);
   if(!stored){
@@ -1476,38 +1362,6 @@ function changePinFlow(){
 
 // ============ DATA STORE ============
 let gastos = JSON.parse(localStorage.getItem('a132_gastos')||'[]');
-// Recibos recuperados manualmente — se añaden si no existen
-(function recuperarRecibos(){
-  const recuperados=[
-    {id:700001,fecha:'2026-04-15',contratista:'Ferreterías Maderas 3C',tel:'(787) 474-3333',categoria:'Electricidad',lote:'Compartido',metodo:'tarjeta',cheque:'',monto:293.02,descripcion:'Inv C99711 — Curva Elect. PVC 1½" SCH40 x5, Tubo Elect. PVC Gray 1½"×10\' x17, Tubo Galvanizado ½"×20\', Tubo Galvanizado 2"×20\'',tipo:'manual',archivos:[]},
-    {id:700002,fecha:'2026-04-13',contratista:'AIG Electrical Supply Inc.',tel:'(787) 995-3333',categoria:'Electricidad',lote:'Compartido',metodo:'efectivo',cheque:'',monto:30.22,descripcion:'Ticket INSJ26-07955 — Rigid Condulet Clamp F2 x2 ($16.27), Ground Pipe Clamp ½"-1" x2 ($13.95)',tipo:'manual',archivos:[]},
-    {id:700003,fecha:'2026-04-13',contratista:'Toa Alta Hardware',tel:'(787) 966-7426',categoria:'Materiales',lote:'Compartido',metodo:'efectivo',cheque:'',monto:22.28,descripcion:'Trans #077757 — Irrigation Valve Box x2 @ $9.99',tipo:'manual',archivos:[]},
-    {id:700004,fecha:'2026-04-13',contratista:'Caribbean Lumber Victory',tel:'(787) 785-5240',categoria:'Materiales',lote:'Compartido',metodo:'efectivo',cheque:'',monto:5.09,descripcion:'Conector PVC SCH 40 1½" x2, Locknut Rigido 1-1/2 x2',tipo:'manual',archivos:[]},
-    {id:700005,fecha:'2026-04-15',contratista:'Steel Services',tel:'',categoria:'Electricidad',lote:'Compartido',metodo:'efectivo',cheque:'',monto:267.42,descripcion:'Job F26-SSS1 — Varillas 5/8 y aros de ½" para pedesta LUMA, hierro deformado Grade 60, 381.24 lbs',tipo:'manual',archivos:[]},
-    {id:700006,fecha:'2026-04-12',contratista:'Royal Electric',tel:'',categoria:'Electricidad',lote:'Compartido',metodo:'efectivo',cheque:'',monto:12.27,descripcion:'Wire Holder',tipo:'manual',archivos:[]},
-    {id:700007,fecha:'2026-04-15',contratista:'La Ferretería Cataño',tel:'',categoria:'Electricidad',lote:'Compartido',metodo:'efectivo',cheque:'',monto:28.88,descripcion:'2 varillas de Ground (tierra eléctrica)',tipo:'manual',archivos:[]},
-    {id:700008,fecha:'2026-04-15',contratista:'Target Rental Car',tel:'',categoria:'Transportación',lote:'Compartido',metodo:'efectivo',cheque:'',monto:87.86,descripcion:'Alquiler F150 para transporte de materiales al proyecto',tipo:'manual',archivos:[]},
-    {id:700009,fecha:'2026-03-24',contratista:'David Rodríguez',tel:'',categoria:'Electricidad',lote:'Compartido',metodo:'efectivo',cheque:'',monto:900,descripcion:'Cable #2 — 500 pies ($600) + Cable #6 ($300)',tipo:'manual',archivos:[]},
-  ];
-  let cambio=false;
-  recuperados.forEach(r=>{
-    if(!gastos.some(g=>g.id===r.id||( g.contratista===r.contratista&&g.fecha===r.fecha&&Math.abs(g.monto-r.monto)<0.5))){
-      gastos.push(r);cambio=true;
-    }
-  });
-  // Corregir categorías de entradas ya existentes
-  const correcciones={
-    700001:'Electricidad',
-    700003:'Electricidad',
-    700004:'Electricidad',
-  };
-  gastos.forEach(g=>{
-    if(correcciones[g.id]&&g.categoria!==correcciones[g.id]){
-      g.categoria=correcciones[g.id];cambio=true;
-    }
-  });
-  if(cambio) try{localStorage.setItem('a132_gastos',JSON.stringify(gastos));}catch(e){}
-})();
 let servicios = JSON.parse(localStorage.getItem('a132_servicios')||'null') || {
   '132A': {
     AAA: [
@@ -1538,56 +1392,9 @@ let servicios = JSON.parse(localStorage.getItem('a132_servicios')||'null') || {
     ]
   }
 };
-let presupuesto = JSON.parse(localStorage.getItem('a132_presupuesto')||'{}');
-const FASES_LISTA=['Demolición','Electricidad','Plomería','Techo','Albañilería / Estructura','Pintura','Acabados'];
-let fases = JSON.parse(localStorage.getItem('a132_fases')||'null') || {
-  '132A':Object.fromEntries(FASES_LISTA.map(f=>[f,{status:'pendiente',pct:0}])),
-  '132B':Object.fromEntries(FASES_LISTA.map(f=>[f,{status:'pendiente',pct:0}]))
-};
 let contratistas = JSON.parse(localStorage.getItem('a132_cont')||'null') || [
-  {id:1,nombre:'Operador Excavadora',especialidad:'Limpieza / Excavación',tel:'',notas:'Digger - limpieza terreno $1,500',email:'',seguro_social:'',archivos:[]},
-  {id:2,nombre:'Carmelo Sierra Hernández',especialidad:'Agrimensura / Segregación',tel:'(939) 642-3648',email:'sierraaurv@yahoo.com',notas:'PO Box 1357, Guayama PR 00785 — Segregación Lote 132. Cotización: $1,600. Pagado 50% = $800 cheque #2099 (2-abr-2025).',seguro_social:'',archivos:[]},
+  {id:1,nombre:'Operador Excavadora',especialidad:'Limpieza / Excavación',tel:'',notas:'Digger - limpieza terreno $1,500'},
 ];
-// ============ MIGRACIONES SEGURAS — solo añade en memoria, nunca borra ============
-(function migraciones(){
-  // Solo añade Carmelo si no existe — NO toca localStorage aquí
-  const conocidos=[
-    {id:901,nombre:'Carmelo Sierra Hernández',especialidad:'Agrimensura / Segregación',tel:'(939) 642-3648',email:'sierraaurv@yahoo.com',notas:'PO Box 1357, Guayama PR 00785 — Segregación Lote 132. Cotización: $1,600. Pagado 50% = $800 cheque #2099 (2-abr-2025).',seguro_social:'',archivos:[]},
-  ];
-  conocidos.forEach(k=>{
-    if(!contratistas.some(c=>c.nombre.toLowerCase()===k.nombre.toLowerCase()))
-      contratistas.push(k);
-  });
-  // Extraer contratistas de gastos existentes — solo en memoria
-  gastos.forEach(g=>{
-    const nom=(g.contratista||'').trim();
-    if(nom&&nom!=='Sin especificar'&&nom!=='Gastos de Viaje'&&!nom.startsWith('AAA')&&!nom.startsWith('LUMA')&&
-       !contratistas.some(c=>c.nombre.toLowerCase()===nom.toLowerCase())){
-      contratistas.push({id:900000+contratistas.length,nombre:nom,especialidad:g.categoria||'General',tel:g.tel||'',email:'',seguro_social:'',notas:'',archivos:[]});
-    }
-  });
-  // Pasar pagos de servicios al historial — solo si gastos tiene datos previos (evita sobreescribir)
-  if(gastos.length>=0){
-    ['132A','132B'].forEach(lote=>{
-      ['AAA','LUMA'].forEach(tipo=>{
-        servicios[lote][tipo].forEach(item=>{
-          (item.pagos||[]).forEach(p=>{
-            const yaExiste=gastos.some(g=>g.tipo==='servicio-pago'&&g.fecha===p.fecha&&Math.abs(g.monto-p.monto)<0.01&&g.lote===lote);
-            if(!yaExiste)
-              gastos.push({id:800000+gastos.length,fecha:p.fecha,
-                contratista:tipo+' — '+item.concepto,tel:'',categoria:'Servicios Públicos',
-                lote,metodo:p.metodo||'efectivo',cheque:p.cheque||'',monto:p.monto,
-                descripcion:'Plan de pago '+tipo+' ('+lote+'): '+item.concepto,
-                tipo:'servicio-pago',archivos:[]});
-          });
-        });
-      });
-    });
-  }
-  // Guardar contratistas al localStorage (solo eso — nunca toca gastos aquí)
-  try{ localStorage.setItem('a132_cont',JSON.stringify(contratistas)); }catch(e){}
-})();
-
 let timeline = JSON.parse(localStorage.getItem('a132_tl')||'null') || [
   {id:1,fecha:'2025-04-01',titulo:'Compra de propiedad',desc:'Cierre de compra Lote 132 Arroyo PR - $60,000',estado:'done'},
   {id:2,fecha:'2025-04-20',titulo:'Limpieza de terreno',desc:'Excavadora - limpieza y nivelación del terreno',estado:'done'},
@@ -1635,232 +1442,12 @@ if(gastos.length===0){
   save();
 }
 
-// Separa archivos adjuntos del gasto para guardarlos en su propio storage key
-// Así los gastos nunca se pierden si los adjuntos llenan el espacio
-function _separarArchivos(lista){
-  const adjuntos={};
-  return lista.map(g=>{
-    const copia={...g};
-    const arch=g.archivos||[];
-    if(arch.length){
-      adjuntos[g.id]=arch;
-      copia.archivos=arch.map(a=>({nombre:a.nombre,tipo:a.tipo,ref:g.id})); // solo metadata, sin data
-    }
-    return copia;
-  });
-}
-function _reintegrarArchivos(lista){
-  let adj={};
-  try{adj=JSON.parse(localStorage.getItem('a132_adjuntos')||'{}');}catch(e){}
-  return lista.map(g=>{
-    const arch=(g.archivos||[]).map(a=>{
-      if(a.data) return a; // ya tiene datos completos
-      const full=(adj[g.id]||[]).find(x=>x.nombre===a.nombre);
-      return full||a;
-    });
-    return {...g,archivos:arch};
-  });
-}
-
 function save(){
-  try{
-    const prev=localStorage.getItem('a132_gastos');
-    if(prev&&prev!=='[]'&&prev!=='null') localStorage.setItem('a132_backup_gastos',prev);
-    const prevGastos=JSON.parse(prev||'[]');
-    if(gastos.length===0&&prevGastos.length>0){
-      console.warn('save() bloqueado: gastos vacíos sobre',prevGastos.length,'entradas.');
-      return;
-    }
-  }catch(e){}
-
-  // Guardar adjuntos por separado para no saturar el espacio de gastos
-  try{
-    const adjuntos={};
-    gastos.forEach(g=>{if((g.archivos||[]).some(a=>a.data)) adjuntos[g.id]=g.archivos;});
-    localStorage.setItem('a132_adjuntos',JSON.stringify(adjuntos));
-  }catch(e){console.warn('Adjuntos no guardados (espacio lleno):',e.message);}
-
-  // Guardar gastos SIN el base64 de los archivos (solo metadata ligera)
-  try{
-    const gastosSinArchivos=gastos.map(g=>({
-      ...g,
-      archivos:(g.archivos||[]).map(a=>a.data?{nombre:a.nombre,tipo:a.tipo,ref:g.id}:a)
-    }));
-    localStorage.setItem('a132_gastos',JSON.stringify(gastosSinArchivos));
-  }catch(e){
-    // Si aún falla, guardar sin archivos del todo
-    const minimo=gastos.map(g=>({...g,archivos:(g.archivos||[]).map(a=>({nombre:a.nombre,tipo:a.tipo}))}));
-    try{localStorage.setItem('a132_gastos',JSON.stringify(minimo));}catch(e2){}
-  }
-
-  try{localStorage.setItem('a132_servicios',JSON.stringify(servicios));}catch(e){}
-  try{localStorage.setItem('a132_cont',JSON.stringify(contratistas));}catch(e){}
-  try{localStorage.setItem('a132_tl',JSON.stringify(timeline));}catch(e){}
-  try{localStorage.setItem('a132_docs',JSON.stringify(docs));}catch(e){}
-  try{localStorage.setItem('a132_presupuesto',JSON.stringify(presupuesto));}catch(e){}
-  try{localStorage.setItem('a132_fases',JSON.stringify(fases));}catch(e){}
-}
-
-// Al cargar gastos, reintegrar archivos si están guardados por separado
-(function cargarAdjuntos(){
-  try{
-    const adj=JSON.parse(localStorage.getItem('a132_adjuntos')||'{}');
-    if(!Object.keys(adj).length) return;
-    gastos=gastos.map(g=>{
-      if(adj[g.id]) return {...g,archivos:adj[g.id]};
-      return g;
-    });
-  }catch(e){}
-})();
-function entradaRapida(){
-  const proveedores=[
-    {nombre:'AIG Electrical',categoria:'Electricidad'},
-    {nombre:'Royal Electric',categoria:'Electricidad'},
-    {nombre:'Toa Alta Hardware',categoria:'Materiales'},
-    {nombre:'National Lumber',categoria:'Materiales'},
-    {nombre:'Steel Services',categoria:'Materiales'},
-    {nombre:'Madera 3C',categoria:'Materiales'},
-    {nombre:'La Ferretería Cataño',categoria:'Materiales'},
-    {nombre:'Caguas Commercial',categoria:'Materiales'},
-    {nombre:'Recibo cheque depósito Palmas',categoria:'Otros'},
-    {nombre:'Fianza y plan de pago',categoria:'Permisos / ARPE'},
-    {nombre:'Adobe Scan 26 abr 2026',categoria:'Otros'},
-  ];
-  const hoy=new Date().toISOString().split('T')[0];
-  const filas=proveedores.map((p,i)=>`
-    <tr>
-      <td style="padding:4px"><input type="text" value="${p.nombre}" id="er-nom-${i}" style="width:100%;font-size:12px;padding:4px 6px"></td>
-      <td style="padding:4px"><input type="date" value="${hoy}" id="er-fecha-${i}" style="font-size:12px;padding:4px 6px"></td>
-      <td style="padding:4px"><input type="number" placeholder="0.00" id="er-monto-${i}" step="0.01" style="width:90px;font-size:12px;padding:4px 6px"></td>
-      <td style="padding:4px">
-        <select id="er-lote-${i}" style="font-size:12px;padding:4px">
-          <option value="Compartido">Compartido</option>
-          <option value="132A">132A</option>
-          <option value="132B">132B</option>
-        </select>
-      </td>
-      <td style="padding:4px">
-        <select id="er-cat-${i}" style="font-size:12px;padding:4px">
-          <option value="${p.categoria}" selected>${p.categoria}</option>
-          <option>Electricidad</option><option>Plomería</option><option>Techo</option>
-          <option>Materiales</option><option>Albañilería / Estructura</option>
-          <option>Permisos / ARPE</option><option>Otros</option>
-        </select>
-      </td>
-    </tr>`).join('');
-  openModal('⚡ Entrada Rápida — Reconstruir Recibos',`
-    <div style="font-size:11px;color:var(--gray);margin-bottom:10px">Ingresa solo el monto de cada recibo. Deja en 0 los que no apliquen.</div>
-    <div style="overflow-x:auto">
-    <table style="width:100%;border-collapse:collapse">
-      <thead><tr>
-        <th style="font-size:10px;text-align:left;padding:4px;color:var(--gray)">Proveedor</th>
-        <th style="font-size:10px;padding:4px;color:var(--gray)">Fecha</th>
-        <th style="font-size:10px;padding:4px;color:var(--gray)">Monto</th>
-        <th style="font-size:10px;padding:4px;color:var(--gray)">Lote</th>
-        <th style="font-size:10px;padding:4px;color:var(--gray)">Categoría</th>
-      </tr></thead>
-      <tbody>${filas}</tbody>
-    </table>
-    </div>
-    <div class="form-actions" style="margin-top:14px">
-      <button class="btn btn-sm btn-ghost" onclick="closeModal()">Cancelar</button>
-      <button class="btn btn-gold" onclick="guardarEntradaRapida(${proveedores.length})">💾 Guardar todos</button>
-    </div>`);
-}
-function guardarEntradaRapida(n){
-  let guardados=0;
-  for(let i=0;i<n;i++){
-    const monto=parseFloat(document.getElementById('er-monto-'+i)?.value)||0;
-    if(!monto) continue;
-    const nombre=document.getElementById('er-nom-'+i).value.trim();
-    const fecha=document.getElementById('er-fecha-'+i).value;
-    const lote=document.getElementById('er-lote-'+i).value;
-    const cat=document.getElementById('er-cat-'+i).value;
-    gastos.push({id:Date.now()+i,fecha,contratista:nombre,tel:'',
-      categoria:cat,lote,metodo:'efectivo',cheque:'',monto,
-      descripcion:'Reconstruido — recibo adjunto en Google Drive',
-      tipo:'manual',archivos:[]});
-    if(nombre&&!contratistas.some(c=>c.nombre.toLowerCase()===nombre.toLowerCase()))
-      contratistas.push({id:Date.now()+i+500,nombre,especialidad:cat,tel:'',email:'',seguro_social:'',notas:'',archivos:[]});
-    guardados++;
-  }
-  if(guardados){save();renderDashboard();closeModal();showSectionDirect('historial');
-    alert('✅ '+guardados+' recibos guardados.');}
-  else alert('⚠️ Ingresa al menos un monto.');
-}
-function exportarBackup(){
-  const data={
-    fecha:new Date().toISOString(),
-    version:'1.0',
-    gastos,servicios,contratistas,timeline,docs,
-    tucoop:JSON.parse(localStorage.getItem('a132_tucoop')||'{}'),
-    viajes:JSON.parse(localStorage.getItem('a132_viajes')||'[]')
-  };
-  const blob=new Blob([JSON.stringify(data,null,2)],{type:'application/json'});
-  const a=document.createElement('a');
-  a.href=URL.createObjectURL(blob);
-  a.download='arroyo132-backup-'+new Date().toISOString().slice(0,10)+'.json';
-  a.click();
-}
-function restaurarBackup(input){
-  const file=input.files[0];if(!file)return;
-  const reader=new FileReader();
-  reader.onload=function(e){
-    try{
-      const data=JSON.parse(e.target.result);
-      if(!data.gastos){alert('⚠️ Archivo inválido.');return;}
-      if(!confirm('¿Restaurar backup del '+data.fecha.slice(0,10)+'? Se reemplazarán los datos actuales.'))return;
-      gastos=data.gastos||[];
-      if(data.servicios) servicios=data.servicios;
-      if(data.contratistas) contratistas=data.contratistas;
-      if(data.timeline) timeline=data.timeline;
-      if(data.docs) docs=data.docs;
-      if(data.tucoop) localStorage.setItem('a132_tucoop',JSON.stringify(data.tucoop));
-      if(data.viajes) localStorage.setItem('a132_viajes',JSON.stringify(data.viajes));
-      save();
-      alert('✅ Backup restaurado exitosamente.');
-      location.reload();
-    }catch{alert('⚠️ Error al leer el archivo.');}
-  };
-  reader.readAsText(file);
-}
-function recuperarBackupAuto(){
-  const backup=localStorage.getItem('a132_backup_gastos');
-  if(!backup||backup==='[]'){
-    // Intentar mostrar todo lo que hay en localStorage para diagnóstico
-    let info='No hay backup automático.\n\nClaves en localStorage:\n';
-    for(let i=0;i<localStorage.length;i++){
-      const k=localStorage.key(i);
-      const v=localStorage.getItem(k);
-      info+=k+': '+(v?v.substring(0,80)+'...':'')+'\n';
-    }
-    alert(info);return;
-  }
-  try{
-    const data=JSON.parse(backup);
-    if(!confirm('Recuperar '+data.length+' gastos del backup automático?\n\nEsto reemplazará los '+gastos.length+' gastos actuales.'))return;
-    gastos=data;
-    localStorage.setItem('a132_gastos',JSON.stringify(gastos));
-    renderDashboard();
-    if(document.getElementById('sec-historial').classList.contains('active')) renderHistorial();
-    alert('✅ '+data.length+' gastos recuperados del backup.');
-  }catch(e){alert('⚠️ Error al recuperar: '+e.message);}
-}
-function diagnosticarDatos(){
-  const g=JSON.parse(localStorage.getItem('a132_gastos')||'[]');
-  const b=JSON.parse(localStorage.getItem('a132_backup_gastos')||'[]');
-  let msg='📊 DIAGNÓSTICO DE DATOS\n';
-  msg+='─────────────────────\n';
-  msg+='Gastos actuales: '+g.length+'\n';
-  msg+='Backup disponible: '+b.length+' gastos\n\n';
-  if(b.length>g.length){
-    msg+='⚠️ El backup tiene MÁS datos que el actual.\n';
-    msg+='Presiona "Recuperar Backup" para restaurarlos.\n\n';
-  }
-  msg+='Gastos en backup:\n';
-  b.slice(0,15).forEach((x,i)=>msg+=i+1+'. '+x.fecha+' | '+x.contratista+' | $'+x.monto+'\n');
-  if(b.length>15) msg+='... y '+(b.length-15)+' más.\n';
-  alert(msg);
+  localStorage.setItem('a132_gastos',JSON.stringify(gastos));
+  localStorage.setItem('a132_servicios',JSON.stringify(servicios));
+  localStorage.setItem('a132_cont',JSON.stringify(contratistas));
+  localStorage.setItem('a132_tl',JSON.stringify(timeline));
+  localStorage.setItem('a132_docs',JSON.stringify(docs));
 }
 
 // ============ UTILS ============
@@ -1868,43 +1455,19 @@ const fmt=n=>'$'+parseFloat(n||0).toLocaleString('en-US',{minimumFractionDigits:
 function totalesLote(){
   let A=0,B=0;
   gastos.forEach(g=>{
-    // Reembolsos restan del total
-    const val=g.subtipo==='reembolso'?-g.monto:g.monto;
-    if(g.lote==='132A') A+=val;
-    else if(g.lote==='132B') B+=val;
-    else{A+=val/2;B+=val/2;}
+    if(g.lote==='132A') A+=g.monto;
+    else if(g.lote==='132B') B+=g.monto;
+    else{A+=g.monto/2;B+=g.monto/2;}
   });
   return{A,B};
 }
 function totalesServicios(){
-  // Solo cuenta lo que realmente se pagó, no lo que se debe
   let A=0,B=0;
   ['AAA','LUMA'].forEach(s=>{
-    servicios['132A'][s].forEach(i=>{
-      if(i.pagos&&i.pagos.length) A+=i.pagos.reduce((sum,p)=>sum+p.monto,0);
-      else if(i.estado==='pagado') A+=i.monto;
-    });
-    servicios['132B'][s].forEach(i=>{
-      if(i.pagos&&i.pagos.length) B+=i.pagos.reduce((sum,p)=>sum+p.monto,0);
-      else if(i.estado==='pagado') B+=i.monto;
-    });
+    servicios['132A'][s].forEach(i=>A+=i.monto);
+    servicios['132B'][s].forEach(i=>B+=i.monto);
   });
   return{A,B};
-}
-function balancePendienteServicios(){
-  // Cuánto falta por pagar en servicios públicos
-  let total=0;
-  ['132A','132B'].forEach(lote=>{
-    ['AAA','LUMA'].forEach(tipo=>{
-      servicios[lote][tipo].forEach(i=>{
-        if(i.monto>0&&i.estado!=='pagado'){
-          const pagado=i.pagos?i.pagos.reduce((s,p)=>s+p.monto,0):0;
-          total+=Math.max(0,i.monto-pagado);
-        }
-      });
-    });
-  });
-  return total;
 }
 
 // ============ NAV ============
@@ -1912,10 +1475,9 @@ function showSectionDirect(name){
   document.querySelectorAll('.section').forEach(s=>s.classList.remove('active'));
   document.querySelectorAll('.nav-item').forEach(n=>n.classList.remove('active'));
   document.getElementById('sec-'+name).classList.add('active');
-  const titles={resumen:'Resumen Ejecutivo',dashboard:'Dashboard',timeline:'Timeline',fases:'Fases de Construcción',registrar:'Registrar Gasto',historial:'Historial',servicios:'Servicios Públicos',roi:'ROI / Retorno',graficas:'Gráficas',contratistas:'Contratistas',documentos:'Documentos',financiamiento:'Tu Coop — Línea de Crédito',viajes:'Gastos de Viaje'};
+  const titles={resumen:'Resumen Ejecutivo',dashboard:'Dashboard',timeline:'Timeline',registrar:'Registrar Gasto',historial:'Historial',servicios:'Servicios Públicos',roi:'ROI / Retorno',graficas:'Gráficas',contratistas:'Contratistas',documentos:'Documentos',financiamiento:'Tu Coop — Línea de Crédito',viajes:'Gastos de Viaje',banco:'Reporte para Banco'};
   document.getElementById('topbar-title').textContent=titles[name]||name;
-  if(name==='dashboard'){renderDashboard();renderPresupuesto();}
-  if(name==='fases')renderFases();
+  if(name==='dashboard')renderDashboard();
   if(name==='historial')renderHistorial();
   if(name==='roi')calcROI();
   if(name==='graficas')renderCharts();
@@ -1926,6 +1488,7 @@ function showSectionDirect(name){
   if(name==='resumen')updateResumen();
   if(name==='financiamiento')renderFinanciamiento();
   if(name==='viajes'){calcViaje();renderViajes();}
+  if(name==='banco')renderBanco();
   // Close sidebar on mobile
   document.getElementById('sidebar').classList.remove('open');
   document.getElementById('sidebarOverlay').classList.remove('show');
@@ -1989,12 +1552,9 @@ function renderDashboard(){
   const{A,B}=totalesLote();
   const{A:sA,B:sB}=totalesServicios();
   const rep=gastos.reduce((s,g)=>s+g.monto,0);
-  const totalPagado=rep+sA+sB;
-  const pendiente=balancePendienteServicios();
-  const totalInv=60000+totalPagado;
+  const totalInv=60000+rep+sA+sB;
   const totA=30000+A+sA, totB=30000+B+sB;
-  document.getElementById('d-total').textContent=fmt(totalPagado);
-  document.getElementById('d-pendiente').textContent=fmt(pendiente);
+  document.getElementById('d-total').textContent=fmt(rep+sA+sB);
   document.getElementById('d-gan').textContent=fmt(320000-totalInv);
   document.getElementById('d-loteA').textContent=fmt(totA);
   document.getElementById('d-loteB').textContent=fmt(totB);
@@ -2025,58 +1585,10 @@ function renderDashboard(){
 }
 
 // ============ GUARDAR GASTO ============
-let archivosManualTemp=[];
-
-function getArchivos(g){
-  if(g.archivos&&g.archivos.length) return g.archivos;
-  if(g.archivo) return [g.archivo]; // compatibilidad con registros antiguos
-  return [];
-}
-
-function renderChipsForm(){
-  const wrap=document.getElementById('f-archivos-chips');if(!wrap)return;
-  wrap.innerHTML=archivosManualTemp.map((a,i)=>`
-    <div class="doc-chip">
-      <span>${a.nombre}</span>
-      <span class="doc-chip-x" onclick="quitarChipForm(${i})" title="Quitar">✕</span>
-    </div>`).join('');
-}
-function quitarChipForm(i){
-  archivosManualTemp.splice(i,1);renderChipsForm();
-}
-
-async function handleArchivoManual(input){
-  const file=input.files[0];if(!file)return;
-  input.value=''; // reset para poder añadir el mismo archivo de nuevo
-  const info=document.getElementById('f-archivo-info');
-  const arch=await comprimirImagen(file);
-  if(!arch) return;
-  archivosManualTemp.push(arch);
-  renderChipsForm();
-  info.style.display='';info.style.color='var(--green)';
-  info.textContent='✅ '+file.name+' añadido ('+Math.round(file.size/1024)+'KB)';
-  setTimeout(()=>{info.style.display='none';},3000);
-}
-function toggleAbono(){
-  document.getElementById('f-abono-wrap').style.display=document.getElementById('f-abono').checked?'':'none';
-}
-function nuevoAbono(cuentaNombre){
-  showSectionDirect('registrar');
-  document.getElementById('f-abono').checked=true;toggleAbono();
-  document.getElementById('f-cuenta').value=cuentaNombre;
-  document.getElementById('f-cont').value=cuentaNombre;
-  document.getElementById('f-fecha').focus();
-}
 function guardarGasto(){
   const fecha=document.getElementById('f-fecha').value;
-  const montoRaw=document.getElementById('f-monto').value.toString().replace(/[$,\s]/g,'');
-  const monto=parseFloat(montoRaw);
-  if(!fecha&&!monto){alert('⚠️ Fecha y monto son requeridos.');return;}
-  if(!fecha){alert('⚠️ Falta la fecha. Verifica el campo Fecha.');return;}
-  if(!monto||monto<=0){alert('⚠️ Falta el monto o es cero. Verifica el campo Monto ($).');return;}
-  const esAbono=document.getElementById('f-abono').checked;
-  const cuentaNombre=document.getElementById('f-cuenta').value.trim();
-  const montoTotal=parseFloat(document.getElementById('f-total').value)||0;
+  const monto=parseFloat(document.getElementById('f-monto').value);
+  if(!fecha||!monto||monto<=0){alert('⚠️ Fecha y monto son requeridos.');return;}
   gastos.push({
     id:Date.now(),fecha,
     contratista:document.getElementById('f-cont').value.trim()||'Sin especificar',
@@ -2084,247 +1596,55 @@ function guardarGasto(){
     categoria:document.getElementById('f-cat').value,
     lote:document.getElementById('f-lote').value,
     metodo:document.getElementById('f-metodo').value,
-    cheque:document.getElementById('f-cheque').value.trim()||'',
     monto,
     descripcion:document.getElementById('f-desc').value.trim(),
-    tipo:'manual',
-    archivos:[...archivosManualTemp,...(archivoIATemp?[archivoIATemp]:[])],
-    es_abono:esAbono,
-    cuenta:esAbono?(cuentaNombre||document.getElementById('f-cont').value.trim()):'',
-    monto_total:esAbono?montoTotal:0,
-    ivu_aplicado:document.getElementById('f-ivu')?.checked||false,
-    ivu_subtotal:document.getElementById('f-ivu')?.checked?(monto/1.115):0,
-    subtipo:document.getElementById('f-subtipo')?.value||'normal',
-    cont_principal:document.getElementById('f-cont-principal')?.value||'',
+    tipo:'manual'
   });
-  // Auto-guardar contratista si es nuevo
-  const nomCont=document.getElementById('f-cont').value.trim();
-  const telCont=document.getElementById('f-tel').value.trim();
-  if(nomCont&&nomCont!=='Sin especificar'&&!contratistas.some(c=>c.nombre.toLowerCase()===nomCont.toLowerCase())){
-    contratistas.push({id:Date.now()+2,nombre:nomCont,especialidad:document.getElementById('f-cat').value||'General',tel:telCont,email:'',seguro_social:'',notas:'',archivos:[]});
-  }
-  archivosManualTemp=[];archivoIATemp=null;
-  save();clearForm();renderDashboard();
-  showSectionDirect('historial');
+  save();clearForm();
+  alert('✅ Gasto guardado.\nDLBM — ¡Que Dios bendiga cada inversión!');
 }
 function clearForm(){
-  ['f-fecha','f-monto','f-cont','f-tel','f-desc','f-cheque','f-cuenta','f-total'].forEach(id=>{const el=document.getElementById(id);if(el)el.value='';});
-  document.getElementById('f-cheque-wrap').style.display='none';
-  document.getElementById('f-abono').checked=false;
-  document.getElementById('f-abono-wrap').style.display='none';
-  const ivu=document.getElementById('f-ivu');
-  if(ivu){ivu.checked=false;}
-  const ivuDesglose=document.getElementById('f-ivu-desglose');
-  if(ivuDesglose) ivuDesglose.style.display='none';
-  const subtipo=document.getElementById('f-subtipo');
-  if(subtipo) subtipo.value='normal';
-  const subtipoWrap=document.getElementById('f-subtipo-wrap');
-  if(subtipoWrap) subtipoWrap.style.display='none';
-  const info=document.getElementById('f-archivo-info');
-  if(info) info.style.display='none';
-  const arch=document.getElementById('f-archivo');
-  if(arch) arch.value='';
-  archivosManualTemp=[];
-  renderChipsForm();
+  ['f-fecha','f-monto','f-cont','f-tel','f-desc'].forEach(id=>document.getElementById(id).value='');
 }
 
 // ============ FILE UPLOAD + IA ============
-let archivoIATemp=null;
-
-// ============ HELPER GENÉRICO DE DOCUMENTOS EN MODALES ============
-let _modalArchivos=[];
-function _docField(existingArchivos){
-  _modalArchivos=[...(existingArchivos||[])];
-  const chips=(existingArchivos||[]).map((a,i)=>`<div class="doc-chip">
-    <span style="cursor:pointer;text-decoration:underline;text-underline-offset:2px" onclick="_verModalDoc(${i})">📎 ${a.nombre}</span>
-    <span class="doc-chip-x" onclick="_quitarModalDoc(${i})">✕</span>
-  </div>`).join('');
-  return `<div class="fg full" style="margin-top:4px">
-    <label>Documentos adjuntos <span style="font-size:10px;color:var(--gray);text-transform:none;letter-spacing:0">(opcional · máx 1.5MB)</span></label>
-    <div id="_modal-chips" style="display:flex;flex-wrap:wrap;gap:6px;margin-bottom:6px">${chips}</div>
-    <label class="upload-mini-btn" style="cursor:pointer">
-      <input type="file" accept="image/*,.pdf" style="display:none" onchange="_handleModalDoc(this)">
-      📎 Añadir documento
-    </label>
-  </div>`;
-}
-async function _handleModalDoc(input){
-  const file=input.files[0];if(!file)return;input.value='';
-  const arch=await comprimirImagen(file);if(!arch)return;
-  _modalArchivos.push(arch);
-  _renderModalChips();
-}
-function _renderModalChips(){
-  const w=document.getElementById('_modal-chips');if(!w)return;
-  w.innerHTML=_modalArchivos.map((a,i)=>`<div class="doc-chip">
-    <span style="cursor:pointer;text-decoration:underline;text-underline-offset:2px" onclick="_verModalDoc(${i})">📎 ${a.nombre}</span>
-    <span class="doc-chip-x" onclick="_quitarModalDoc(${i})">✕</span>
-  </div>`).join('');
-}
-function _quitarModalDoc(i){_modalArchivos.splice(i,1);_renderModalChips();}
-function _verModalDoc(i){
-  const a=_modalArchivos[i];if(!a)return;
-  if(a.tipo.startsWith('image/')){
-    const ov=document.createElement('div');
-    ov.style.cssText='position:fixed;inset:0;background:rgba(0,0,0,0.94);z-index:9999;display:flex;align-items:center;justify-content:center;padding:16px;';
-    const img=document.createElement('img');img.src=`data:${a.tipo};base64,${a.data}`;
-    img.style.cssText='max-width:100%;max-height:90vh;border-radius:10px;object-fit:contain;';
-    img.onclick=e=>e.stopPropagation();
-    const x=document.createElement('div');x.innerHTML='✕';
-    x.style.cssText='position:absolute;top:16px;right:16px;color:#fff;font-size:22px;cursor:pointer;background:rgba(255,255,255,0.12);border-radius:50%;width:36px;height:36px;display:flex;align-items:center;justify-content:center;';
-    x.onclick=()=>ov.remove();ov.onclick=e=>{if(e.target===ov)ov.remove();};
-    ov.appendChild(img);ov.appendChild(x);document.body.appendChild(ov);
-  } else {
-    try{window.open(URL.createObjectURL(new Blob([Uint8Array.from(atob(a.data),c=>c.charCodeAt(0))],{type:'application/pdf'})),'_blank');}
-    catch{window.open(`data:application/pdf;base64,${a.data}`,'_blank');}
-  }
-}
-
 async function handleUpload(e){
   const file=e.target.files[0];if(!file)return;
-  archivoIATemp=null; // reset
   const aiBox=document.getElementById('aiBox'),aiStatus=document.getElementById('aiStatus');
-  aiBox.classList.add('show');
-  aiBox.querySelector('.spinner').style.display='';
-
-  // Detectar tipo por extensión como respaldo
-  const ext=(file.name.split('.').pop()||'').toLowerCase();
-  const extMap={'jpg':'image/jpeg','jpeg':'image/jpeg','png':'image/png','gif':'image/gif','webp':'image/webp','pdf':'application/pdf'};
-  let mediaType=file.type||extMap[ext]||'image/jpeg';
-  if(mediaType==='image/jpg') mediaType='image/jpeg';
-
-  // Detectar HEIF/HEIC (Samsung cámara en modo alta eficiencia)
-  if(mediaType==='image/heic'||mediaType==='image/heif'||ext==='heic'||ext==='heif'){
-    aiStatus.textContent='⚠️ Formato HEIF detectado. En tu Samsung ve a: Cámara → ⚙️ Ajustes → Formatos → desactiva "Alta eficiencia". Luego toma la foto de nuevo.';
-    aiStatus.style.color='#e67e22';
-    aiBox.querySelector('.spinner').style.display='none';
-    return;
-  }
-  const tiposPermitidos=['image/jpeg','image/png','image/gif','image/webp','application/pdf'];
-  if(!tiposPermitidos.includes(mediaType)){
-    aiStatus.textContent=`⚠️ Formato no soportado (${mediaType}). Usa JPG, PNG, WEBP o PDF.`;
-    aiStatus.style.color='#e67e22';
-    aiBox.querySelector('.spinner').style.display='none';
-    return;
-  }
-  const esPDF = mediaType==='application/pdf';
-  // Validar tamaño (máx 4MB imágenes, 8MB PDFs)
-  const maxSize = esPDF ? 8*1024*1024 : 4*1024*1024;
-  if(file.size>maxSize){
-    aiStatus.textContent=`⚠️ Archivo muy grande (máx ${esPDF?'8MB':'4MB'}). Comprime e intenta de nuevo.`;
-    aiStatus.style.color='#e67e22';
-    aiBox.querySelector('.spinner').style.display='none';
-    return;
-  }
-
-  // Detectar modo local (archivo abierto directo, no en Netlify)
-  const esLocal=window.location.protocol==='file:'||window.location.hostname==='localhost'||window.location.hostname==='127.0.0.1';
-  if(esLocal){
-    aiStatus.textContent='Modo prueba local — la IA solo funciona en arroyo132.netlify.app. Ingresa los datos manualmente.';
-    aiStatus.style.color='#e67e22';
-    aiBox.querySelector('.spinner').style.display='none';
-    return;
-  }
-
-  aiStatus.textContent=esPDF?'Leyendo PDF...':'Leyendo imagen...';
+  aiBox.classList.add('show');aiStatus.textContent='Leyendo imagen...';
   try{
     const base64=await toBase64(file);
-    archivoIATemp={nombre:file.name,tipo:mediaType,data:base64}; // guardamos para adjuntar al guardar
     aiStatus.textContent='Analizando con IA Claude...';
-    // PDFs usan type "document", imágenes usan type "image"
-    const contenido = esPDF
-      ? {type:'document',source:{type:'base64',media_type:'application/pdf',data:base64}}
-      : {type:'image',source:{type:'base64',media_type:mediaType,data:base64}};
-    const res=await fetch('/api/analyze-invoice',{
+    const res=await fetch('https://api.anthropic.com/v1/messages',{
       method:'POST',
       headers:{'Content-Type':'application/json'},
       body:JSON.stringify({
+        model:'claude-sonnet-4-20250514',max_tokens:1000,
         messages:[{role:'user',content:[
-          contenido,
-          {type:'text',text:`Analiza este documento de construcción/remodelación en Puerto Rico. PRIMERO determina el tipo de documento.
-
-Responde SOLO con JSON sin backticks ni texto adicional:
-{"tipo_documento":"FACTURA|ESTIMADO|RECIBO|CONTRATO|OTRO","fecha":"YYYY-MM-DD","monto":0.00,"contratista":"nombre empresa o persona","categoria":"una de: Techo|Electricidad|Plomería|Albañilería / Estructura|Pintura|Ventanas / Puertas|Baños|Cocina|Limpieza / Excavación|Materiales|Permisos / ARPE|Agrimensura / Segregación|Abogado / Notaría|Otros","descripcion":"descripción breve del trabajo","es_estimado":false}
-
-Reglas importantes:
-- Si dice "estimado", "cotización", "quote", "propuesta" o los montos no tienen total definitivo → tipo_documento="ESTIMADO" y es_estimado=true
-- Si dice "factura", "invoice", "recibo", "receipt" o tiene número de factura → tipo_documento="FACTURA"
-- Si es estimado, el monto es el total propuesto (no confirmado)
-- Fecha de hoy si no está clara: ${new Date().toISOString().split('T')[0]}`}
+          {type:'image',source:{type:'base64',media_type:file.type||'image/jpeg',data:base64}},
+          {type:'text',text:`Analiza esta factura de construcción/remodelación en Puerto Rico. Responde SOLO con JSON sin backticks ni texto adicional:
+{"fecha":"YYYY-MM-DD","monto":0.00,"contratista":"nombre empresa o persona","categoria":"una de: Techo|Electricidad|Plomería|Albañilería / Estructura|Pintura|Ventanas / Puertas|Baños|Cocina|Limpieza / Excavación|Materiales|Permisos / ARPE|Agrimensura / Segregación|Abogado / Notaría|Otros","descripcion":"descripción breve del trabajo"}
+Fecha de hoy si no está clara: ${new Date().toISOString().split('T')[0]}`}
         ]}]
       })
     });
-    if(!res.ok){
-      const errText=await res.text();
-      aiStatus.textContent=`⚠️ Error del servidor (${res.status}) — ingresa manualmente.`;
-      aiStatus.style.color='#e67e22';
-      console.error('Server error:',res.status,errText);
-      aiBox.querySelector('.spinner').style.display='none';
-      return;
-    }
     const data=await res.json();
-    if(data.error){
-      const errMsg=typeof data.error==='string'?data.error:(data.error.message||JSON.stringify(data.error));
-      aiStatus.textContent=`⚠️ Error IA: ${errMsg} — ingresa manualmente.`;
-      aiStatus.style.color='#e67e22';
-      console.error('API error detail:',data.error);
-      aiBox.querySelector('.spinner').style.display='none';
-      return;
-    }
     const text=data.content?.map(c=>c.text||'').join('')||'';
-    if(!text){
-      aiStatus.textContent='⚠️ Respuesta vacía — ingresa manualmente.';
-      aiStatus.style.color='#e67e22';
-      aiBox.querySelector('.spinner').style.display='none';
-      return;
-    }
     let ext={};
     try{ext=JSON.parse(text.trim());}catch{const m=text.match(/\{[\s\S]*?\}/);if(m)ext=JSON.parse(m[0]);}
     if(ext.fecha)document.getElementById('f-fecha').value=ext.fecha;
-    if(ext.monto!=null){const m=parseFloat(String(ext.monto).replace(/[$,\s]/g,''));if(m>0)document.getElementById('f-monto').value=m;}
+    if(ext.monto)document.getElementById('f-monto').value=ext.monto;
     if(ext.contratista)document.getElementById('f-cont').value=ext.contratista;
-    if(ext.descripcion){
-      const tipoLabel = ext.tipo_documento ? `[${ext.tipo_documento}] ` : '';
-      document.getElementById('f-desc').value = tipoLabel + ext.descripcion;
-    }
+    if(ext.descripcion)document.getElementById('f-desc').value=ext.descripcion;
     if(ext.categoria){
       const sel=document.getElementById('f-cat');
       for(let o of sel.options){if(o.value===ext.categoria){sel.value=o.value;break;}}
     }
-    if(ext.es_estimado){
-      aiStatus.textContent='⚠️ ESTIMADO detectado — monto NO confirmado. Guarda solo si fue aprobado.';
-      aiStatus.style.color='#e67e22';
-      aiBox.style.borderColor='#e67e22';
-    } else {
-      aiStatus.textContent=`✅ ${ext.tipo_documento||'Documento'} detectado — revisa y guarda`;
-      aiStatus.style.color='';
-      aiBox.style.borderColor='';
-    }
+    aiStatus.textContent='✅ Datos extraídos — revisa y guarda';
     aiBox.querySelector('.spinner').style.display='none';
-  }catch(err){
-    aiStatus.textContent='⚠️ No pude conectar con el servidor — ingresa manualmente.';
-    aiStatus.style.color='#e67e22';
-    aiBox.querySelector('.spinner').style.display='none';
-    console.error(err);
-  }
-}
-function toggleCheque(){
-  const metodo = document.getElementById('f-metodo').value;
-  document.getElementById('f-cheque-wrap').style.display = metodo==='cheque' ? '' : 'none';
+  }catch(err){aiStatus.textContent='⚠️ No pude leer — ingresa manualmente.';console.error(err);}
 }
 function toBase64(file){return new Promise((r,j)=>{const rd=new FileReader();rd.onload=()=>r(rd.result.split(',')[1]);rd.onerror=j;rd.readAsDataURL(file);});}
-function fmtTel(input){
-  let v=input.value.replace(/\D/g,'').substring(0,10);
-  if(v.length>=6) v='('+v.substring(0,3)+') '+v.substring(3,6)+'-'+v.substring(6);
-  else if(v.length>=3) v='('+v.substring(0,3)+') '+v.substring(3);
-  input.value=v;
-}
-function fmtSSN(input){
-  let v=input.value.replace(/\D/g,'').substring(0,9);
-  if(v.length>=5) v=v.substring(0,3)+'-'+v.substring(3,5)+'-'+v.substring(5);
-  else if(v.length>=3) v=v.substring(0,3)+'-'+v.substring(3);
-  input.value=v;
-}
 
 // ============ HISTORIAL ============
 function renderHistorial(){
@@ -2332,51 +1652,14 @@ function renderHistorial(){
   const fc=document.getElementById('fil-cat').value;
   const filtered=gastos.filter(g=>(fl?g.lote===fl:true)&&(fc?g.categoria===fc:true)).sort((a,b)=>new Date(b.fecha)-new Date(a.fecha));
   const tbody=document.getElementById('tabla-gastos');
-
-  // Panel de cuentas con abonos (usa TODOS los gastos, no solo los filtrados)
-  const cuentasMap={};
-  gastos.forEach(g=>{
-    if(g.es_abono&&g.cuenta){
-      if(!cuentasMap[g.cuenta]) cuentasMap[g.cuenta]={nombre:g.cuenta,pagado:0,total:0,categoria:g.categoria};
-      cuentasMap[g.cuenta].pagado+=g.monto;
-      if((g.monto_total||0)>cuentasMap[g.cuenta].total) cuentasMap[g.cuenta].total=g.monto_total||0;
-    }
-  });
-  const cuentasList=Object.values(cuentasMap);
-  const panelCuentas=document.getElementById('panel-cuentas');
-  if(cuentasList.length){
-    panelCuentas.style.display='';
-    document.getElementById('lista-cuentas').innerHTML=cuentasList.map(c=>{
-      const balance=c.total>0?c.total-c.pagado:null;
-      const saldado=balance!==null&&balance<=0;
-      return `<div class="cuenta-row ${saldado?'saldado':''}">
-        <div style="flex:1">
-          <div style="font-size:13px;font-weight:500;color:var(--white)">${c.nombre}</div>
-          <div style="font-size:11px;color:var(--gray)">${c.categoria}</div>
-        </div>
-        <div style="text-align:right;min-width:130px">
-          ${c.total>0?`<div style="font-size:10px;color:var(--gray)">Total: ${fmt(c.total)}</div>`:''}
-          <div style="font-size:12px;color:var(--green)">Pagado: ${fmt(c.pagado)}</div>
-          ${balance!==null?`<div style="font-size:12px;font-weight:600;color:${saldado?'var(--green)':'var(--red)'}">${saldado?'✅ Saldado':'Falta: '+fmt(balance)}</div>`:''}
-        </div>
-        ${!saldado?`<button class="btn btn-xs btn-outline" onclick="nuevoAbono('${c.nombre.replace(/'/g,"\\'").replace(/"/g,'&quot;')}')">+ Abono</button>`:''}
-      </div>`;
-    }).join('');
-  } else {
-    panelCuentas.style.display='none';
-  }
-
   if(!filtered.length){tbody.innerHTML='<tr><td colspan="7"><div class="empty"><div class="empty-icon">📋</div>Sin registros</div></td></tr>';document.getElementById('tabla-total').textContent='';return;}
   tbody.innerHTML=filtered.map(g=>`<tr>
     <td class="mono" style="font-size:12px">${g.fecha}</td>
     <td>${g.categoria}</td>
-    <td>${g.contratista}${g.tel?'<br><span style="font-size:10px;color:var(--gray)">'+g.tel+'</span>':''}${g.es_abono&&g.cuenta?'<br><span style="font-size:10px;color:var(--gold)">⛓ '+g.cuenta+'</span>':''}${g.cont_principal?'<br><span style="font-size:10px;color:var(--blue)">→ '+g.cont_principal+'</span>':''}</td>
+    <td>${g.contratista}${g.tel?'<br><span style="font-size:10px;color:var(--gray)">'+g.tel+'</span>':''}</td>
     <td><span class="badge badge-${g.lote==='132A'?'A':g.lote==='132B'?'B':'C'}">${g.lote}</span></td>
-    <td><span class="badge badge-${g.metodo==='efectivo'?'green':'blue'}">${g.metodo}</span>${g.cheque?`<br><span style="font-size:10px;color:var(--gray)">Ck#${g.cheque}</span>`:''}</td>
-    <td class="mono" style="color:${g.subtipo==='reembolso'?'var(--green)':'inherit'}">${g.subtipo==='reembolso'?'↩️ ':''}${fmt(g.monto)}
-      ${g.subtipo&&g.subtipo!=='normal'?`<br><span style="font-size:9px;padding:1px 5px;border-radius:3px;background:${g.subtipo==='reembolso'?'rgba(39,174,96,0.15)':g.subtipo==='ayudante'?'rgba(41,128,185,0.15)':g.subtipo==='orden_cambio'?'rgba(230,126,34,0.15)':'rgba(201,168,76,0.15)'};color:${g.subtipo==='reembolso'?'var(--green)':g.subtipo==='ayudante'?'var(--blue)':g.subtipo==='orden_cambio'?'#e67e22':'var(--gold)'}">${g.subtipo==='ayudante'?'👷 Ayudante':g.subtipo==='liquidacion'?'🤝 Liquidación':g.subtipo==='orden_cambio'?'🔄 O. Cambio':''}</span>`:''}
-      ${getArchivos(g).length?'<br><span style="font-size:11px">📎'+(getArchivos(g).length>1?'x'+getArchivos(g).length:'')+'</span>':''}
-    </td>
+    <td><span class="badge badge-${g.metodo==='efectivo'?'green':'blue'}">${g.metodo}</span></td>
+    <td class="mono">${fmt(g.monto)}</td>
     <td><button class="btn btn-xs btn-ghost" onclick="showGastoDetail(${g.id})">Ver</button></td>
   </tr>`).join('');
   const tot=filtered.reduce((s,g)=>s+g.monto,0);
@@ -2385,41 +1668,17 @@ function renderHistorial(){
 
 function showGastoDetail(id){
   const g=gastos.find(x=>x.id===id);if(!g)return;
-  // Documentos adjuntos: chips clickeables
-  const archivosG=getArchivos(g);
-  let docHtml='';
-  if(archivosG.length){
-    docHtml=`<div style="margin-top:12px">
-      <div style="font-size:10px;text-transform:uppercase;letter-spacing:1px;color:var(--gray);margin-bottom:6px">Documentos adjuntos</div>
-      <div style="display:flex;flex-wrap:wrap;gap:6px">
-        ${archivosG.map((a,i)=>`<div class="doc-chip">
-          <span style="cursor:pointer;text-decoration:underline;text-underline-offset:2px" onclick="verDocAdjunto(${g.id},${i})" title="Toca para ver">📎 ${a.nombre}</span>
-          <span class="doc-chip-x" onclick="quitarDoc(${g.id},${i})" title="Quitar">✕</span>
-        </div>`).join('')}
-      </div>
-    </div>`;
-  }
   openModal('Detalle de Gasto',`
     <div class="roi-row"><span class="roi-label">Fecha</span><span>${g.fecha}</span></div>
     <div class="roi-row"><span class="roi-label">Categoría</span><span>${g.categoria}</span></div>
     <div class="roi-row"><span class="roi-label">Contratista</span><span>${g.contratista}</span></div>
     ${g.tel?`<div class="roi-row"><span class="roi-label">Teléfono</span><span class="mono">${g.tel}</span></div>`:''}
     <div class="roi-row"><span class="roi-label">Lote</span><span class="badge badge-${g.lote==='132A'?'A':g.lote==='132B'?'B':'C'}">${g.lote}</span></div>
-    <div class="roi-row"><span class="roi-label">Método</span><span>${g.metodo}${g.cheque?' — Ck#'+g.cheque:''}</span></div>
-    ${g.es_abono&&g.cuenta?`<div class="roi-row"><span class="roi-label">Cuenta / Abono</span><span style="color:var(--gold)">⛓ ${g.cuenta}</span></div>`:''}
-    ${g.es_abono&&g.monto_total?`<div class="roi-row"><span class="roi-label">Total acordado</span><span>${fmt(g.monto_total)}</span></div>`:''}
-    ${g.ivu_aplicado?`
-    <div class="roi-row"><span class="roi-label">Subtotal sin IVU</span><span class="mono">${fmt(g.ivu_subtotal)}</span></div>
-    <div class="roi-row"><span class="roi-label">IVU 11.5%</span><span class="mono" style="color:var(--red)">${fmt(g.monto-g.ivu_subtotal)}</span></div>`:''}
-    <div class="roi-row hl"><span class="roi-label"><b>Monto${g.ivu_aplicado?' (incl. IVU)':''}</b></span><span class="roi-val gold">${fmt(g.monto)}</span></div>
+    <div class="roi-row"><span class="roi-label">Método</span><span>${g.metodo}</span></div>
+    <div class="roi-row hl"><span class="roi-label"><b>Monto</b></span><span class="roi-val gold">${fmt(g.monto)}</span></div>
     ${g.descripcion?`<div style="margin-top:12px;font-size:12px;color:var(--gray);line-height:1.6">${g.descripcion}</div>`:''}
-    ${docHtml}
-    <div class="form-actions" style="margin-top:16px;flex-wrap:wrap">
-      <label class="btn btn-sm btn-outline" style="cursor:pointer;margin-right:auto">
-        📎 Añadir documento
-        <input type="file" accept="image/*,.pdf" style="display:none" onchange="adjuntarDoc(${g.id},this)">
-      </label>
-      <button class="btn btn-sm btn-danger" onclick="eliminarGasto(${g.id})">🗑️ Eliminar gasto</button>
+    <div class="form-actions" style="margin-top:16px">
+      <button class="btn btn-sm btn-danger" onclick="eliminarGasto(${g.id})">🗑️ Eliminar</button>
       <button class="btn btn-sm btn-ghost" onclick="closeModal()">Cerrar</button>
     </div>
   `);
@@ -2427,54 +1686,6 @@ function showGastoDetail(id){
 function eliminarGasto(id){
   if(!confirm('¿Eliminar este gasto?'))return;
   gastos=gastos.filter(g=>g.id!==id);save();closeModal();renderHistorial();renderDashboard();
-}
-function verDocAdjunto(id,idx){
-  const g=gastos.find(x=>x.id===id);if(!g)return;
-  const a=getArchivos(g)[idx];if(!a)return;
-  if(a.tipo.startsWith('image/')){
-    const ov=document.createElement('div');
-    ov.style.cssText='position:fixed;inset:0;background:rgba(0,0,0,0.94);z-index:9999;display:flex;align-items:center;justify-content:center;padding:16px;cursor:zoom-out;';
-    const img=document.createElement('img');
-    img.src=`data:${a.tipo};base64,${a.data}`;
-    img.style.cssText='max-width:100%;max-height:90vh;border-radius:10px;object-fit:contain;box-shadow:0 0 60px rgba(0,0,0,0.8);cursor:default;';
-    img.onclick=e=>e.stopPropagation();
-    const x=document.createElement('div');
-    x.innerHTML='✕';x.style.cssText='position:absolute;top:16px;right:16px;color:#fff;font-size:22px;cursor:pointer;background:rgba(255,255,255,0.12);border-radius:50%;width:36px;height:36px;display:flex;align-items:center;justify-content:center;z-index:10000;';
-    x.onclick=()=>ov.remove();
-    const nombre=document.createElement('div');
-    nombre.textContent=a.nombre;
-    nombre.style.cssText='position:absolute;bottom:20px;left:50%;transform:translateX(-50%);color:rgba(255,255,255,0.5);font-size:11px;white-space:nowrap;';
-    ov.onclick=()=>ov.remove();
-    ov.appendChild(img);ov.appendChild(x);ov.appendChild(nombre);
-    document.body.appendChild(ov);
-  } else {
-    try{
-      const bytes=Uint8Array.from(atob(a.data),c=>c.charCodeAt(0));
-      const blob=new Blob([bytes],{type:'application/pdf'});
-      window.open(URL.createObjectURL(blob),'_blank');
-    }catch{window.open(`data:application/pdf;base64,${a.data}`,'_blank');}
-  }
-}
-async function adjuntarDoc(id,input){
-  const file=input.files[0];if(!file)return;
-  input.value='';
-  if(file.size>1.5*1024*1024){alert('⚠️ Archivo muy grande (máx 1.5MB). Comprime e intenta de nuevo.');return;}
-  const base64=await toBase64(file);
-  const g=gastos.find(x=>x.id===id);if(!g)return;
-  if(!g.archivos) g.archivos=getArchivos(g); // migrar formato antiguo
-  g.archivos.push({nombre:file.name,tipo:file.type||'application/octet-stream',data:base64});
-  g.archivo=null; // limpiar formato antiguo
-  save();closeModal();renderHistorial();
-  setTimeout(()=>showGastoDetail(id),100);
-}
-function quitarDoc(id,idx){
-  if(!confirm('¿Quitar este documento?'))return;
-  const g=gastos.find(x=>x.id===id);if(!g)return;
-  if(!g.archivos) g.archivos=getArchivos(g);
-  g.archivos.splice(idx,1);
-  g.archivo=null;
-  save();closeModal();renderHistorial();
-  setTimeout(()=>showGastoDetail(id),100);
 }
 
 // ============ SERVICIOS ============
@@ -2492,17 +1703,13 @@ function renderServicios(){
           <div class="servicio-total">${fmt(totAAA)}</div>
         </div>
         ${servicios[lote].AAA.map(item=>`
-          <div class="roi-row" style="flex-direction:column;align-items:stretch;gap:4px">
-            <div style="display:flex;align-items:center;justify-content:space-between">
-              <span class="roi-label">${item.concepto}${(item.archivos||[]).length?` <span style="color:var(--gold);font-size:10px">📎${(item.archivos||[]).length>1?' x'+(item.archivos||[]).length:''}</span>`:''}</span>
-              <div style="display:flex;align-items:center;gap:8px">
-                <span class="badge badge-${item.estado==='pagado'?'green':item.estado==='en proceso'?'blue':'red'}">${item.estado}</span>
-                <span class="mono" style="min-width:70px;text-align:right">${item.monto>0?fmt(item.monto):'—'}</span>
-                ${(item.pagos&&item.pagos.length)?`<span class="mono" style="font-size:10px;color:${item.pagos.reduce((s,p)=>s+p.monto,0)>=item.monto?'var(--green)':'var(--red)'}">${item.pagos.reduce((s,p)=>s+p.monto,0)>=item.monto?'✅ saldado':'pend. '+fmt(item.monto-item.pagos.reduce((s,p)=>s+p.monto,0))}</span>`:''}
-                <button class="btn btn-xs btn-outline" onclick="editServicio('${lote}','AAA',${item.id})">✏️</button>
-              </div>
+          <div class="roi-row">
+            <span class="roi-label">${item.concepto}</span>
+            <div style="display:flex;align-items:center;gap:8px">
+              <span class="badge badge-${item.estado==='pagado'?'green':item.estado==='en proceso'?'blue':'red'}">${item.estado}</span>
+              <span class="mono" style="min-width:70px;text-align:right">${item.monto>0?fmt(item.monto):'—'}</span>
+              <button class="btn btn-xs btn-outline" onclick="editServicio('${lote}','AAA',${item.id})">✏️</button>
             </div>
-            ${item.notas?`<div style="margin-top:5px;padding:6px 10px;background:rgba(201,168,76,0.07);border-left:2px solid rgba(201,168,76,0.4);border-radius:0 6px 6px 0;font-size:12px;color:var(--light);line-height:1.5">💬 ${item.notas}</div>`:''}
           </div>`).join('')}
       </div>
       <div class="servicio-card">
@@ -2511,52 +1718,24 @@ function renderServicios(){
           <div class="servicio-total">${fmt(totLUMA)}</div>
         </div>
         ${servicios[lote].LUMA.map(item=>`
-          <div class="roi-row" style="flex-direction:column;align-items:stretch;gap:4px">
-            <div style="display:flex;align-items:center;justify-content:space-between">
-              <span class="roi-label">${item.concepto}${(item.archivos||[]).length?` <span style="color:var(--gold);font-size:10px">📎${(item.archivos||[]).length>1?' x'+(item.archivos||[]).length:''}</span>`:''}</span>
-              <div style="display:flex;align-items:center;gap:8px">
-                <span class="badge badge-${item.estado==='pagado'?'green':item.estado==='en proceso'?'blue':'red'}">${item.estado}</span>
-                <span class="mono" style="min-width:70px;text-align:right">${item.monto>0?fmt(item.monto):'—'}</span>
-                ${(item.pagos&&item.pagos.length)?`<span class="mono" style="font-size:10px;color:${item.pagos.reduce((s,p)=>s+p.monto,0)>=item.monto?'var(--green)':'var(--red)'}">${item.pagos.reduce((s,p)=>s+p.monto,0)>=item.monto?'✅ saldado':'pend. '+fmt(item.monto-item.pagos.reduce((s,p)=>s+p.monto,0))}</span>`:''}
-                <button class="btn btn-xs btn-outline" onclick="editServicio('${lote}','LUMA',${item.id})">✏️</button>
-              </div>
+          <div class="roi-row">
+            <span class="roi-label">${item.concepto}</span>
+            <div style="display:flex;align-items:center;gap:8px">
+              <span class="badge badge-${item.estado==='pagado'?'green':item.estado==='en proceso'?'blue':'red'}">${item.estado}</span>
+              <span class="mono" style="min-width:70px;text-align:right">${item.monto>0?fmt(item.monto):'—'}</span>
+              <button class="btn btn-xs btn-outline" onclick="editServicio('${lote}','LUMA',${item.id})">✏️</button>
             </div>
-            ${item.notas?`<div style="margin-top:5px;padding:6px 10px;background:rgba(201,168,76,0.07);border-left:2px solid rgba(201,168,76,0.4);border-radius:0 6px 6px 0;font-size:12px;color:var(--light);line-height:1.5">💬 ${item.notas}</div>`:''}
           </div>`).join('')}
       </div>`;
   });
 }
 
-let servicioArchivoTemp=null;
-
-async function handleServicioArchivo(input){
-  const file=input.files[0];if(!file)return;
-  input.value='';
-  const arch=await comprimirImagen(file);if(!arch)return;
-  servicioArchivoTemp=arch;
-  document.getElementById('se-archivo-info').textContent='📎 '+file.name;
-  document.getElementById('se-archivo-info').style.color='var(--green)';
-}
-
 function editServicio(lote,tipo,id){
   const arr=servicios[lote][tipo];
   const item=arr.find(x=>x.id===id);if(!item)return;
-  servicioArchivoTemp=null;
-  const archivosItem=item.archivos||[];
-  const pagos=item.pagos||[];
-  const totalPagado=pagos.reduce((s,p)=>s+p.monto,0);
-  const balance=item.monto>0?item.monto-totalPagado:0;
-  const pagosHtml=pagos.length?pagos.map((p,i)=>`
-    <div style="display:flex;align-items:center;justify-content:space-between;padding:6px 8px;background:rgba(255,255,255,0.03);border-radius:6px;margin-bottom:4px;font-size:12px">
-      <span style="color:var(--gray)">${p.fecha}</span>
-      <span>${p.metodo}${p.cheque?' Ck#'+p.cheque:''}</span>
-      <span class="mono" style="color:var(--green)">${fmt(p.monto)}</span>
-      <span style="cursor:pointer;color:var(--red);font-size:11px" onclick="quitarPagoServicio('${lote}','${tipo}',${id},${i})">✕</span>
-    </div>`).join(''):'<div style="font-size:11px;color:var(--gray);padding:6px 0">Sin pagos registrados aún</div>';
-
   openModal(`Editar — ${item.concepto}`,`
     <div class="form-grid" style="grid-template-columns:1fr;">
-      <div class="fg"><label>Monto total / Deuda ($)</label><input type="number" id="se-monto" value="${item.monto}" step="0.01"></div>
+      <div class="fg"><label>Monto ($)</label><input type="number" id="se-monto" value="${item.monto}" step="0.01"></div>
       <div class="fg"><label>Estado</label>
         <select id="se-estado">
           <option value="pendiente" ${item.estado==='pendiente'?'selected':''}>Pendiente</option>
@@ -2564,64 +1743,8 @@ function editServicio(lote,tipo,id){
           <option value="pagado" ${item.estado==='pagado'?'selected':''}>Pagado</option>
         </select>
       </div>
-      <div class="fg"><label>Comentarios / Notas</label>
-        <textarea id="se-notas" style="min-height:60px" placeholder="Ej: Plan de pago acordado...">${item.notas||''}</textarea>
-      </div>
-    </div>
-
-    ${item.monto>0?`<div style="background:rgba(201,168,76,0.06);border:1px solid rgba(201,168,76,0.2);border-radius:10px;padding:14px;margin-top:12px">
-      <div style="font-size:12px;font-weight:600;color:var(--gold);margin-bottom:10px">💳 Plan de Pagos</div>
-      <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:8px;margin-bottom:12px;text-align:center">
-        <div><div style="font-size:10px;color:var(--gray);text-transform:uppercase;letter-spacing:1px">Total deuda</div><div class="mono" style="color:var(--white)">${fmt(item.monto)}</div></div>
-        <div><div style="font-size:10px;color:var(--gray);text-transform:uppercase;letter-spacing:1px">Pagado</div><div class="mono" style="color:var(--green)">${fmt(totalPagado)}</div></div>
-        <div><div style="font-size:10px;color:var(--gray);text-transform:uppercase;letter-spacing:1px">Balance</div><div class="mono" style="color:${balance<=0?'var(--green)':'var(--red)'}">${balance<=0?'✅ Saldado':fmt(balance)}</div></div>
-      </div>
-      <div style="margin-bottom:10px">${pagosHtml}</div>
-      <div style="background:rgba(255,255,255,0.03);border-radius:8px;padding:10px">
-        <div style="font-size:10px;color:var(--gold);text-transform:uppercase;letter-spacing:1px;margin-bottom:8px">Registrar pago</div>
-        <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px">
-          <div class="fg"><label>Fecha</label><input type="date" id="sp-fecha" value="${new Date().toISOString().split('T')[0]}"></div>
-          <div class="fg"><label>Monto ($)</label><input type="number" id="sp-monto" placeholder="0.00" step="0.01"></div>
-          <div class="fg"><label>Método</label>
-            <select id="sp-metodo" onchange="document.getElementById('sp-cheque-w').style.display=this.value==='cheque'?'':'none'">
-              <option value="efectivo">Efectivo</option><option value="ath">ATH Móvil</option>
-              <option value="cheque">Cheque</option><option value="transferencia">Transferencia</option>
-            </select>
-          </div>
-          <div class="fg" id="sp-cheque-w" style="display:none"><label># Cheque</label><input type="text" id="sp-cheque" placeholder="Ej: 2099"></div>
-        </div>
-        <button class="btn btn-sm btn-outline" style="margin-top:8px;width:100%" onclick="addPagoServicio('${lote}','${tipo}',${id})">+ Registrar este pago</button>
-      </div>
-      <div style="background:rgba(41,128,185,0.06);border:1px solid rgba(41,128,185,0.2);border-radius:8px;padding:10px;margin-top:8px">
-        <div style="font-size:10px;color:var(--blue);text-transform:uppercase;letter-spacing:1px;margin-bottom:8px">⚡ Generar plan automático — día 25 de cada mes</div>
-        <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px">
-          <div class="fg"><label>Mes de inicio</label><input type="month" id="sp-plan-mes" value="${new Date().toISOString().slice(0,7)}"></div>
-          <div class="fg"><label>Monto por pago ($)</label><input type="number" id="sp-plan-monto" value="${(balance/9).toFixed(2)}" step="0.01"></div>
-          <div class="fg"><label>Número de pagos</label><input type="number" id="sp-plan-cant" value="9" min="1" max="60"></div>
-          <div class="fg"><label>Método</label>
-            <select id="sp-plan-metodo"><option value="efectivo">Efectivo</option><option value="ath">ATH Móvil</option><option value="cheque">Cheque</option><option value="transferencia">Transferencia</option></select>
-          </div>
-        </div>
-        <button class="btn btn-sm btn-gold" style="margin-top:8px;width:100%" onclick="generarPlanPagos('${lote}','${tipo}',${id})">📅 Generar todos los pagos</button>
-      </div>
-    </div>`:''}
-
-    <div class="fg" style="margin-top:12px">
-      <label>Documentos adjuntos</label>
-      <div id="se-chips" style="display:flex;flex-wrap:wrap;gap:6px;margin-bottom:6px">
-        ${archivosItem.map((a,i)=>`<div class="doc-chip">
-          <span style="cursor:pointer;text-decoration:underline" onclick="verServicioDoc('${lote}','${tipo}',${id},${i})">📎 ${a.nombre}</span>
-          <span class="doc-chip-x" onclick="quitarServicioDoc('${lote}','${tipo}',${id},${i})">✕</span>
-        </div>`).join('')}
-      </div>
-      <label class="upload-mini-btn" style="cursor:pointer">
-        <input type="file" accept="image/*,.pdf" style="display:none" onchange="handleServicioArchivo(this)">
-        📎 Añadir documento
-      </label>
-      <div id="se-archivo-info" style="font-size:11px;margin-top:4px;color:var(--gray)"></div>
     </div>
     <div class="form-actions" style="margin-top:14px">
-      <button class="btn btn-sm btn-danger" onclick="eliminarServicioItem('${lote}','${tipo}',${id})">🗑️ Eliminar</button>
       <button class="btn btn-gold" onclick="saveServicio('${lote}','${tipo}',${id})">Guardar</button>
     </div>
   `);
@@ -2631,95 +1754,7 @@ function saveServicio(lote,tipo,id){
   const idx=arr.findIndex(x=>x.id===id);
   arr[idx].monto=parseFloat(document.getElementById('se-monto').value)||0;
   arr[idx].estado=document.getElementById('se-estado').value;
-  arr[idx].notas=document.getElementById('se-notas').value.trim();
-  if(servicioArchivoTemp){
-    if(!arr[idx].archivos) arr[idx].archivos=[];
-    arr[idx].archivos.push(servicioArchivoTemp);
-    servicioArchivoTemp=null;
-  }
   save();closeModal();renderServicios();
-}
-function generarPlanPagos(lote,tipo,id){
-  const mesInicio=document.getElementById('sp-plan-mes').value; // YYYY-MM
-  const montoPago=parseFloat(document.getElementById('sp-plan-monto').value)||0;
-  const cant=parseInt(document.getElementById('sp-plan-cant').value)||9;
-  const metodo=document.getElementById('sp-plan-metodo').value;
-  if(!mesInicio||!montoPago){alert('Ingresa mes de inicio y monto.');return;}
-  const item=servicios[lote][tipo].find(x=>x.id===id);if(!item)return;
-  if(!item.pagos) item.pagos=[];
-  const[yr,mo]=mesInicio.split('-').map(Number);
-  for(let i=0;i<cant;i++){
-    const d=new Date(yr,mo-1+i,25);
-    const fecha=d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-25';
-    item.pagos.push({id:Date.now()+i,fecha,monto:montoPago,metodo,cheque:'',pendiente:true});
-  }
-  // Ordenar por fecha
-  item.pagos.sort((a,b)=>a.fecha.localeCompare(b.fecha));
-  const totalPagado=item.pagos.reduce((s,p)=>s+p.monto,0);
-  if(item.monto>0&&totalPagado>=item.monto) item.estado='pagado';
-  save();closeModal();renderServicios();
-  setTimeout(()=>editServicio(lote,tipo,id),100);
-}
-function addPagoServicio(lote,tipo,id){
-  const monto=parseFloat(document.getElementById('sp-monto').value)||0;
-  if(!monto){alert('Ingresa el monto del pago.');return;}
-  const arr=servicios[lote][tipo];
-  const item=arr.find(x=>x.id===id);if(!item)return;
-  if(!item.pagos) item.pagos=[];
-  const fecha=document.getElementById('sp-fecha').value;
-  const metodo=document.getElementById('sp-metodo').value;
-  const cheque=document.getElementById('sp-cheque')?.value.trim()||'';
-  item.pagos.push({id:Date.now(),fecha,monto,metodo,cheque});
-  const totalPagado=item.pagos.reduce((s,p)=>s+p.monto,0);
-  if(item.monto>0&&totalPagado>=item.monto) item.estado='pagado';
-  // Añadir al historial general de gastos
-  gastos.push({
-    id:Date.now()+1,fecha,
-    contratista:tipo+' — '+item.concepto,
-    tel:'',categoria:'Permisos / ARPE',
-    lote,metodo,cheque,monto,
-    descripcion:'Plan de pago '+tipo+' ('+lote+'): '+item.concepto+(item.monto>0?' — Total: $'+item.monto.toFixed(2)+' | Pagado: $'+totalPagado.toFixed(2):''),
-    tipo:'servicio-pago',archivos:[]
-  });
-  save();renderDashboard();closeModal();renderServicios();
-  setTimeout(()=>editServicio(lote,tipo,id),100);
-}
-function quitarPagoServicio(lote,tipo,id,idx){
-  if(!confirm('¿Quitar este pago?'))return;
-  const item=servicios[lote][tipo].find(x=>x.id===id);if(!item||!item.pagos)return;
-  item.pagos.splice(idx,1);
-  save();closeModal();renderServicios();
-  setTimeout(()=>editServicio(lote,tipo,id),100);
-}
-function eliminarServicioItem(lote,tipo,id){
-  if(!confirm('¿Eliminar este ítem?'))return;
-  servicios[lote][tipo]=servicios[lote][tipo].filter(x=>x.id!==id);
-  save();closeModal();renderServicios();
-}
-function verServicioDoc(lote,tipo,id,idx){
-  const item=servicios[lote][tipo].find(x=>x.id===id);if(!item)return;
-  const a=(item.archivos||[])[idx];if(!a)return;
-  if(a.tipo.startsWith('image/')){
-    const ov=document.createElement('div');
-    ov.style.cssText='position:fixed;inset:0;background:rgba(0,0,0,0.94);z-index:9999;display:flex;align-items:center;justify-content:center;padding:16px;';
-    const img=document.createElement('img');
-    img.src=`data:${a.tipo};base64,${a.data}`;
-    img.style.cssText='max-width:100%;max-height:90vh;border-radius:10px;object-fit:contain;';
-    const x=document.createElement('div');x.innerHTML='✕';
-    x.style.cssText='position:absolute;top:16px;right:16px;color:#fff;font-size:22px;cursor:pointer;background:rgba(255,255,255,0.12);border-radius:50%;width:36px;height:36px;display:flex;align-items:center;justify-content:center;';
-    x.onclick=()=>ov.remove();ov.onclick=e=>{if(e.target===ov)ov.remove();};
-    ov.appendChild(img);ov.appendChild(x);document.body.appendChild(ov);
-  } else {
-    try{const bytes=Uint8Array.from(atob(a.data),c=>c.charCodeAt(0));window.open(URL.createObjectURL(new Blob([bytes],{type:'application/pdf'})),'_blank');}
-    catch{window.open(`data:application/pdf;base64,${a.data}`,'_blank');}
-  }
-}
-function quitarServicioDoc(lote,tipo,id,idx){
-  if(!confirm('¿Quitar este documento?'))return;
-  const item=servicios[lote][tipo].find(x=>x.id===id);if(!item)return;
-  item.archivos.splice(idx,1);
-  save();closeModal();renderServicios();
-  setTimeout(()=>editServicio(lote,tipo,id),100);
 }
 function showServicioModal(lote){
   openModal(`Añadir Cargo — Lote ${lote}`,`
@@ -2807,85 +1842,6 @@ function calcROI(){
     if(document.getElementById('be-A')){
       document.getElementById('be-A').textContent=fmt(beA);
       document.getElementById('be-B').textContent=fmt(beB);
-    }
-
-    // === CALCULADORA DE CIERRE & GANANCIA DE CAPITAL ===
-    if(document.getElementById('gc-vA')){
-      const cierreA=parseFloat(document.getElementById('gc-cierreA')?.value)||3000;
-      const cierreB=parseFloat(document.getElementById('gc-cierreB')?.value)||3000;
-      const tasaPct=parseFloat(document.getElementById('gc-tiempo')?.value)||15;
-
-      // Retención Hacienda: 12% del precio de venta
-      const retA=vA*0.12, retB=vB*0.12;
-
-      // Efectivo que recibes al cierre (antes de planilla)
-      const netoA=vA-comA-cierreA-retA;
-      const netoB=vB-comB-cierreB-retB;
-
-      // Base del costo = lo que invertiste (precio compra + mejoras + coop)
-      const baseA=compra/2+A+sA+costoFinanciero;
-      const baseB=compra/2+B+sB+costoFinanciero;
-
-      // Ganancia de capital = venta - base del costo - gastos de venta
-      const ganCapA=vA-baseA-comA-cierreA;
-      const ganCapB=vB-baseB-comB-cierreB;
-
-      // Impuesto real sobre ganancia
-      const impA=ganCapA>0?ganCapA*tasaPct/100:0;
-      const impB=ganCapB>0?ganCapB*tasaPct/100:0;
-
-      // Ajuste en planilla: + si Hacienda te devuelve, - si debes más
-      const ajusteA=retA-impA; // positivo = devolución, negativo = pago adicional
-      const ajusteB=retB-impB;
-
-      // Lo que queda en tu bolsillo al final
-      const finalA=netoA+ajusteA; // = vA - comA - cierreA - impA
-      const finalB=netoB+ajusteB;
-
-      const set=(id,val,colorFn)=>{
-        const el=document.getElementById(id);if(!el)return;
-        el.textContent=fmt(Math.abs(val));
-        if(colorFn) el.className='roi-val '+colorFn(val);
-      };
-
-      document.getElementById('gc-vA').textContent=fmt(vA);
-      document.getElementById('gc-comA').textContent='-'+fmt(comA);
-      document.getElementById('gc-ccA').textContent='-'+fmt(cierreA);
-      document.getElementById('gc-retA').textContent='-'+fmt(retA);
-      document.getElementById('gc-netoA').textContent=fmt(netoA);
-      document.getElementById('gc-netoA').className='roi-val '+(netoA>=0?'pos':'neg');
-      document.getElementById('gc-baseA').textContent=fmt(baseA);
-      document.getElementById('gc-ganCapA').textContent=fmt(ganCapA);
-      document.getElementById('gc-ganCapA').className='roi-val '+(ganCapA>=0?'pos':'neg');
-      document.getElementById('gc-impA').textContent='-'+fmt(impA);
-      document.getElementById('gc-ajusteA').textContent=(ajusteA>=0?'+':'-')+fmt(Math.abs(ajusteA));
-      document.getElementById('gc-ajusteA').className='roi-val '+(ajusteA>=0?'pos':'neg');
-      document.getElementById('gc-ajusteA-lbl').textContent=ajusteA>=0?'✅ Devolución de Hacienda':'⚠️ Pago adicional Hacienda';
-      document.getElementById('gc-finalA').textContent=fmt(finalA);
-      document.getElementById('gc-finalA').className='roi-val '+(finalA>=0?'pos':'neg');
-      document.getElementById('gc-tasaA').textContent=tasaPct;
-
-      document.getElementById('gc-vB').textContent=fmt(vB);
-      document.getElementById('gc-comB').textContent='-'+fmt(comB);
-      document.getElementById('gc-ccB').textContent='-'+fmt(cierreB);
-      document.getElementById('gc-retB').textContent='-'+fmt(retB);
-      document.getElementById('gc-netoB').textContent=fmt(netoB);
-      document.getElementById('gc-netoB').className='roi-val '+(netoB>=0?'pos':'neg');
-      document.getElementById('gc-baseB').textContent=fmt(baseB);
-      document.getElementById('gc-ganCapB').textContent=fmt(ganCapB);
-      document.getElementById('gc-ganCapB').className='roi-val '+(ganCapB>=0?'pos':'neg');
-      document.getElementById('gc-impB').textContent='-'+fmt(impB);
-      document.getElementById('gc-ajusteB').textContent=(ajusteB>=0?'+':'-')+fmt(Math.abs(ajusteB));
-      document.getElementById('gc-ajusteB').className='roi-val '+(ajusteB>=0?'pos':'neg');
-      document.getElementById('gc-ajusteB-lbl').textContent=ajusteB>=0?'✅ Devolución de Hacienda':'⚠️ Pago adicional Hacienda';
-      document.getElementById('gc-finalB').textContent=fmt(finalB);
-      document.getElementById('gc-finalB').className='roi-val '+(finalB>=0?'pos':'neg');
-      document.getElementById('gc-tasaB').textContent=tasaPct;
-
-      document.getElementById('gc-totNeto').textContent=fmt(netoA+netoB);
-      document.getElementById('gc-totImp').textContent='-'+fmt(impA+impB);
-      document.getElementById('gc-totFinal').textContent=fmt(finalA+finalB);
-      document.getElementById('gc-totFinal').className='roi-val '+(finalA+finalB>=0?'pos':'neg');
     }
 
     // Tabla de escenarios
@@ -2977,114 +1933,46 @@ function renderContratistas(){
     <div class="contratista-card">
       <div class="cont-info">
         <div class="cont-avatar">${c.nombre.charAt(0).toUpperCase()}</div>
-        <div style="flex:1">
-          <div class="cont-name">${c.nombre}${(c.archivos||[]).length?` <span style="font-size:11px;color:var(--gold)">📎${(c.archivos||[]).length>1?' x'+(c.archivos||[]).length:''}</span>`:''}
-            ${c.estado&&c.estado!=='activo'?`<span class="badge badge-${c.estado==='completo'?'blue':c.estado==='renuncio'?'red':'red'}" style="font-size:9px;margin-left:4px">${c.estado==='completo'?'🏁 Completó':c.estado==='renuncio'?'⚠️ Renunció':'❌ Despedido'}</span>`:''}
-          </div>
-          <div class="cont-esp">${c.especialidad}${c.pct_trabajo?` — ${c.pct_trabajo}% completado`:''}</div>
-          ${c.trabajo_pendiente?`<div style="font-size:11px;color:var(--red);margin-top:2px">⚠️ Pendiente: ${c.trabajo_pendiente}</div>`:''}
-          ${c.tel?`<div class="cont-tel">📞 ${c.tel}</div>`:''}
-          ${c.email?`<div style="font-size:11px;color:var(--gray)">✉️ ${c.email}</div>`:''}
-          ${c.seguro_social?`<div style="font-size:11px;color:var(--gray)">🪪 SSN: ${c.seguro_social}</div>`:''}
-          ${c.notas?`<div style="margin-top:5px;padding:6px 10px;background:rgba(201,168,76,0.07);border-left:2px solid rgba(201,168,76,0.4);border-radius:0 6px 6px 0;font-size:12px;color:var(--light);line-height:1.5">💬 ${c.notas}</div>`:''}
+        <div>
+          <div class="cont-name">${c.nombre}</div>
+          <div class="cont-esp">${c.especialidad}</div>
+          ${c.tel?`<div class="cont-tel">${c.tel}</div>`:''}
+          ${c.notas?`<div style="font-size:11px;color:var(--gray);margin-top:2px">${c.notas}</div>`:''}
         </div>
       </div>
-      <div style="display:flex;gap:6px;flex-shrink:0">
-        ${c.tel?`<a href="tel:${c.tel.replace(/\D/g,'')}" class="btn btn-xs btn-outline">📞</a>`:''}
-        ${c.email?`<a href="mailto:${c.email}" class="btn btn-xs btn-outline">✉️</a>`:''}
-        <button class="btn btn-xs btn-ghost" onclick="editContratista(${c.id})">✏️</button>
+      <div style="display:flex;gap:6px">
+        ${c.tel?`<a href="tel:${c.tel}" class="btn btn-xs btn-outline">📞</a>`:''}
         <button class="btn btn-xs btn-danger" onclick="eliminarContratista(${c.id})">🗑️</button>
       </div>
     </div>`).join(''):'<div class="empty"><div class="empty-icon">👷</div>Sin contratistas</div>';
 }
-function _contEspOpts(sel=''){
-  return ['Limpieza / Excavación','Techo','Electricidad','Plomería','Albañilería / Estructura','Pintura','Ventanas / Puertas','Baños','Cocina','Materiales','Agrimensura','Abogado / Notaría','General','Otro']
-    .map(o=>`<option${o===sel?' selected':''}>${o}</option>`).join('');
-}
-function _contModalFields(c){
-  return `<div class="form-grid">
-    <div class="fg"><label>Nombre</label><input type="text" id="nc-nombre" value="${c.nombre||''}" placeholder="Juan García"></div>
-    <div class="fg"><label>Especialidad</label><select id="nc-esp">${_contEspOpts(c.especialidad||'')}</select></div>
-    <div class="fg"><label>Teléfono</label><input type="tel" id="nc-tel" value="${c.tel||''}" placeholder="(787) 000-0000" oninput="fmtTel(this)"></div>
-    <div class="fg"><label>Email</label><input type="email" id="nc-email" value="${c.email||''}" placeholder="juan@ejemplo.com"></div>
-    <div class="fg full"><label>Seguro Social <span style="font-size:10px;color:var(--gray);text-transform:none;letter-spacing:0">(XXX-XX-XXXX — guardado solo en este dispositivo)</span></label>
-      <input type="text" id="nc-ssn" value="${c.seguro_social||''}" placeholder="XXX-XX-XXXX" maxlength="11" oninput="fmtSSN(this)">
-    </div>
-    <div class="fg full"><label>Notas / Comentarios</label><textarea id="nc-notas" placeholder="Ej: Muy responsable, pago en efectivo...">${c.notas||''}</textarea></div>
-    <div class="fg"><label>Estado</label>
-      <select id="nc-estado" onchange="toggleEstadoCont()">
-        <option value="activo" ${(c.estado||'activo')==='activo'?'selected':''}>✅ Activo</option>
-        <option value="completo" ${c.estado==='completo'?'selected':''}>🏁 Completó el trabajo</option>
-        <option value="renuncio" ${c.estado==='renuncio'?'selected':''}>⚠️ Renunció</option>
-        <option value="despedido" ${c.estado==='despedido'?'selected':''}>❌ Despedido</option>
-      </select>
-    </div>
-    <div class="fg"><label>% Trabajo completado</label>
-      <input type="number" id="nc-pct" min="0" max="100" value="${c.pct_trabajo||0}" placeholder="0-100">
-    </div>
-    <div class="fg full" id="nc-pendiente-wrap" style="display:${(c.estado==='renuncio'||c.estado==='despedido')?'':'none'}">
-      <label>Trabajo pendiente que dejó</label>
-      <textarea id="nc-pendiente" placeholder="Describe qué quedó sin terminar...">${c.trabajo_pendiente||''}</textarea>
-    </div>
-    ${_docField(c.archivos||[])}
-  </div>`;
-}
-function showContratistasModal(prefill){
+function showContratistasModal(){
   openModal('Añadir Contratista',`
-    ${_contModalFields(prefill||{})}
+    <div class="form-grid" style="grid-template-columns:1fr;">
+      <div class="fg"><label>Nombre</label><input type="text" id="nc-nombre" placeholder="Juan García"></div>
+      <div class="fg"><label>Especialidad</label>
+        <select id="nc-esp">
+          <option>Limpieza / Excavación</option><option>Techo</option><option>Electricidad</option>
+          <option>Plomería</option><option>Albañilería / Estructura</option><option>Pintura</option>
+          <option>Ventanas / Puertas</option><option>Baños</option><option>Cocina</option>
+          <option>Materiales</option><option>General</option><option>Otro</option>
+        </select>
+      </div>
+      <div class="fg"><label>Teléfono</label><input type="tel" id="nc-tel" placeholder="(787) 000-0000"></div>
+      <div class="fg"><label>Notas</label><textarea id="nc-notas" placeholder="Notas adicionales..."></textarea></div>
+    </div>
     <div class="form-actions" style="margin-top:14px">
       <button class="btn btn-gold" onclick="addContratista()">Añadir</button>
-    </div>`);
-}
-function editContratista(id){
-  const c=contratistas.find(x=>x.id===id);if(!c)return;
-  openModal('Editar Contratista',`
-    ${_contModalFields(c)}
-    <div class="form-actions" style="margin-top:14px">
-      <button class="btn btn-sm btn-danger" onclick="eliminarContratista(${id})">🗑️ Eliminar</button>
-      <button class="btn btn-gold" onclick="saveContratista(${id})">Guardar</button>
-    </div>`);
-}
-function toggleEstadoCont(){
-  const est=document.getElementById('nc-estado')?.value;
-  const wrap=document.getElementById('nc-pendiente-wrap');
-  if(wrap) wrap.style.display=(est==='renuncio'||est==='despedido')?'':'none';
-}
-function toggleSubtipo(){
-  const v=document.getElementById('f-subtipo').value;
-  const wrap=document.getElementById('f-subtipo-wrap');
-  if(wrap) wrap.style.display=(v==='ayudante'||v==='liquidacion'||v==='orden_cambio')?'':'none';
-  if(wrap&&wrap.style.display!=='none'){
-    const sel=document.getElementById('f-cont-principal');
-    sel.innerHTML='<option value="">— Seleccionar —</option>'+
-      contratistas.map(c=>`<option value="${c.nombre}">${c.nombre} (${c.especialidad})</option>`).join('');
-  }
-}
-function _leerCamposCont(){
-  return {
-    nombre:document.getElementById('nc-nombre').value.trim(),
-    especialidad:document.getElementById('nc-esp').value,
-    tel:document.getElementById('nc-tel').value.trim(),
-    email:document.getElementById('nc-email').value.trim(),
-    seguro_social:document.getElementById('nc-ssn').value.trim(),
-    notas:document.getElementById('nc-notas').value.trim(),
-    estado:document.getElementById('nc-estado')?.value||'activo',
-    pct_trabajo:parseInt(document.getElementById('nc-pct')?.value)||0,
-    trabajo_pendiente:document.getElementById('nc-pendiente')?.value.trim()||'',
-    archivos:[..._modalArchivos]
-  };
+    </div>
+  `);
 }
 function addContratista(){
-  const d=_leerCamposCont();if(!d.nombre)return;
-  contratistas.push({id:Date.now(),...d});
+  const nombre=document.getElementById('nc-nombre').value.trim();
+  if(!nombre)return;
+  contratistas.push({id:Date.now(),nombre,especialidad:document.getElementById('nc-esp').value,tel:document.getElementById('nc-tel').value.trim(),notas:document.getElementById('nc-notas').value.trim()});
   save();closeModal();renderContratistas();
 }
-function saveContratista(id){
-  const c=contratistas.find(x=>x.id===id);if(!c)return;
-  Object.assign(c,_leerCamposCont());
-  save();closeModal();renderContratistas();
-}
-function eliminarContratista(id){if(!confirm('¿Eliminar?'))return;contratistas=contratistas.filter(c=>c.id!==id);save();closeModal();renderContratistas();}
+function eliminarContratista(id){if(!confirm('¿Eliminar?'))return;contratistas=contratistas.filter(c=>c.id!==id);save();renderContratistas();}
 
 // ============ TIMELINE ============
 function renderTimeline(){
@@ -3092,14 +1980,9 @@ function renderTimeline(){
     <div class="tl-item">
       <div class="tl-dot ${t.estado}"></div>
       <div class="tl-date">${t.fecha}</div>
-      <div class="tl-title">${t.titulo}${(t.archivos||[]).length?` <span style="font-size:11px;color:var(--gold)">📎${(t.archivos||[]).length>1?' x'+(t.archivos||[]).length:''}</span>`:''}</div>
+      <div class="tl-title">${t.titulo}</div>
       <div class="tl-desc">${t.desc}</div>
-      <button class="btn btn-xs btn-ghost" style="margin-top:6px" onclick="editTimeline(${t.id})">✏️ Editar</button>
     </div>`).join('');
-}
-function _tlEstadoOpts(sel){
-  return [['pending','Pendiente'],['active','En Progreso'],['done','Completado']]
-    .map(([v,l])=>`<option value="${v}"${v===sel?' selected':''}>${l}</option>`).join('');
 }
 function showAddTimeline(){
   openModal('Añadir Etapa',`
@@ -3107,44 +1990,20 @@ function showAddTimeline(){
       <div class="fg"><label>Fecha</label><input type="date" id="nt-fecha"></div>
       <div class="fg"><label>Título</label><input type="text" id="nt-titulo" placeholder="Ej: Aprobación ARPE"></div>
       <div class="fg"><label>Descripción</label><textarea id="nt-desc"></textarea></div>
-      <div class="fg"><label>Estado</label><select id="nt-estado">${_tlEstadoOpts('pending')}</select></div>
-      ${_docField()}
+      <div class="fg"><label>Estado</label>
+        <select id="nt-estado"><option value="pending">Pendiente</option><option value="active">En Progreso</option><option value="done">Completado</option></select>
+      </div>
     </div>
     <div class="form-actions" style="margin-top:14px">
       <button class="btn btn-gold" onclick="addTimeline()">Añadir</button>
-    </div>`);
-}
-function editTimeline(id){
-  const t=timeline.find(x=>x.id===id);if(!t)return;
-  openModal('Editar Etapa',`
-    <div class="form-grid" style="grid-template-columns:1fr;">
-      <div class="fg"><label>Fecha</label><input type="date" id="nt-fecha" value="${t.fecha}"></div>
-      <div class="fg"><label>Título</label><input type="text" id="nt-titulo" value="${t.titulo}"></div>
-      <div class="fg"><label>Descripción</label><textarea id="nt-desc">${t.desc}</textarea></div>
-      <div class="fg"><label>Estado</label><select id="nt-estado">${_tlEstadoOpts(t.estado)}</select></div>
-      ${_docField(t.archivos)}
     </div>
-    <div class="form-actions" style="margin-top:14px">
-      <button class="btn btn-sm btn-danger" onclick="eliminarTimeline(${id})">🗑️ Eliminar</button>
-      <button class="btn btn-gold" onclick="saveTimeline(${id})">Guardar</button>
-    </div>`);
+  `);
 }
 function addTimeline(){
-  timeline.push({id:Date.now(),fecha:document.getElementById('nt-fecha').value,titulo:document.getElementById('nt-titulo').value,desc:document.getElementById('nt-desc').value,estado:document.getElementById('nt-estado').value,archivos:[..._modalArchivos]});
+  timeline.push({id:Date.now(),fecha:document.getElementById('nt-fecha').value,titulo:document.getElementById('nt-titulo').value,desc:document.getElementById('nt-desc').value,estado:document.getElementById('nt-estado').value});
   timeline.sort((a,b)=>new Date(a.fecha)-new Date(b.fecha));
   save();closeModal();renderTimeline();
 }
-function saveTimeline(id){
-  const t=timeline.find(x=>x.id===id);if(!t)return;
-  t.fecha=document.getElementById('nt-fecha').value;
-  t.titulo=document.getElementById('nt-titulo').value;
-  t.desc=document.getElementById('nt-desc').value;
-  t.estado=document.getElementById('nt-estado').value;
-  t.archivos=[..._modalArchivos];
-  timeline.sort((a,b)=>new Date(a.fecha)-new Date(b.fecha));
-  save();closeModal();renderTimeline();
-}
-function eliminarTimeline(id){if(!confirm('¿Eliminar esta etapa?'))return;timeline=timeline.filter(x=>x.id!==id);save();closeModal();renderTimeline();}
 
 // ============ DOCS ============
 function renderDocs(){
@@ -3375,41 +2234,35 @@ function calcTuCoop(){
 }
 
 function editActivacion(id){
-  const item=tuCoop.activacion.find(x=>x.id===id);if(!item)return;
+  const item = tuCoop.activacion.find(x=>x.id===id);if(!item)return;
   openModal(`Editar — ${item.concepto}`,`
-    <div class="form-grid" style="grid-template-columns:1fr;">
-      <div class="fg"><label>Monto ($)</label><input type="number" id="ea-monto" value="${item.monto}" step="0.01"></div>
-      <div class="fg"><label>Notas</label><textarea id="ea-notas" placeholder="Ej: Pagado con cheque #...">${item.notas||''}</textarea></div>
-      ${_docField(item.archivos)}
-    </div>
+    <div class="fg"><label>Monto ($)</label><input type="number" id="ea-monto" value="${item.monto}" step="0.01"></div>
     <div class="form-actions" style="margin-top:14px">
       <button class="btn btn-gold" onclick="saveActivacion(${id})">Guardar</button>
     </div>`);
 }
 function saveActivacion(id){
-  const item=tuCoop.activacion.find(x=>x.id===id);
-  item.monto=parseFloat(document.getElementById('ea-monto').value)||0;
-  item.notas=document.getElementById('ea-notas').value.trim();
-  item.archivos=[..._modalArchivos];
+  tuCoop.activacion.find(x=>x.id===id).monto = parseFloat(document.getElementById('ea-monto').value)||0;
   saveTuCoop();closeModal();renderFinanciamiento();
 }
+
 function showAddActivacion(){
   openModal('Añadir Gasto de Activación',`
     <div class="form-grid" style="grid-template-columns:1fr;">
       <div class="fg"><label>Concepto</label><input type="text" id="na-concepto" placeholder="Ej: Seguro PMI"></div>
       <div class="fg"><label>Monto ($)</label><input type="number" id="na-monto" step="0.01"></div>
-      <div class="fg"><label>Notas</label><textarea id="na-notas" placeholder="Notas opcionales..."></textarea></div>
-      ${_docField()}
     </div>
     <div class="form-actions" style="margin-top:14px">
       <button class="btn btn-gold" onclick="addActivacion()">Añadir</button>
     </div>`);
 }
 function addActivacion(){
-  const concepto=document.getElementById('na-concepto').value.trim();if(!concepto)return;
-  tuCoop.activacion.push({id:Date.now(),concepto,monto:parseFloat(document.getElementById('na-monto').value)||0,notas:document.getElementById('na-notas').value.trim(),archivos:[..._modalArchivos]});
+  const concepto=document.getElementById('na-concepto').value.trim();
+  if(!concepto)return;
+  tuCoop.activacion.push({id:Date.now(),concepto,monto:parseFloat(document.getElementById('na-monto').value)||0});
   saveTuCoop();closeModal();renderFinanciamiento();
 }
+
 function showAddInteres(){
   const hoy=new Date().toISOString().slice(0,7);
   openModal('Registrar Interés Mensual',`
@@ -3420,15 +2273,13 @@ function showAddInteres(){
       <div class="fg"><label>¿Ya pagado?</label>
         <select id="ni-pag"><option value="0">Pendiente</option><option value="1">Pagado</option></select>
       </div>
-      <div class="fg"><label>Notas</label><textarea id="ni-notas" placeholder="Ej: Estado de cuenta adjunto..."></textarea></div>
-      ${_docField()}
     </div>
     <div class="form-actions" style="margin-top:14px">
       <button class="btn btn-gold" onclick="addInteres()">Registrar</button>
     </div>`);
 }
 function addInteres(){
-  tuCoop.intereses.push({id:Date.now(),mes:document.getElementById('ni-mes').value,balance:parseFloat(document.getElementById('ni-bal').value)||0,monto:parseFloat(document.getElementById('ni-monto').value)||0,pagado:document.getElementById('ni-pag').value==='1',notas:document.getElementById('ni-notas').value.trim(),archivos:[..._modalArchivos]});
+  tuCoop.intereses.push({id:Date.now(),mes:document.getElementById('ni-mes').value,balance:parseFloat(document.getElementById('ni-bal').value)||0,monto:parseFloat(document.getElementById('ni-monto').value)||0,pagado:document.getElementById('ni-pag').value==='1'});
   tuCoop.intereses.sort((a,b)=>b.mes.localeCompare(a.mes));
   saveTuCoop();closeModal();renderFinanciamiento();
 }
@@ -3443,177 +2294,120 @@ function eliminarInteres(id){
 // ============ VIAJES ============
 let viajes = JSON.parse(localStorage.getItem('a132_viajes')||'[]');
 function saveViajes(){ localStorage.setItem('a132_viajes', JSON.stringify(viajes)); }
-let _viajeArchivos=[];
-async function handleViajeArchivo(input){
-  const file=input.files[0];if(!file)return;input.value='';
-  if(file.size>1.5*1024*1024){alert('⚠️ Archivo muy grande (máx 1.5MB).');return;}
-  _viajeArchivos.push({nombre:file.name,tipo:file.type||'application/octet-stream',data:await toBase64(file)});
-  const w=document.getElementById('vf-chips');if(!w)return;
-  w.innerHTML=_viajeArchivos.map((a,i)=>`<div class="doc-chip"><span>📎 ${a.nombre}</span><span class="doc-chip-x" onclick="_viajeArchivos.splice(${i},1);handleViajeArchivo({files:[]})">✕</span></div>`).join('');
-}
 
 const PEAJES_IDA = 4.10;
 const PEAJES_IVY = 8.20;
 
-function seleccionarRuta(){
-  const val=document.getElementById('v-ruta').value;
-  if(!val||val==='custom') return;
-  const[km,peajeIda,nombre]=val.split('|');
-  const rt=parseInt(document.getElementById('v-roundtrip').value)||2;
-  document.getElementById('v-millas').value=km;
-  // Actualizar peajes custom según la ruta seleccionada
-  window._rutaPeajeIda=parseFloat(peajeIda);
-  // Mostrar descripción de la ruta
-  const infoEl=document.getElementById('v-ruta-info');
-  if(infoEl){
-    infoEl.textContent='📍 '+nombre+' — Peajes ida: $'+parseFloat(peajeIda).toFixed(2)+' | Ida y vuelta: $'+(parseFloat(peajeIda)*2).toFixed(2);
-    infoEl.style.display='';
-  }
-  calcViaje();
-}
-
 function calcViaje(){
   const millas = parseFloat(document.getElementById('v-millas')?.value)||60;
-  const kml = parseFloat(document.getElementById('v-kml')?.value)||12;
-  const precioRaw = parseFloat(document.getElementById('v-precio-gas')?.value)||0.75;
+  const mpg = parseFloat(document.getElementById('v-mpg')?.value)||25;
+  const precioGas = parseFloat(document.getElementById('v-precio-gas')?.value)||3.40;
   const rt = parseInt(document.getElementById('v-roundtrip')?.value)||2;
-
-  // precio en centavos/litro → convertir a dólares
-  const precioGas = precioRaw / 100;
-  const alertaEl = document.getElementById('v-precio-alerta');
-  const precioEl = document.getElementById('v-precio-gas');
-  if(precioRaw < 50 || precioRaw > 300){
-    if(precioEl) precioEl.style.borderColor='var(--red)';
-    if(alertaEl) alertaEl.style.display='';
-  } else {
-    if(precioEl) precioEl.style.borderColor='';
-    if(alertaEl) alertaEl.style.display='none';
-  }
-
-  // Usar peaje de ruta seleccionada si existe, si no el default Bayamón→Arroyo
-  const peajeIda = window._rutaPeajeIda || PEAJES_IDA;
-  const peajes = rt===2 ? peajeIda*2 : peajeIda;
-  const km = millas * rt;
-  const litros = kml > 0 ? km / kml : 0;
-  const gasTotal = litros * precioGas;
+  const peajes = rt===2 ? PEAJES_IVY : PEAJES_IDA;
+  const galones = (millas * rt) / mpg;
+  const gasTotal = galones * precioGas;
   const total = peajes + gasTotal;
   if(document.getElementById('calc-peajes')){
     document.getElementById('calc-peajes').textContent = fmt(peajes);
     document.getElementById('calc-gas').textContent = fmt(gasTotal);
     document.getElementById('calc-total').textContent = fmt(total);
+    // Pre-fill manual form
     document.getElementById('vf-peajes').value = peajes.toFixed(2);
     document.getElementById('vf-gasolina').value = gasTotal.toFixed(2);
   }
 }
 
 function registrarViaje(){
-  // Guarda el viaje directamente con los valores de la calculadora
   const peajes = parseFloat(document.getElementById('calc-peajes')?.textContent?.replace(/[^0-9.]/g,'')||'8.20');
   const gas = parseFloat(document.getElementById('calc-gas')?.textContent?.replace(/[^0-9.]/g,'')||'0');
   const hoy = new Date().toISOString().split('T')[0];
-  const proposito = document.getElementById('vf-proposito')?.value || 'Supervisión de obra';
-  const notas = document.getElementById('vf-notas')?.value?.trim() || '';
-  const otros = parseFloat(document.getElementById('vf-otros')?.value)||0;
-  const total = peajes + gas + otros;
-  viajes.unshift({id:Date.now(), fecha:hoy, proposito, peajes, gasolina:gas, otros, total, notas});
-  saveViajes();
-  gastos.push({
-    id:Date.now()+1, fecha:hoy,
-    contratista:'Gastos de Viaje', tel:'', categoria:'Transportación',
-    lote:'Compartido', metodo:'efectivo', monto:total,
-    descripcion:`${proposito} — Peajes: $${peajes.toFixed(2)} | Gas: $${gas.toFixed(2)}${otros>0?' | Otros: $'+otros.toFixed(2):''}${notas?' | '+notas:''}`,
-    tipo:'viaje', archivos:[]
-  });
-  save();
-  renderViajes();renderDashboard();
-  // Confirmación visual en la calculadora
-  const btn = document.querySelector('[onclick="registrarViaje()"]');
-  if(btn){const orig=btn.textContent;btn.textContent='✅ Guardado';btn.disabled=true;setTimeout(()=>{btn.textContent=orig;btn.disabled=false;},2000);}
+  document.getElementById('vf-fecha').value = hoy;
+  document.getElementById('vf-peajes').value = peajes.toFixed(2);
+  document.getElementById('vf-gasolina').value = gas.toFixed(2);
+  document.getElementById('vf-proposito').value = 'Supervisión de obra';
+  // scroll to form
+  document.getElementById('vf-fecha').scrollIntoView({behavior:'smooth'});
 }
 
 function guardarViaje(){
   const fecha = document.getElementById('vf-fecha').value;
-  const peajes = parseFloat(document.getElementById('vf-peajes').value)||0;
+  const peajes   = parseFloat(document.getElementById('vf-peajes').value)||0;
   const gasolina = parseFloat(document.getElementById('vf-gasolina').value)||0;
-  const otros = parseFloat(document.getElementById('vf-otros').value)||0;
+  const comida   = parseFloat(document.getElementById('vf-comida').value)||0;
+  const estadia  = parseFloat(document.getElementById('vf-estadia').value)||0;
+  const otros    = parseFloat(document.getElementById('vf-otros').value)||0;
   if(!fecha){ alert('Ingresa la fecha del viaje.'); return; }
-  const proposito=document.getElementById('vf-proposito').value;
-  const notas=document.getElementById('vf-notas').value.trim();
-  viajes.unshift({id:Date.now(),fecha,proposito,peajes,gasolina,otros,total:peajes+gasolina+otros,notas,archivos:[..._viajeArchivos]});
+  const total = peajes + gasolina + comida + estadia + otros;
+  viajes.unshift({
+    id: Date.now(), fecha,
+    proposito: document.getElementById('vf-proposito').value,
+    peajes, gasolina, comida, estadia, otros, total,
+    notas: document.getElementById('vf-notas').value.trim()
+  });
   saveViajes();
-  gastos.push({id:Date.now()+1,fecha,contratista:'Gastos de Viaje',tel:'',categoria:'Transportación',lote:'Compartido',metodo:'efectivo',monto:peajes+gasolina+otros,descripcion:`${proposito} — Peajes: $${peajes.toFixed(2)} | Gas: $${gasolina.toFixed(2)}${otros>0?' | Otros: $'+otros.toFixed(2):''}${notas?' | '+notas:''}`,tipo:'viaje',archivos:[..._viajeArchivos]});
+  // También guardar como gasto en la app
+  let desc = `${document.getElementById('vf-proposito').value} — Peajes: $${peajes.toFixed(2)} | Gas: $${gasolina.toFixed(2)}`;
+  if(comida>0)  desc += ` | Comida: $${comida.toFixed(2)}`;
+  if(estadia>0) desc += ` | Estadía: $${estadia.toFixed(2)}`;
+  if(otros>0)   desc += ` | Otros: $${otros.toFixed(2)}`;
+  gastos.push({
+    id: Date.now()+1, fecha,
+    contratista: 'Gastos de Viaje',
+    tel:'', categoria:'Transportación',
+    lote:'Compartido', metodo:'efectivo',
+    monto: total, descripcion: desc, tipo:'viaje'
+  });
   save();
-  _viajeArchivos=[];
   document.getElementById('vf-fecha').value='';
   document.getElementById('vf-notas').value='';
+  document.getElementById('vf-comida').value='0';
+  document.getElementById('vf-estadia').value='0';
   document.getElementById('vf-otros').value='0';
-  document.getElementById('vf-archivo').value='';
-  const w=document.getElementById('vf-chips');if(w)w.innerHTML='';
-  renderViajes();renderDashboard();
+  renderViajes();
+  alert('✅ Viaje registrado. Cada kilómetro recorrido es inversión en el proyecto.');
 }
 
 function renderViajes(){
-  const totalPeajes = viajes.reduce((s,v)=>s+v.peajes,0);
-  const totalGas = viajes.reduce((s,v)=>s+v.gasolina,0);
-  const totalOtros = viajes.reduce((s,v)=>s+v.otros,0);
-  const total = viajes.reduce((s,v)=>s+v.total,0);
+  const totalPeajes  = viajes.reduce((s,v)=>s+(v.peajes||0),0);
+  const totalGas     = viajes.reduce((s,v)=>s+(v.gasolina||0),0);
+  const totalComida  = viajes.reduce((s,v)=>s+(v.comida||0),0);
+  const totalEstadia = viajes.reduce((s,v)=>s+(v.estadia||0),0);
+  const totalOtros   = viajes.reduce((s,v)=>s+(v.otros||0),0);
+  const total        = viajes.reduce((s,v)=>s+(v.total||0),0);
+  const promedio     = viajes.length ? total/viajes.length : 0;
 
   if(document.getElementById('v-total-viajes')){
-    document.getElementById('v-total-viajes').textContent = viajes.length;
-    document.getElementById('v-total-peajes').textContent = fmt(totalPeajes);
-    document.getElementById('v-total-gas').textContent = fmt(totalGas);
-    document.getElementById('v-total').textContent = fmt(total);
+    document.getElementById('v-total-viajes').textContent  = viajes.length;
+    document.getElementById('v-total-peajes').textContent  = fmt(totalPeajes);
+    document.getElementById('v-total-gas').textContent     = fmt(totalGas);
+    document.getElementById('v-total').textContent         = fmt(total);
+    document.getElementById('v-total-comida').textContent  = fmt(totalComida);
+    document.getElementById('v-total-estadia').textContent = fmt(totalEstadia);
+    document.getElementById('v-total-otros').textContent   = fmt(totalOtros);
+    document.getElementById('v-promedio').textContent      = fmt(promedio);
   }
 
   const tbody = document.getElementById('v-tabla');
   if(!tbody) return;
   if(!viajes.length){
-    tbody.innerHTML='<tr><td colspan="7"><div class="empty"><div class="empty-icon">🚗</div>Sin viajes registrados</div></td></tr>';
+    tbody.innerHTML='<tr><td colspan="9"><div class="empty"><div class="empty-icon">🚗</div>Sin viajes registrados</div></td></tr>';
     document.getElementById('v-tabla-total').textContent='';
     return;
   }
   tbody.innerHTML = viajes.map(v=>`<tr>
     <td class="mono" style="font-size:12px">${v.fecha}</td>
-    <td style="font-size:12px">${v.proposito}${(v.archivos||[]).length?` <span style="color:var(--gold);font-size:10px">📎</span>`:''}</td>
-    <td class="mono" style="color:var(--red)">${fmt(v.peajes)}</td>
-    <td class="mono" style="color:var(--blue)">${fmt(v.gasolina)}</td>
-    <td class="mono" style="color:var(--gray)">${v.otros>0?fmt(v.otros):'—'}</td>
-    <td class="mono" style="color:var(--gold);font-weight:600">${fmt(v.total)}</td>
-    <td style="display:flex;gap:4px">
-      <button class="btn btn-xs btn-ghost" onclick="verViaje(${v.id})">Ver</button>
-      <button class="btn btn-xs btn-danger" onclick="eliminarViaje(${v.id})">🗑️</button>
-    </td>
+    <td style="font-size:12px">${v.proposito}${v.notas?'<br><span style="font-size:10px;color:var(--gray)">'+v.notas+'</span>':''}</td>
+    <td class="mono" style="color:var(--red)">${fmt(v.peajes||0)}</td>
+    <td class="mono" style="color:var(--blue)">${fmt(v.gasolina||0)}</td>
+    <td class="mono" style="color:#e74c3c">${(v.comida||0)>0?fmt(v.comida):'—'}</td>
+    <td class="mono" style="color:#9b59b6">${(v.estadia||0)>0?fmt(v.estadia):'—'}</td>
+    <td class="mono" style="color:var(--gray)">${(v.otros||0)>0?fmt(v.otros):'—'}</td>
+    <td class="mono" style="color:var(--gold);font-weight:600">${fmt(v.total||0)}</td>
+    <td><button class="btn btn-xs btn-danger" onclick="eliminarViaje(${v.id})">🗑️</button></td>
   </tr>`).join('');
-  document.getElementById('v-tabla-total').textContent = `Total acumulado: ${fmt(total)}`;
+  document.getElementById('v-tabla-total').textContent = `Total acumulado: ${fmt(total)} | Promedio por viaje: ${fmt(promedio)}`;
 }
 
-function verViaje(id){
-  const v=viajes.find(x=>x.id===id);if(!v)return;
-  const archivosV=v.archivos||[];
-  const docHtml=archivosV.length?`<div style="margin-top:12px">
-    <div style="font-size:10px;text-transform:uppercase;letter-spacing:1px;color:var(--gray);margin-bottom:6px">Documentos adjuntos</div>
-    <div style="display:flex;flex-wrap:wrap;gap:6px">${archivosV.map((a,i)=>`<div class="doc-chip">
-      <span style="cursor:pointer;text-decoration:underline" onclick="verDocAdjunto_v(${id},${i})">📎 ${a.nombre}</span>
-    </div>`).join('')}</div></div>`:'';
-  openModal('Detalle de Viaje',`
-    <div class="roi-row"><span class="roi-label">Fecha</span><span>${v.fecha}</span></div>
-    <div class="roi-row"><span class="roi-label">Propósito</span><span>${v.proposito}</span></div>
-    <div class="roi-row"><span class="roi-label">Peajes</span><span class="mono" style="color:var(--red)">${fmt(v.peajes)}</span></div>
-    <div class="roi-row"><span class="roi-label">Gasolina</span><span class="mono" style="color:var(--blue)">${fmt(v.gasolina)}</span></div>
-    ${v.otros>0?`<div class="roi-row"><span class="roi-label">Otros</span><span class="mono">${fmt(v.otros)}</span></div>`:''}
-    <div class="roi-row hl"><span class="roi-label"><b>Total</b></span><span class="roi-val gold">${fmt(v.total)}</span></div>
-    ${v.notas?`<div style="margin-top:10px;padding:8px 10px;background:rgba(201,168,76,0.07);border-left:2px solid rgba(201,168,76,0.4);border-radius:0 6px 6px 0;font-size:12px;color:var(--light)">💬 ${v.notas}</div>`:''}
-    ${docHtml}
-    <div class="form-actions" style="margin-top:14px">
-      <button class="btn btn-sm btn-danger" onclick="eliminarViaje(${id})">🗑️ Eliminar</button>
-      <button class="btn btn-sm btn-ghost" onclick="closeModal()">Cerrar</button>
-    </div>`);
-}
-function verDocAdjunto_v(viajeId,idx){
-  const v=viajes.find(x=>x.id===viajeId);if(!v)return;
-  const a=(v.archivos||[])[idx];if(!a)return;
-  _modalArchivos=[...v.archivos];_verModalDoc(idx);
-}
 function eliminarViaje(id){
   if(!confirm('¿Eliminar este viaje?'))return;
   viajes = viajes.filter(v=>v.id!==id);
@@ -3621,175 +2415,80 @@ function eliminarViaje(id){
   renderViajes();
 }
 
-// ============ COMPRESIÓN DE IMÁGENES ============
-async function comprimirImagen(file){
-  if(!file) return null;
-  if(file.type==='application/pdf'){
-    if(file.size>600*1024){
-      if(!confirm('PDF mayor de 600KB — puede ocupar mucho espacio. ¿Continuar?')) return null;
-    }
-    const data=await toBase64(file);
-    return {nombre:file.name,tipo:'application/pdf',data};
-  }
-  if(!file.type.startsWith('image/')) {
-    const data=await toBase64(file);
-    return {nombre:file.name,tipo:file.type,data};
-  }
-  return new Promise((resolve)=>{
-    const img=new Image();
-    const url=URL.createObjectURL(file);
-    img.onload=()=>{
-      URL.revokeObjectURL(url);
-      const MAX=800;
-      let w=img.width,h=img.height;
-      if(w>MAX){h=Math.round(h*MAX/w);w=MAX;}
-      const canvas=document.createElement('canvas');
-      canvas.width=w;canvas.height=h;
-      canvas.getContext('2d').drawImage(img,0,0,w,h);
-      canvas.toBlob(blob=>{
-        const reader=new FileReader();
-        reader.onload=e=>resolve({nombre:file.name.replace(/\.[^.]+$/,'.jpg'),tipo:'image/jpeg',data:e.target.result.split(',')[1]});
-        reader.readAsDataURL(blob);
-      },'image/jpeg',0.72);
-    };
-    img.src=url;
+// ============ REPORTE PARA BANCO ============
+function renderBanco(){
+  const today = new Date().toLocaleDateString('es-PR',{year:'numeric',month:'long',day:'numeric'});
+  const el = id => document.getElementById(id);
+
+  if(el('banco-hoy'))     el('banco-hoy').textContent = today;
+  if(el('banco-fecha-reporte')) el('banco-fecha-reporte').textContent = 'Reporte al ' + today;
+
+  // Calcular totales desde gastos
+  const totalObra = gastos.reduce((s,g)=>s+(g.tipo!=='viaje'?g.monto:0), 0);
+  const totalViajesAmt = viajes.reduce((s,v)=>s+(v.total||0), 0);
+  const totalInversion = 60000 + 3500 + totalObra + totalViajesAmt;
+  const valorVenta = 320000;
+  const ganancia = valorVenta - totalInversion;
+  const roi = totalInversion > 0 ? (ganancia / totalInversion * 100) : 0;
+
+  if(el('banco-total-obra'))     el('banco-total-obra').textContent = fmt(totalObra);
+  if(el('banco-inversion-total'))el('banco-inversion-total').textContent = fmt(totalInversion);
+  if(el('banco-val-obra'))       el('banco-val-obra').textContent = fmt(totalObra);
+  if(el('banco-val-viajes'))     el('banco-val-viajes').textContent = fmt(totalViajesAmt);
+  if(el('banco-val-total'))      el('banco-val-total').innerHTML = '<b>'+fmt(totalInversion)+'</b>';
+  if(el('banco-ganancia'))       el('banco-ganancia').innerHTML = '<b>'+fmt(ganancia)+'</b>';
+  if(el('banco-roi-pct'))        el('banco-roi-pct').textContent = roi.toFixed(1)+'%';
+
+  // Por lote
+  const loteA = gastos.filter(g=>g.lote==='132A').reduce((s,g)=>s+g.monto,0);
+  const loteB = gastos.filter(g=>g.lote==='132B').reduce((s,g)=>s+g.monto,0);
+  const loteC = gastos.filter(g=>g.lote==='Compartido'||g.lote==='Ambos').reduce((s,g)=>s+g.monto,0);
+  if(el('banco-lote-a'))     el('banco-lote-a').textContent = fmt(loteA);
+  if(el('banco-lote-b'))     el('banco-lote-b').textContent = fmt(loteB);
+  if(el('banco-lote-c'))     el('banco-lote-c').textContent = fmt(loteC);
+  if(el('banco-lote-total')) el('banco-lote-total').innerHTML = '<b>'+fmt(loteA+loteB+loteC)+'</b>';
+
+  // Por categoría
+  const cats = {};
+  gastos.filter(g=>g.tipo!=='viaje').forEach(g=>{
+    cats[g.categoria] = (cats[g.categoria]||0) + g.monto;
   });
-}
-
-// ============ IVU (ITBMS 11.5%) ============
-function toggleIVU(){
-  const on=document.getElementById('f-ivu').checked;
-  document.getElementById('f-ivu-desglose').style.display=on?'':'none';
-  if(on) calcIVU();
-}
-function calcIVU(){
-  if(!document.getElementById('f-ivu')?.checked) return;
-  const total=parseFloat(document.getElementById('f-monto').value)||0;
-  const sub=total/1.115;
-  const ivu=total-sub;
-  document.getElementById('ivu-subtotal').textContent=fmt(sub);
-  document.getElementById('ivu-amount').textContent=fmt(ivu);
-  document.getElementById('ivu-total').textContent=fmt(total);
-}
-
-// ============ PRESUPUESTO VS REAL ============
-function renderPresupuesto(){
-  const cats={};
-  gastos.forEach(g=>{if(g.monto>0) cats[g.categoria]=(cats[g.categoria]||0)+g.monto;});
-  const todasCats=[...new Set([...Object.keys(presupuesto),...Object.keys(cats)])].sort();
-  const el=document.getElementById('presupuesto-bars');if(!el)return;
-  if(!todasCats.length){el.innerHTML='<div style="font-size:12px;color:var(--gray)">Registra gastos para ver el análisis.</div>';return;}
-  el.innerHTML=todasCats.map(cat=>{
-    const slug=cat.replace(/[^a-z0-9]/gi,'_');
-    const real=cats[cat]||0;
-    const bud=presupuesto[cat]||0;
-    const pct=bud>0?Math.min(real/bud*100,100):0;
-    const color=pct>=100?'var(--red)':pct>=75?'#e67e22':'var(--green)';
-    return `<div style="margin-bottom:12px">
-      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:4px">
-        <span style="font-size:12px">${cat}</span>
-        <div style="display:flex;gap:8px;align-items:center">
-          <span class="mono" style="font-size:11px;color:${color}">${fmt(real)}</span>
-          <span style="font-size:10px;color:var(--gray)">/ </span>
-          <input type="number" id="pres_${slug}" value="${bud||''}" placeholder="Presupuesto" step="100"
-            style="width:90px;font-size:11px;padding:3px 6px;text-align:right"
-            oninput="presupuesto['${cat}']=parseFloat(this.value)||0;renderPresupuesto()">
-        </div>
-      </div>
-      ${bud>0?`<div class="prog-bar"><div class="prog-fill" style="background:${color};width:${pct}%"></div></div>
-      <div style="font-size:10px;color:var(--gray);text-align:right;margin-top:2px">${pct.toFixed(0)}% utilizado${pct>=100?' ⚠️':''}</div>`:''}
-    </div>`;
-  }).join('');
-}
-function guardarPresupuesto(){save();renderPresupuesto();}
-
-// ============ FASES DE OBRA ============
-function renderFases(){
-  ['132A','132B'].forEach(lote=>{
-    const el=document.getElementById('fases-panel-'+lote.replace('132',''));if(!el)return;
-    el.innerHTML=FASES_LISTA.map(fase=>{
-      const d=fases[lote]?.[fase]||{status:'pendiente',pct:0};
-      const statusColor=d.status==='completado'?'var(--green)':d.status==='en proceso'?'var(--blue)':'var(--gray)';
-      const barColor=d.status==='completado'?'var(--green)':d.status==='en proceso'?'var(--blue)':'rgba(255,255,255,0.1)';
-      return `<div style="margin-bottom:12px;padding:10px;background:rgba(255,255,255,0.03);border-radius:8px">
-        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px">
-          <span style="font-size:13px;font-weight:500">${fase}</span>
-          <select onchange="updateFase('${lote}','${fase}','status',this.value)" style="font-size:11px;padding:3px 6px;width:120px">
-            <option value="pendiente"${d.status==='pendiente'?' selected':''}>⚪ Pendiente</option>
-            <option value="en proceso"${d.status==='en proceso'?' selected':''}>🔵 En Proceso</option>
-            <option value="completado"${d.status==='completado'?' selected':''}>✅ Completado</option>
-          </select>
-        </div>
-        <div style="display:flex;align-items:center;gap:8px;margin-bottom:8px">
-          <div class="prog-bar" style="flex:1"><div class="prog-fill" style="background:${barColor};width:${d.pct}%"></div></div>
-          <input type="number" min="0" max="100" value="${d.pct}"
-            style="width:52px;font-size:11px;padding:3px 6px;text-align:center"
-            oninput="updateFase('${lote}','${fase}','pct',Math.min(100,Math.max(0,parseInt(this.value)||0)))">
-          <span style="font-size:11px;color:${statusColor};min-width:30px">${d.pct}%</span>
-        </div>
-        <div style="display:flex;flex-wrap:wrap;gap:4px;margin-bottom:4px">
-          ${(d.fotos||[]).map((f,i)=>`<img src="data:${f.tipo};base64,${f.data}" onclick="verFotoFase('${lote}','${fase}',${i})"
-            style="width:48px;height:48px;object-fit:cover;border-radius:4px;cursor:pointer;border:1px solid rgba(201,168,76,0.2)"
-            title="${f.fecha||''}${f.nota?' — '+f.nota:''}">`).join('')}
-          <label style="width:48px;height:48px;border:1px dashed rgba(201,168,76,0.3);border-radius:4px;display:flex;align-items:center;justify-content:center;cursor:pointer;font-size:18px" title="Añadir foto de avance">
-            <input type="file" accept="image/*" style="display:none" onchange="addFotoFase('${lote}','${fase}',this)">
-            📷
-          </label>
-        </div>
-      </div>`;
-    }).join('');
-  });
-}
-function updateFase(lote,fase,campo,valor){
-  if(!fases[lote]) fases[lote]={};
-  if(!fases[lote][fase]) fases[lote][fase]={status:'pendiente',pct:0};
-  fases[lote][fase][campo]=valor;
-  if(campo==='status'){
-    if(valor==='completado') fases[lote][fase].pct=100;
-    if(valor==='pendiente') fases[lote][fase].pct=0;
+  const sortedCats = Object.entries(cats).sort((a,b)=>b[1]-a[1]);
+  if(el('banco-cat-table')){
+    el('banco-cat-table').innerHTML = sortedCats.length
+      ? sortedCats.map(([cat,amt])=>`<div class="roi-row"><span class="roi-label">${cat}</span><span class="roi-val mono">${fmt(amt)}</span></div>`).join('')
+        + `<div class="roi-row hl"><span class="roi-label"><b>Total</b></span><span class="roi-val gold"><b>${fmt(totalObra)}</b></span></div>`
+      : '<div class="empty" style="padding:16px;font-size:12px">Sin gastos registrados aún</div>';
   }
-  save();renderFases();
+
+  // Financiamiento (leer de localStorage si existe)
+  const fin = JSON.parse(localStorage.getItem('a132_fin')||'{"linea":0,"utilizado":0,"tasa":7.5}');
+  const disponible = (fin.linea||0) - (fin.utilizado||0);
+  const intereses  = ((fin.utilizado||0) * (fin.tasa||7.5) / 100 / 12);
+  if(el('banco-linea'))       el('banco-linea').textContent = fmt(fin.linea||0);
+  if(el('banco-utilizado'))   el('banco-utilizado').textContent = fmt(fin.utilizado||0);
+  if(el('banco-disponible'))  el('banco-disponible').textContent = fmt(disponible);
+  if(el('banco-intereses'))   el('banco-intereses').textContent = fmt(intereses) + '/mes (aprox.)';
+
+  // Cronograma
+  const fechas = gastos.map(g=>g.fecha).filter(Boolean).sort();
+  if(el('banco-inicio-obra'))  el('banco-inicio-obra').textContent = fechas[0] || '—';
+  if(el('banco-ultimo-gasto')) el('banco-ultimo-gasto').textContent = fechas[fechas.length-1] || '—';
+  if(el('banco-num-trans'))    el('banco-num-trans').textContent = gastos.length;
+  if(el('banco-num-viajes'))   el('banco-num-viajes').textContent = viajes.length;
 }
-async function addFotoFase(lote,fase,input){
-  const file=input.files[0];if(!file)return;
-  input.value='';
-  const arch=await comprimirImagen(file);if(!arch)return;
-  arch.fecha=new Date().toISOString().split('T')[0];
-  const nota=prompt('Nota opcional para esta foto (o deja vacío):','');
-  arch.nota=nota||'';
-  if(!fases[lote]) fases[lote]={};
-  if(!fases[lote][fase]) fases[lote][fase]={status:'pendiente',pct:0};
-  if(!fases[lote][fase].fotos) fases[lote][fase].fotos=[];
-  fases[lote][fase].fotos.push(arch);
-  save();renderFases();
-}
-function verFotoFase(lote,fase,idx){
-  const d=fases[lote]?.[fase];if(!d)return;
-  const f=(d.fotos||[])[idx];if(!f)return;
-  const ov=document.createElement('div');
-  ov.style.cssText='position:fixed;inset:0;background:rgba(0,0,0,0.94);z-index:9999;display:flex;flex-direction:column;align-items:center;justify-content:center;padding:16px;';
-  const img=document.createElement('img');
-  img.src=`data:${f.tipo};base64,${f.data}`;
-  img.style.cssText='max-width:100%;max-height:80vh;border-radius:10px;object-fit:contain;';
-  img.onclick=e=>e.stopPropagation();
-  const info=document.createElement('div');
-  info.style.cssText='color:rgba(255,255,255,0.6);font-size:12px;margin-top:10px;text-align:center;';
-  info.textContent=`${fase} — ${lote}${f.fecha?' — '+f.fecha:''}${f.nota?' — '+f.nota:''}`;
-  const btns=document.createElement('div');
-  btns.style.cssText='display:flex;gap:8px;margin-top:12px;';
-  const btnDel=document.createElement('button');
-  btnDel.textContent='🗑️ Quitar foto';
-  btnDel.className='btn btn-sm btn-danger';
-  btnDel.onclick=()=>{if(confirm('¿Quitar esta foto?')){fases[lote][fase].fotos.splice(idx,1);save();renderFases();ov.remove();}};
-  const btnClose=document.createElement('button');
-  btnClose.textContent='Cerrar';btnClose.className='btn btn-sm btn-ghost';
-  btnClose.onclick=()=>ov.remove();
-  btns.appendChild(btnDel);btns.appendChild(btnClose);
-  const x=document.createElement('div');x.innerHTML='✕';
-  x.style.cssText='position:absolute;top:16px;right:16px;color:#fff;font-size:22px;cursor:pointer;background:rgba(255,255,255,0.12);border-radius:50%;width:36px;height:36px;display:flex;align-items:center;justify-content:center;';
-  x.onclick=()=>ov.remove();ov.onclick=e=>{if(e.target===ov)ov.remove();};
-  ov.appendChild(x);ov.appendChild(img);ov.appendChild(info);ov.appendChild(btns);
-  document.body.appendChild(ov);
+
+function exportarBanco(){
+  const filas = [
+    ['Categoría','Descripción','Lote','Monto'],
+    ...gastos.map(g=>[g.categoria||'',g.descripcion||'',g.lote||'',g.monto.toFixed(2)]),
+    ['','','Total Obra',gastos.reduce((s,g)=>s+g.monto,0).toFixed(2)],
+  ];
+  const csv = filas.map(r=>r.map(c=>`"${c}"`).join(',')).join('\n');
+  const a = document.createElement('a');
+  a.href = 'data:text/csv;charset=utf-8,﻿' + encodeURIComponent(csv);
+  a.download = `Arroyo132_Reporte_Banco_${new Date().toISOString().split('T')[0]}.csv`;
+  a.click();
 }
 
 // ============ INIT ============
