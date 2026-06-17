@@ -608,40 +608,10 @@ textarea{resize:vertical;min-height:60px;}
               </select>
             </div>
 
-            <!-- Proveedor con dropdown inteligente -->
+            <!-- Proveedor — texto simple, la IA lo llena, se puede editar -->
             <div class="fg full">
-              <label>Proveedor / Contratista</label>
-              <div style="position:relative">
-                <select id="f-cont-select" onchange="onProveedorSelect(this.value)" style="width:100%">
-                  <option value="">— Selecciona o escribe nuevo —</option>
-                  <optgroup label="⭐ Usados antes" id="proveedores-recientes"></optgroup>
-                  <optgroup label="🏪 Ferreterías">
-                    <option>Toa Alta Hardware</option>
-                    <option>AIG Electrical Supply Inc.</option>
-                    <option>Ferreterías Maderas 3C</option>
-                    <option>La Ferretería Cataño</option>
-                    <option>National Lumber</option>
-                    <option>Caribbean Lumber Victory</option>
-                    <option>Ferretería Cosme</option>
-                    <option>Caguas Commercial</option>
-                    <option>Home Depot</option>
-                    <option>Lowe's</option>
-                  </optgroup>
-                  <optgroup label="⚡ Contratistas">
-                    <option>David Rodríguez (Electricista)</option>
-                    <option>Edgardo Rodriguez (Plomero)</option>
-                    <option>Royal Electric</option>
-                    <option>Steel Services</option>
-                  </optgroup>
-                  <optgroup label="🏗️ Otros">
-                    <option>Target Rental Car</option>
-                    <option>Carmelo Sierra (Agrimensor)</option>
-                  </optgroup>
-                  <option value="__nuevo__">✏️ Escribir nombre nuevo...</option>
-                </select>
-              </div>
-              <input type="text" id="f-cont" placeholder="Nombre del proveedor"
-                style="margin-top:8px;display:none" oninput="syncProveedorTexto(this.value)">
+              <label>Proveedor / Contratista <span style="font-size:10px;color:var(--gray);font-weight:400">(la IA lo detecta — edita si hay error)</span></label>
+              <input type="text" id="f-cont" placeholder="Ej: Toa Alta Hardware, Juan Electricista..." autocomplete="off" autocorrect="off">
               <input type="tel" id="f-tel" placeholder="Teléfono (opcional)" style="margin-top:8px">
             </div>
 
@@ -711,7 +681,7 @@ textarea{resize:vertical;min-height:60px;}
     <div id="sec-historial" class="section">
       <div class="page-header">
         <div class="page-title">Historial de Gastos</div>
-        <div class="page-sub">Todos los registros del proyecto</div>
+        <div class="page-sub" id="hist-sub">Todos los registros del proyecto</div>
       </div>
 
       <div style="display:flex;gap:8px;margin-bottom:14px;flex-wrap:wrap;align-items:center;">
@@ -1682,11 +1652,9 @@ function guardarGasto(){
   const fecha=document.getElementById('f-fecha').value;
   const monto=parseFloat(document.getElementById('f-monto').value);
   if(!fecha||!monto||monto<=0){alert('⚠️ Fecha y monto son requeridos.');return;}
-  const contVal=document.getElementById('f-cont').value.trim()||
-                (document.getElementById('f-cont-select')?.value&&document.getElementById('f-cont-select').value!=='__nuevo__'&&document.getElementById('f-cont-select').value?document.getElementById('f-cont-select').value:'')||'Sin especificar';
   gastos.push({
     id:Date.now(),fecha,
-    contratista:contVal,
+    contratista:document.getElementById('f-cont').value.trim()||'Sin especificar',
     tel:document.getElementById('f-tel').value.trim(),
     categoria:document.getElementById('f-cat').value,
     lote:document.getElementById('f-lote').value||'Compartido',
@@ -1706,16 +1674,6 @@ function selLote(val,btn){
   document.getElementById('f-lote').value=val;
   document.querySelectorAll('.btn-lote').forEach(b=>b.classList.remove('active'));
   btn.classList.add('active');
-}
-
-function onProveedorSelect(val){
-  const txt=document.getElementById('f-cont');
-  if(val==='__nuevo__'){txt.style.display='block';txt.focus();}
-  else{txt.style.display='none';txt.value=val;}
-}
-
-function syncProveedorTexto(val){
-  // mantiene el select en posición "otro" mientras el usuario escribe
 }
 
 function toggleManual(){
@@ -1742,23 +1700,11 @@ function resetRegistrar(){
   if(defLote)defLote.classList.add('active');
   document.getElementById('f-lote').value='Compartido';
   // reset campos
-  ['f-fecha','f-monto','f-tel','f-desc'].forEach(id=>{const el=document.getElementById(id);if(el)el.value='';});
-  const contTxt=document.getElementById('f-cont');if(contTxt){contTxt.value='';contTxt.style.display='none';}
-  const contSel=document.getElementById('f-cont-select');if(contSel)contSel.value='';
+  ['f-fecha','f-monto','f-cont','f-tel','f-desc'].forEach(id=>{const el=document.getElementById(id);if(el)el.value='';});
   // reset file inputs
   ['facturaCamera','facturaFile'].forEach(id=>{const el=document.getElementById(id);if(el)el.value='';});
-  // rebuild proveedores
-  _buildProveedoresRecientes();
 }
 
-function _buildProveedoresRecientes(){
-  const grp=document.getElementById('proveedores-recientes');
-  if(!grp)return;
-  const conteos={};
-  gastos.forEach(g=>{if(g.contratista&&g.contratista!=='Sin especificar')conteos[g.contratista]=(conteos[g.contratista]||0)+1;});
-  const top=Object.entries(conteos).sort((a,b)=>b[1]-a[1]).slice(0,8);
-  grp.innerHTML=top.map(([n,c])=>`<option value="${n}">${n} (${c}x)</option>`).join('');
-}
 
 async function handleUpload(e, source){
   const file=e.target.files[0];if(!file)return;
@@ -1794,13 +1740,7 @@ Hoy: ${new Date().toISOString().split('T')[0]}`}
     if(ext.fecha)document.getElementById('f-fecha').value=ext.fecha;
     else document.getElementById('f-fecha').value=new Date().toISOString().split('T')[0];
     if(ext.monto)document.getElementById('f-monto').value=ext.monto;
-    if(ext.contratista){
-      const sel=document.getElementById('f-cont-select');
-      // buscar si ya existe en el select
-      let found=false;
-      for(let o of sel.options){if(o.value.toLowerCase().includes(ext.contratista.toLowerCase())||ext.contratista.toLowerCase().includes(o.value.toLowerCase().split('(')[0].trim())){sel.value=o.value;found=true;break;}}
-      if(!found){sel.value='__nuevo__';const txt=document.getElementById('f-cont');txt.style.display='block';txt.value=ext.contratista;}
-    }
+    if(ext.contratista)document.getElementById('f-cont').value=ext.contratista;
     if(ext.descripcion)document.getElementById('f-desc').value=ext.descripcion;
     if(ext.categoria){
       const sel=document.getElementById('f-cat');
@@ -1824,8 +1764,6 @@ Hoy: ${new Date().toISOString().split('T')[0]}`}
 
 function toBase64(file){return new Promise((r,j)=>{const rd=new FileReader();rd.onload=()=>r(rd.result.split(',')[1]);rd.onerror=j;rd.readAsDataURL(file);});}
 
-// Construir lista de proveedores al cargar
-document.addEventListener('DOMContentLoaded',()=>{_buildProveedoresRecientes();});
 
 // ============ HISTORIAL ============
 function renderHistorial(){
@@ -1833,7 +1771,9 @@ function renderHistorial(){
   const fc=document.getElementById('fil-cat').value;
   const filtered=gastos.filter(g=>(fl?g.lote===fl:true)&&(fc?g.categoria===fc:true)).sort((a,b)=>new Date(b.fecha)-new Date(a.fecha));
   const tbody=document.getElementById('tabla-gastos');
-  if(!filtered.length){tbody.innerHTML='<tr><td colspan="7"><div class="empty"><div class="empty-icon">📋</div>Sin registros</div></td></tr>';document.getElementById('tabla-total').textContent='';return;}
+  const sub=document.getElementById('hist-sub');
+  if(sub)sub.textContent=gastos.length===0?'Sin registros — carga tus datos primero':gastos.length+' transacciones en total'+(fl||fc?' — filtros aplicados':'');
+  if(!filtered.length){tbody.innerHTML='<tr><td colspan="7"><div class="empty"><div class="empty-icon">📋</div>'+(gastos.length===0?'No hay datos cargados':'Ningún resultado con estos filtros')+'</div></td></tr>';document.getElementById('tabla-total').textContent='';return;}
   tbody.innerHTML=filtered.map(g=>`<tr>
     <td class="mono" style="font-size:12px">${g.fecha}</td>
     <td>${g.categoria}</td>
