@@ -408,6 +408,15 @@ textarea{resize:vertical;min-height:60px;}
     </div>
   </div>
 
+  <!-- PWA Install Banner -->
+  <div id="pwa-banner" style="display:none;background:linear-gradient(90deg,var(--navy3),rgba(201,168,76,0.08));border-bottom:1px solid rgba(201,168,76,0.22);padding:10px 20px;align-items:center;justify-content:space-between;gap:10px;font-size:13px;">
+    <span>📲 <b style="color:var(--gold)">Instalar App</b> — Acceso rápido desde tu pantalla de inicio sin abrir el browser</span>
+    <div style="display:flex;gap:8px;flex-shrink:0">
+      <button class="btn btn-sm btn-gold" onclick="installPWA()">Instalar</button>
+      <button class="btn btn-sm btn-ghost" onclick="document.getElementById('pwa-banner').style.display='none'" style="padding:6px 10px">✕</button>
+    </div>
+  </div>
+
   <div class="content">
 
     <!-- ===== RESUMEN EJECUTIVO ===== -->
@@ -1130,9 +1139,10 @@ textarea{resize:vertical;min-height:60px;}
           <div class="page-title">Reporte para Banco / Prestamista</div>
           <div class="page-sub">Resumen ejecutivo financiero — Proyecto Arroyo 132</div>
         </div>
-        <div style="display:flex;gap:8px">
+        <div style="display:flex;gap:8px;flex-wrap:wrap">
           <button class="btn btn-gold" onclick="window.print()">🖨️ Imprimir / PDF</button>
-          <button class="btn btn-ghost" onclick="exportarBanco()">📊 Exportar CSV</button>
+          <button class="btn btn-outline" onclick="compartirReporte()">📤 Compartir</button>
+          <button class="btn btn-ghost" onclick="exportarBanco()">📊 CSV</button>
         </div>
       </div>
 
@@ -1432,6 +1442,7 @@ function changePinFlow(){
 
 // ============ DATA STORE ============
 let gastos = (()=>{ try{ return JSON.parse(localStorage.getItem('a132_gastos')||'[]'); }catch(e){ localStorage.removeItem('a132_gastos'); return []; } })();
+let fotos  = (()=>{ try{ return JSON.parse(localStorage.getItem('a132_fotos')||'{}'); }catch(e){ return {}; } })();
 let servicios = JSON.parse(localStorage.getItem('a132_servicios')||'null') || {
   '132A': {
     AAA: [
@@ -1518,6 +1529,7 @@ function save(){
   localStorage.setItem('a132_cont',JSON.stringify(contratistas));
   localStorage.setItem('a132_tl',JSON.stringify(timeline));
   localStorage.setItem('a132_docs',JSON.stringify(docs));
+  try{ localStorage.setItem('a132_fotos',JSON.stringify(fotos)); }catch(e){ console.warn('Fotos no guardadas (storage lleno)'); }
   // Backup automático a Google Drive si está conectado
   if(typeof backupToDrive==='function') backupToDrive(false);
 }
@@ -1661,8 +1673,9 @@ function guardarGasto(){
   const fecha=document.getElementById('f-fecha').value;
   const monto=parseFloat(document.getElementById('f-monto').value);
   if(!fecha||!monto||monto<=0){alert('⚠️ Fecha y monto son requeridos.');return;}
+  const nuevoId=Date.now();
   gastos.push({
-    id:Date.now(),fecha,
+    id:nuevoId,fecha,
     contratista:document.getElementById('f-cont').value.trim()||'Sin especificar',
     tel:document.getElementById('f-tel').value.trim(),
     categoria:document.getElementById('f-cat').value,
@@ -1672,12 +1685,14 @@ function guardarGasto(){
     descripcion:document.getElementById('f-desc').value.trim(),
     tipo:'manual'
   });
+  if(_fotoSmall) fotos[nuevoId]=_fotoSmall;
   save();resetRegistrar();
   alert('✅ Gasto guardado. ¡Que Dios bendiga cada inversión!');
 }
 
 // ============ REGISTRAR — UX CON CÁMARA ============
 let _fotoDataUrl=null;
+let _fotoSmall=null;
 
 function selLote(val,btn){
   document.getElementById('f-lote').value=val;
@@ -1697,6 +1712,7 @@ function toggleManual(){
 
 function resetRegistrar(){
   _fotoDataUrl=null;
+  _fotoSmall=null;
   document.getElementById('aiBox').classList.remove('show');
   document.getElementById('aiStatus').textContent='Analizando...';
   document.getElementById('aiBox').querySelector('.spinner').style.display='';
@@ -1734,6 +1750,19 @@ async function handleUpload(e, source){
 
   try{
     const base64=await toBase64(file);
+    // Crear miniatura comprimida (320px, 55%) para guardar con el gasto
+    _fotoSmall=null;
+    if(file.type!=='application/pdf'){
+      try{
+        const img=new Image();
+        await new Promise(r=>{img.onload=r;img.src='data:'+file.type+';base64,'+base64;});
+        const scale=Math.min(1,320/Math.max(img.width||1,img.height||1));
+        const cv=document.createElement('canvas');
+        cv.width=Math.round(img.width*scale);cv.height=Math.round(img.height*scale);
+        cv.getContext('2d').drawImage(img,0,0,cv.width,cv.height);
+        _fotoSmall=cv.toDataURL('image/jpeg',0.55);
+      }catch(ef){_fotoSmall=null;}
+    }
     aiStatus.textContent='Analizando con IA Claude...';
     const esPDF = file.type==='application/pdf';
     const mediaType = esPDF ? 'application/pdf' : (file.type.startsWith('image/') ? file.type : 'image/jpeg');
@@ -1800,7 +1829,7 @@ function renderHistorial(){
     <td><span class="badge badge-${g.lote==='132A'?'A':g.lote==='132B'?'B':'C'}">${g.lote}</span></td>
     <td><span class="badge badge-${g.metodo==='efectivo'?'green':'blue'}">${g.metodo}</span></td>
     <td class="mono">${fmt(g.monto)}</td>
-    <td><button class="btn btn-xs btn-ghost" onclick="showGastoDetail(${g.id})">Ver</button></td>
+    <td><button class="btn btn-xs btn-ghost" onclick="showGastoDetail(${g.id})">${fotos[g.id]?'📷 ':''}Ver</button></td>
   </tr>`).join('');
   const tot=filtered.reduce((s,g)=>s+g.monto,0);
   document.getElementById('tabla-total').textContent='Total: '+fmt(tot);
@@ -1817,6 +1846,7 @@ function showGastoDetail(id){
     <div class="roi-row"><span class="roi-label">Método</span><span>${g.metodo}</span></div>
     <div class="roi-row hl"><span class="roi-label"><b>Monto</b></span><span class="roi-val gold">${fmt(g.monto)}</span></div>
     ${g.descripcion?`<div style="margin-top:12px;font-size:12px;color:var(--gray);line-height:1.6">${g.descripcion}</div>`:''}
+    ${fotos[g.id]?`<div style="margin-top:14px"><div style="font-size:10px;color:var(--gold);text-transform:uppercase;letter-spacing:1px;margin-bottom:6px">📷 Foto del Recibo</div><img src="${fotos[g.id]}" style="width:100%;border-radius:8px;border:1px solid rgba(201,168,76,0.2)" loading="lazy"></div>`:''}
     <div class="form-actions" style="margin-top:16px">
       <button class="btn btn-sm btn-danger" onclick="eliminarGasto(${g.id})">🗑️ Eliminar</button>
       <button class="btn btn-sm btn-ghost" onclick="closeModal()">Cerrar</button>
@@ -1825,7 +1855,9 @@ function showGastoDetail(id){
 }
 function eliminarGasto(id){
   if(!confirm('¿Eliminar este gasto?'))return;
-  gastos=gastos.filter(g=>g.id!==id);save();closeModal();renderHistorial();renderDashboard();
+  gastos=gastos.filter(g=>g.id!==id);
+  delete fotos[id];
+  save();closeModal();renderHistorial();renderDashboard();
 }
 
 // ============ SERVICIOS ============
@@ -2069,22 +2101,38 @@ function destroyChart(k){if(charts[k]){charts[k].destroy();delete charts[k];}}
 
 // ============ CONTRATISTAS ============
 function renderContratistas(){
-  document.getElementById('cont-list').innerHTML=contratistas.length?contratistas.map(c=>`
-    <div class="contratista-card">
-      <div class="cont-info">
+  document.getElementById('cont-list').innerHTML=contratistas.length?contratistas.map(c=>{
+    const pendiente=(c.montoContrato||0)-(c.pagado||0);
+    const tieneContrato=(c.montoContrato||0)>0;
+    return `
+    <div class="contratista-card" style="flex-wrap:wrap;gap:10px">
+      <div class="cont-info" style="flex:1;min-width:200px">
         <div class="cont-avatar">${c.nombre.charAt(0).toUpperCase()}</div>
         <div>
           <div class="cont-name">${c.nombre}</div>
           <div class="cont-esp">${c.especialidad}</div>
           ${c.tel?`<div class="cont-tel">${c.tel}</div>`:''}
-          ${c.notas?`<div style="font-size:11px;color:var(--gray);margin-top:2px">${c.notas}</div>`:''}
+          ${tieneContrato?`<div style="font-size:11px;margin-top:6px;display:flex;gap:10px;flex-wrap:wrap">
+            <span style="color:var(--gray)">Contrato: <b class="mono" style="color:var(--white)">${fmt(c.montoContrato)}</b></span>
+            <span style="color:var(--green)">Pagado: <b class="mono">${fmt(c.pagado||0)}</b></span>
+            ${pendiente>0
+              ?`<span style="color:var(--red)">Pendiente: <b class="mono">${fmt(pendiente)}</b></span>`
+              :`<span style="color:var(--green)">✅ Saldado</span>`}
+          </div>`:''}
+          ${tieneContrato?`<div style="margin-top:6px"><div class="prog-bar" style="height:4px"><div class="prog-fill" style="background:${pendiente<=0?'var(--green)':'var(--gold)'};width:${Math.min(100,((c.pagado||0)/(c.montoContrato||1))*100).toFixed(0)}%"></div></div></div>`:''}
+          ${c.notas?`<div style="font-size:11px;color:var(--gray);margin-top:4px">${c.notas}</div>`:''}
         </div>
       </div>
-      <div style="display:flex;gap:6px">
-        ${c.tel?`<a href="tel:${c.tel}" class="btn btn-xs btn-outline">📞</a>`:''}
-        <button class="btn btn-xs btn-danger" onclick="eliminarContratista(${c.id})">🗑️</button>
+      <div style="display:flex;flex-direction:column;gap:6px;align-items:flex-end;flex-shrink:0">
+        <div style="display:flex;gap:6px">
+          ${c.tel?`<a href="tel:${c.tel}" class="btn btn-xs btn-outline">📞</a>`:''}
+          <button class="btn btn-xs btn-ghost" onclick="editarContratista(${c.id})">✏️</button>
+          <button class="btn btn-xs btn-danger" onclick="eliminarContratista(${c.id})">🗑️</button>
+        </div>
+        ${tieneContrato&&pendiente>0?`<button class="btn btn-xs btn-gold" onclick="registrarPagoCont(${c.id})">💵 Registrar Pago</button>`:''}
       </div>
-    </div>`).join(''):'<div class="empty"><div class="empty-icon">👷</div>Sin contratistas</div>';
+    </div>`;
+  }).join(''):'<div class="empty"><div class="empty-icon">👷</div>Sin contratistas</div>';
 }
 function showContratistasModal(){
   openModal('Añadir Contratista',`
@@ -2099,6 +2147,7 @@ function showContratistasModal(){
         </select>
       </div>
       <div class="fg"><label>Teléfono</label><input type="tel" id="nc-tel" placeholder="(787) 000-0000"></div>
+      <div class="fg"><label>Monto del Contrato ($) <span style="font-size:10px;color:var(--gray);font-weight:400">— opcional</span></label><input type="number" id="nc-contrato" placeholder="0.00" step="0.01" min="0"></div>
       <div class="fg"><label>Notas</label><textarea id="nc-notas" placeholder="Notas adicionales..."></textarea></div>
     </div>
     <div class="form-actions" style="margin-top:14px">
@@ -2109,10 +2158,77 @@ function showContratistasModal(){
 function addContratista(){
   const nombre=document.getElementById('nc-nombre').value.trim();
   if(!nombre)return;
-  contratistas.push({id:Date.now(),nombre,especialidad:document.getElementById('nc-esp').value,tel:document.getElementById('nc-tel').value.trim(),notas:document.getElementById('nc-notas').value.trim()});
+  contratistas.push({id:Date.now(),nombre,especialidad:document.getElementById('nc-esp').value,tel:document.getElementById('nc-tel').value.trim(),notas:document.getElementById('nc-notas').value.trim(),montoContrato:parseFloat(document.getElementById('nc-contrato').value)||0,pagado:0});
   save();closeModal();renderContratistas();
 }
 function eliminarContratista(id){if(!confirm('¿Eliminar?'))return;contratistas=contratistas.filter(c=>c.id!==id);save();renderContratistas();}
+
+function editarContratista(id){
+  const c=contratistas.find(x=>x.id===id);if(!c)return;
+  openModal('Editar Contratista',`
+    <div class="form-grid" style="grid-template-columns:1fr;">
+      <div class="fg"><label>Nombre</label><input type="text" id="ec-nombre" value="${c.nombre}"></div>
+      <div class="fg"><label>Teléfono</label><input type="tel" id="ec-tel" value="${c.tel||''}"></div>
+      <div class="fg"><label>Monto del Contrato ($)</label><input type="number" id="ec-contrato" value="${c.montoContrato||''}" step="0.01" min="0" placeholder="0.00"></div>
+      <div class="fg"><label>Pagado hasta ahora ($)</label><input type="number" id="ec-pagado" value="${c.pagado||''}" step="0.01" min="0" placeholder="0.00"></div>
+      <div class="fg"><label>Notas</label><textarea id="ec-notas">${c.notas||''}</textarea></div>
+    </div>
+    <div class="form-actions" style="margin-top:14px">
+      <button class="btn btn-gold" onclick="guardarEdicionCont(${id})">Guardar</button>
+    </div>
+  `);
+}
+function guardarEdicionCont(id){
+  const c=contratistas.find(x=>x.id===id);if(!c)return;
+  c.nombre=document.getElementById('ec-nombre').value.trim()||c.nombre;
+  c.tel=document.getElementById('ec-tel').value.trim();
+  c.montoContrato=parseFloat(document.getElementById('ec-contrato').value)||0;
+  c.pagado=parseFloat(document.getElementById('ec-pagado').value)||0;
+  c.notas=document.getElementById('ec-notas').value.trim();
+  save();closeModal();renderContratistas();
+}
+
+function registrarPagoCont(id){
+  const c=contratistas.find(x=>x.id===id);if(!c)return;
+  const pendiente=(c.montoContrato||0)-(c.pagado||0);
+  openModal(`💵 Pago — ${c.nombre}`,`
+    <div style="background:rgba(201,168,76,0.06);border:1px solid rgba(201,168,76,0.15);border-radius:10px;padding:12px;margin-bottom:14px;font-size:12px">
+      <div style="display:flex;justify-content:space-between;margin-bottom:6px"><span style="color:var(--gray)">Contrato total</span><span class="mono">${fmt(c.montoContrato)}</span></div>
+      <div style="display:flex;justify-content:space-between;margin-bottom:6px"><span style="color:var(--green)">Pagado</span><span class="mono" style="color:var(--green)">${fmt(c.pagado||0)}</span></div>
+      <div style="display:flex;justify-content:space-between"><span style="color:var(--red)"><b>Pendiente</b></span><span class="mono" style="color:var(--red)"><b>${fmt(pendiente)}</b></span></div>
+    </div>
+    <div class="form-grid" style="grid-template-columns:1fr;">
+      <div class="fg"><label>Monto del Pago ($)</label><input type="number" id="cp-monto" placeholder="${pendiente.toFixed(2)}" step="0.01" min="0.01"></div>
+      <div class="fg"><label>Fecha</label><input type="date" id="cp-fecha" value="${new Date().toISOString().split('T')[0]}"></div>
+      <div class="fg"><label>Método de Pago</label>
+        <select id="cp-metodo"><option value="efectivo">💵 Efectivo</option><option value="ath">ATH Móvil</option><option value="cheque">🗒 Cheque</option><option value="transferencia">🏦 Transferencia</option></select>
+      </div>
+      <div class="fg"><label>Notas</label><input type="text" id="cp-notas" placeholder="Ej: Pago parcial semana 1"></div>
+    </div>
+    <div class="form-actions" style="margin-top:14px">
+      <button class="btn btn-gold" onclick="confirmarPagoCont(${id})">Registrar Pago</button>
+    </div>
+  `);
+}
+function confirmarPagoCont(id){
+  const monto=parseFloat(document.getElementById('cp-monto').value)||0;
+  if(monto<=0){alert('⚠️ Ingresa un monto válido.');return;}
+  const c=contratistas.find(x=>x.id===id);if(!c)return;
+  c.pagado=(c.pagado||0)+monto;
+  const notas=document.getElementById('cp-notas').value.trim();
+  const fecha=document.getElementById('cp-fecha').value||new Date().toISOString().split('T')[0];
+  const metodo=document.getElementById('cp-metodo').value;
+  gastos.push({
+    id:Date.now(),fecha,
+    contratista:c.nombre,tel:c.tel||'',
+    categoria:c.especialidad||'Otros',
+    lote:'Compartido',metodo,monto,
+    descripcion:notas||`Pago contrato — ${c.nombre}`,
+    tipo:'pago_contratista'
+  });
+  save();closeModal();renderContratistas();renderDashboard();
+  alert(`✅ Pago de ${fmt(monto)} registrado para ${c.nombre}`);
+}
 
 // ============ TIMELINE ============
 function renderTimeline(){
@@ -2631,6 +2747,40 @@ function exportarBanco(){
   a.click();
 }
 
+// ============ COMPARTIR REPORTE ============
+async function compartirReporte(){
+  const totalObra=gastos.reduce((s,g)=>s+(g.tipo!=='viaje'?g.monto:0),0);
+  const totalVJ=viajes.reduce((s,v)=>s+(v.total||0),0);
+  const totInv=60000+3500+totalObra+totalVJ;
+  const gan=320000-totInv;
+  const roi=totInv>0?(gan/totInv*100).toFixed(1):'0.0';
+  const hoy=new Date().toLocaleDateString('es-PR',{year:'numeric',month:'long',day:'numeric'});
+  const txt=
+`📊 *PROYECTO ARROYO 132*
+Reporte al ${hoy}
+
+📍 Lotes 132A y 132B · Bo. Las Palmas, Arroyo PR
+
+💰 Inversión acumulada:
+• Precio de compra: $60,000
+• Reparaciones / materiales: ${fmt(totalObra)}
+• Viajes y gestión: ${fmt(totalVJ)}
+• *Total invertido: ${fmt(totInv)}*
+
+📈 Retorno proyectado:
+• Valor estimado de venta: $320,000
+• Ganancia neta proyectada: ${fmt(gan)}
+• ROI sobre inversión: ${roi}%
+
+📋 ${gastos.length} transacciones · ${viajes.length} viajes registrados
+
+JGarcía Realty · Jesvan García · (787) 967-4000`;
+  try{
+    if(navigator.share) await navigator.share({title:'Arroyo 132 — Reporte',text:txt});
+    else{ await navigator.clipboard?.writeText(txt); alert('📋 Resumen copiado. Pégalo en WhatsApp o email.'); }
+  }catch(e){ if(e.name!=='AbortError') alert('Error al compartir: '+e.message); }
+}
+
 // ============ INIT ============
 updateResumen();
 renderTimeline();
@@ -2693,12 +2843,13 @@ async function backupToDrive(mostrarFeedback=false){
   if(!driveTokenValid()) return;
   const token = localStorage.getItem(DRIVE_TOKEN_KEY);
   const payload = JSON.stringify({
-    version: 2,
+    version: 3,
     fecha: new Date().toISOString(),
     gastos,
     servicios,
     contratistas,
     viajes,
+    fotos,
   });
 
   try {
@@ -2761,7 +2912,7 @@ async function restaurarDesdeDrive(){
       headers: { Authorization: `Bearer ${token}` }
     });
     const data = await res.json();
-    if(data.gastos){ gastos = data.gastos; save(); alert(`✅ ${gastos.length} gastos restaurados desde Drive.`); renderDashboard(); }
+    if(data.gastos){ gastos = data.gastos; if(data.fotos) fotos = data.fotos; save(); alert(`✅ ${gastos.length} gastos restaurados desde Drive.`); renderDashboard(); }
   } catch(err){ alert('Error al restaurar: ' + err.message); }
 }
 
@@ -2771,6 +2922,26 @@ async function restaurarDesdeDrive(){
   if(btn && DRIVE_CLIENT_ID) btn.textContent = driveTokenValid() ? '🟢' : '☁️';
   else if(btn) btn.title = 'Drive no configurado';
 })();
+
+// ============ PWA INSTALL ============
+let _deferredInstall=null;
+window.addEventListener('beforeinstallprompt',e=>{
+  e.preventDefault();
+  _deferredInstall=e;
+  document.getElementById('pwa-banner').style.display='flex';
+});
+window.addEventListener('appinstalled',()=>{
+  document.getElementById('pwa-banner').style.display='none';
+  _deferredInstall=null;
+});
+function installPWA(){
+  if(!_deferredInstall)return;
+  _deferredInstall.prompt();
+  _deferredInstall.userChoice.then(r=>{
+    if(r.outcome==='accepted') document.getElementById('pwa-banner').style.display='none';
+    _deferredInstall=null;
+  });
+}
 </script>
 </body>
 </html>
