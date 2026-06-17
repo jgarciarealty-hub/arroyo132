@@ -153,6 +153,10 @@ textarea{resize:vertical;min-height:60px;}
 .ai-loading{display:flex;align-items:center;gap:8px;color:var(--gray);font-size:13px;}
 .spinner{width:14px;height:14px;border:2px solid rgba(201,168,76,0.2);border-top-color:var(--gold);border-radius:50%;animation:spin 0.8s linear infinite;flex-shrink:0;}
 @keyframes spin{to{transform:rotate(360deg);}}
+/* LOTE BUTTONS */
+.btn-lote{background:rgba(255,255,255,0.04);border:1px solid rgba(255,255,255,0.1);color:var(--light);border-radius:10px;padding:14px 8px;font-size:13px;font-weight:600;cursor:pointer;transition:all 0.2s;width:100%;line-height:1.4;}
+.btn-lote:hover{border-color:rgba(201,168,76,0.4);background:rgba(201,168,76,0.06);}
+.btn-lote.active{background:rgba(201,168,76,0.15);border-color:var(--gold);color:var(--gold);}
 
 /* ROI ROWS */
 .roi-row{display:flex;justify-content:space-between;align-items:center;padding:9px 0;border-bottom:1px solid rgba(255,255,255,0.05);font-size:13px;}
@@ -528,88 +532,177 @@ textarea{resize:vertical;min-height:60px;}
     <div id="sec-registrar" class="section">
       <div class="page-header">
         <div class="page-title">Registrar Gasto</div>
-        <div class="page-sub">Factura digital o pago en efectivo</div>
+        <div class="page-sub">Toma foto del recibo — la IA llena todo</div>
       </div>
 
-      <div class="panel">
-        <div class="panel-title">📎 Subir Factura (IA extrae datos)</div>
-        <div class="upload-zone" id="uploadZone">
-          <input type="file" accept="image/*,application/pdf" id="facturaFile" onchange="handleUpload(event)">
-          <div class="upload-icon">📸</div>
-          <div class="upload-text">Toca para subir foto o PDF de factura<br><span>IA cataloga automáticamente</span></div>
+      <!-- PASO 1: CAPTURA -->
+      <div id="reg-paso1">
+        <!-- Botones cámara / galería -->
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:16px">
+          <label style="cursor:pointer">
+            <input type="file" accept="image/*" capture="environment" id="facturaCamera" style="display:none" onchange="handleUpload(event,'camera')">
+            <div style="background:var(--gold);color:var(--navy);border-radius:14px;padding:22px 12px;text-align:center;font-weight:700;font-size:15px;line-height:1.3;box-shadow:0 4px 16px rgba(201,168,76,0.3)">
+              <div style="font-size:38px;margin-bottom:8px">📷</div>
+              Tomar Foto
+              <div style="font-size:11px;font-weight:400;opacity:0.8;margin-top:4px">Cámara trasera</div>
+            </div>
+          </label>
+          <label style="cursor:pointer">
+            <input type="file" accept="image/*,application/pdf" id="facturaFile" style="display:none" onchange="handleUpload(event,'file')">
+            <div style="background:var(--navy2);border:1px solid rgba(201,168,76,0.25);border-radius:14px;padding:22px 12px;text-align:center;font-weight:600;font-size:15px;color:var(--white);line-height:1.3">
+              <div style="font-size:38px;margin-bottom:8px">📁</div>
+              Galería / PDF
+              <div style="font-size:11px;font-weight:400;color:var(--gray);margin-top:4px">Archivo existente</div>
+            </div>
+          </label>
         </div>
-        <div class="ai-box" id="aiBox">
-          <div class="ai-label">✨ Procesando con IA</div>
-          <div class="ai-loading"><div class="spinner"></div><span id="aiStatus">Analizando...</span></div>
+
+        <!-- IA procesando -->
+        <div class="ai-box" id="aiBox" style="margin-bottom:16px">
+          <div class="ai-label">✨ Procesando con IA Claude</div>
+          <div style="display:flex;align-items:center;gap:10px;margin-bottom:10px">
+            <div class="spinner"></div>
+            <span id="aiStatus" style="font-size:13px;color:var(--light)">Analizando...</span>
+          </div>
+          <img id="fotoPreview" style="display:none;width:100%;max-height:180px;object-fit:contain;border-radius:8px;margin-top:8px;border:1px solid rgba(201,168,76,0.2)">
+        </div>
+
+        <!-- Entrada manual rápida (colapsada por default) -->
+        <div style="text-align:center;margin-bottom:12px">
+          <button class="btn btn-ghost btn-sm" onclick="toggleManual()" id="btnManual">✏️ Ingresar sin foto</button>
         </div>
       </div>
 
-      <div class="panel">
-        <div class="panel-title">✏️ Entrada Manual / Efectivo</div>
-        <div class="form-grid">
-          <div class="fg"><label>Fecha</label><input type="date" id="f-fecha"></div>
-          <div class="fg"><label>Monto ($)</label><input type="number" id="f-monto" placeholder="0.00" step="0.01"></div>
-          <div class="fg"><label>Contratista / Proveedor</label><input type="text" id="f-cont" placeholder="Ej: Juan Electricista"></div>
-          <div class="fg"><label>Teléfono (opcional)</label><input type="tel" id="f-tel" placeholder="(787) 000-0000"></div>
-          <div class="fg"><label>Método de Pago</label>
-            <select id="f-metodo">
-              <option value="efectivo">💵 Efectivo</option>
-              <option value="ath">ATH Móvil</option>
-              <option value="cheque">Cheque</option>
-              <option value="tarjeta">Tarjeta</option>
-              <option value="transferencia">Transferencia</option>
-            </select>
+      <!-- FORMULARIO (oculto hasta que IA llene o manual) -->
+      <div id="reg-form" style="display:none">
+        <div class="panel" style="border-color:rgba(201,168,76,0.3)">
+          <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:16px">
+            <div class="panel-title" style="margin:0">📋 Revisar y Confirmar</div>
+            <button class="btn btn-xs btn-ghost" onclick="resetRegistrar()">↩ Nueva foto</button>
           </div>
-          <div class="fg"><label>Asignar a</label>
-            <select id="f-lote">
-              <option value="Compartido">🔀 Compartido (÷2 entre lotes)</option>
-              <option value="132A">🏠 Lote 132A</option>
-              <option value="132B">🏠 Lote 132B</option>
-            </select>
+
+          <!-- Preview miniatura -->
+          <div id="reg-preview-wrap" style="display:none;margin-bottom:14px">
+            <img id="reg-preview-img" style="width:100%;max-height:140px;object-fit:contain;border-radius:8px;border:1px solid rgba(201,168,76,0.15)">
           </div>
-          <div class="fg full"><label>Categoría</label>
-            <select id="f-cat">
-              <optgroup label="🏗️ Construcción">
-                <option>Techo</option>
-                <option>Albañilería / Estructura</option>
-                <option>Ventanas / Puertas</option>
-                <option>Pisos</option>
-              </optgroup>
-              <optgroup label="⚡ Sistemas">
-                <option>Electricidad</option>
-                <option>Plomería</option>
-                <option>AC / Ventilación</option>
-              </optgroup>
-              <optgroup label="🎨 Acabados">
-                <option>Pintura</option>
-                <option>Baños</option>
-                <option>Cocina</option>
-              </optgroup>
-              <optgroup label="🌿 Terreno">
-                <option value="Limpieza / Excavación">Limpieza / Excavación</option>
-                <option>Paisajismo</option>
-              </optgroup>
-              <optgroup label="📋 Legal / Admin">
-                <option>Permisos / ARPE</option>
-                <option>Agrimensura / Segregación</option>
-                <option>Abogado / Notaría</option>
-                <option>Costos de Cierre</option>
-              </optgroup>
-              <optgroup label="📦 Otros">
-                <option>Materiales</option>
-                <option>Transportación</option>
-                <option>Herramientas</option>
-                <option>Otros</option>
-              </optgroup>
-            </select>
+
+          <!-- Monto — campo grande y destacado -->
+          <div style="background:rgba(201,168,76,0.08);border:1px solid rgba(201,168,76,0.25);border-radius:12px;padding:16px;margin-bottom:14px;text-align:center">
+            <div style="font-size:11px;text-transform:uppercase;letter-spacing:1px;color:var(--gray);margin-bottom:6px">Monto Total</div>
+            <div style="display:flex;align-items:center;justify-content:center;gap:6px">
+              <span style="font-size:28px;color:var(--gold);font-weight:700">$</span>
+              <input type="number" id="f-monto" placeholder="0.00" step="0.01"
+                style="font-size:32px;font-family:'DM Mono',monospace;color:var(--gold);font-weight:700;background:transparent;border:none;outline:none;width:160px;text-align:left">
+            </div>
           </div>
-          <div class="fg full"><label>Descripción / Notas</label>
-            <textarea id="f-desc" placeholder="Describe el trabajo realizado..."></textarea>
+
+          <div class="form-grid">
+            <div class="fg"><label>Fecha</label><input type="date" id="f-fecha"></div>
+            <div class="fg"><label>Método de Pago</label>
+              <select id="f-metodo">
+                <option value="efectivo">💵 Efectivo</option>
+                <option value="ath">ATH Móvil</option>
+                <option value="cheque">🗒 Cheque</option>
+                <option value="tarjeta">💳 Tarjeta</option>
+                <option value="transferencia">🏦 Transferencia</option>
+              </select>
+            </div>
+
+            <!-- Proveedor con dropdown inteligente -->
+            <div class="fg full">
+              <label>Proveedor / Contratista</label>
+              <div style="position:relative">
+                <select id="f-cont-select" onchange="onProveedorSelect(this.value)" style="width:100%">
+                  <option value="">— Selecciona o escribe nuevo —</option>
+                  <optgroup label="⭐ Usados antes" id="proveedores-recientes"></optgroup>
+                  <optgroup label="🏪 Ferreterías">
+                    <option>Toa Alta Hardware</option>
+                    <option>AIG Electrical Supply Inc.</option>
+                    <option>Ferreterías Maderas 3C</option>
+                    <option>La Ferretería Cataño</option>
+                    <option>National Lumber</option>
+                    <option>Caribbean Lumber Victory</option>
+                    <option>Ferretería Cosme</option>
+                    <option>Caguas Commercial</option>
+                    <option>Home Depot</option>
+                    <option>Lowe's</option>
+                  </optgroup>
+                  <optgroup label="⚡ Contratistas">
+                    <option>David Rodríguez (Electricista)</option>
+                    <option>Edgardo Rodriguez (Plomero)</option>
+                    <option>Royal Electric</option>
+                    <option>Steel Services</option>
+                  </optgroup>
+                  <optgroup label="🏗️ Otros">
+                    <option>Target Rental Car</option>
+                    <option>Carmelo Sierra (Agrimensor)</option>
+                  </optgroup>
+                  <option value="__nuevo__">✏️ Escribir nombre nuevo...</option>
+                </select>
+              </div>
+              <input type="text" id="f-cont" placeholder="Nombre del proveedor"
+                style="margin-top:8px;display:none" oninput="syncProveedorTexto(this.value)">
+              <input type="tel" id="f-tel" placeholder="Teléfono (opcional)" style="margin-top:8px">
+            </div>
+
+            <!-- Categoría -->
+            <div class="fg full"><label>Categoría</label>
+              <select id="f-cat">
+                <optgroup label="🏗️ Construcción">
+                  <option>Techo</option>
+                  <option>Albañilería / Estructura</option>
+                  <option>Ventanas / Puertas</option>
+                  <option>Pisos</option>
+                </optgroup>
+                <optgroup label="⚡ Sistemas">
+                  <option>Electricidad</option>
+                  <option>Plomería</option>
+                  <option>AC / Ventilación</option>
+                </optgroup>
+                <optgroup label="🎨 Acabados">
+                  <option>Pintura</option>
+                  <option>Baños</option>
+                  <option>Cocina</option>
+                </optgroup>
+                <optgroup label="🌿 Terreno">
+                  <option value="Limpieza / Excavación">Limpieza / Excavación</option>
+                  <option>Paisajismo</option>
+                </optgroup>
+                <optgroup label="📋 Legal / Admin">
+                  <option>Permisos / ARPE</option>
+                  <option>Agrimensura / Segregación</option>
+                  <option>Abogado / Notaría</option>
+                  <option>Costos de Cierre</option>
+                </optgroup>
+                <optgroup label="📦 Otros">
+                  <option>Materiales</option>
+                  <option>Transportación</option>
+                  <option>Herramientas</option>
+                  <option>Otros</option>
+                </optgroup>
+              </select>
+            </div>
+
+            <!-- Lote — botones grandes -->
+            <div class="fg full">
+              <label>Asignar a</label>
+              <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:8px;margin-top:4px" id="lote-btns">
+                <button type="button" class="btn-lote active" data-lote="Compartido" onclick="selLote('Compartido',this)">🔀<br><small>Compartido</small></button>
+                <button type="button" class="btn-lote" data-lote="132A" onclick="selLote('132A',this)">🏠<br><small>Lote 132A</small></button>
+                <button type="button" class="btn-lote" data-lote="132B" onclick="selLote('132B',this)">🏠<br><small>Lote 132B</small></button>
+              </div>
+              <input type="hidden" id="f-lote" value="Compartido">
+            </div>
+
+            <div class="fg full"><label>Descripción / Notas</label>
+              <textarea id="f-desc" placeholder="¿Qué se compró o qué trabajo se hizo?" rows="2"></textarea>
+            </div>
           </div>
-        </div>
-        <div class="form-actions">
-          <button class="btn btn-ghost" onclick="clearForm()">Limpiar</button>
-          <button class="btn btn-gold" onclick="guardarGasto()">💾 Guardar Gasto</button>
+
+          <div class="form-actions" style="margin-top:16px">
+            <button class="btn btn-ghost" onclick="resetRegistrar()">Cancelar</button>
+            <button class="btn btn-gold" style="flex:1;padding:14px;font-size:16px" onclick="guardarGasto()">💾 Guardar Gasto</button>
+          </div>
         </div>
       </div>
     </div>
@@ -1589,62 +1682,150 @@ function guardarGasto(){
   const fecha=document.getElementById('f-fecha').value;
   const monto=parseFloat(document.getElementById('f-monto').value);
   if(!fecha||!monto||monto<=0){alert('⚠️ Fecha y monto son requeridos.');return;}
+  const contVal=document.getElementById('f-cont').value.trim()||
+                (document.getElementById('f-cont-select')?.value&&document.getElementById('f-cont-select').value!=='__nuevo__'&&document.getElementById('f-cont-select').value?document.getElementById('f-cont-select').value:'')||'Sin especificar';
   gastos.push({
     id:Date.now(),fecha,
-    contratista:document.getElementById('f-cont').value.trim()||'Sin especificar',
+    contratista:contVal,
     tel:document.getElementById('f-tel').value.trim(),
     categoria:document.getElementById('f-cat').value,
-    lote:document.getElementById('f-lote').value,
+    lote:document.getElementById('f-lote').value||'Compartido',
     metodo:document.getElementById('f-metodo').value,
     monto,
     descripcion:document.getElementById('f-desc').value.trim(),
     tipo:'manual'
   });
-  save();clearForm();
-  alert('✅ Gasto guardado.\nDLBM — ¡Que Dios bendiga cada inversión!');
-}
-function clearForm(){
-  ['f-fecha','f-monto','f-cont','f-tel','f-desc'].forEach(id=>document.getElementById(id).value='');
+  save();resetRegistrar();
+  alert('✅ Gasto guardado. ¡Que Dios bendiga cada inversión!');
 }
 
-// ============ FILE UPLOAD + IA ============
-async function handleUpload(e){
+// ============ REGISTRAR — UX CON CÁMARA ============
+let _fotoDataUrl=null;
+
+function selLote(val,btn){
+  document.getElementById('f-lote').value=val;
+  document.querySelectorAll('.btn-lote').forEach(b=>b.classList.remove('active'));
+  btn.classList.add('active');
+}
+
+function onProveedorSelect(val){
+  const txt=document.getElementById('f-cont');
+  if(val==='__nuevo__'){txt.style.display='block';txt.focus();}
+  else{txt.style.display='none';txt.value=val;}
+}
+
+function syncProveedorTexto(val){
+  // mantiene el select en posición "otro" mientras el usuario escribe
+}
+
+function toggleManual(){
+  const form=document.getElementById('reg-form');
+  if(form.style.display==='none'){
+    form.style.display='block';
+    document.getElementById('f-fecha').value=new Date().toISOString().split('T')[0];
+  } else {
+    form.style.display='none';
+  }
+}
+
+function resetRegistrar(){
+  _fotoDataUrl=null;
+  document.getElementById('aiBox').classList.remove('show');
+  document.getElementById('aiStatus').textContent='Analizando...';
+  document.getElementById('aiBox').querySelector('.spinner').style.display='';
+  document.getElementById('fotoPreview').style.display='none';
+  document.getElementById('reg-form').style.display='none';
+  document.getElementById('reg-preview-wrap').style.display='none';
+  // reset lote
+  document.querySelectorAll('.btn-lote').forEach(b=>b.classList.remove('active'));
+  const defLote=document.querySelector('.btn-lote[data-lote="Compartido"]');
+  if(defLote)defLote.classList.add('active');
+  document.getElementById('f-lote').value='Compartido';
+  // reset campos
+  ['f-fecha','f-monto','f-tel','f-desc'].forEach(id=>{const el=document.getElementById(id);if(el)el.value='';});
+  const contTxt=document.getElementById('f-cont');if(contTxt){contTxt.value='';contTxt.style.display='none';}
+  const contSel=document.getElementById('f-cont-select');if(contSel)contSel.value='';
+  // reset file inputs
+  ['facturaCamera','facturaFile'].forEach(id=>{const el=document.getElementById(id);if(el)el.value='';});
+  // rebuild proveedores
+  _buildProveedoresRecientes();
+}
+
+function _buildProveedoresRecientes(){
+  const grp=document.getElementById('proveedores-recientes');
+  if(!grp)return;
+  const conteos={};
+  gastos.forEach(g=>{if(g.contratista&&g.contratista!=='Sin especificar')conteos[g.contratista]=(conteos[g.contratista]||0)+1;});
+  const top=Object.entries(conteos).sort((a,b)=>b[1]-a[1]).slice(0,8);
+  grp.innerHTML=top.map(([n,c])=>`<option value="${n}">${n} (${c}x)</option>`).join('');
+}
+
+async function handleUpload(e, source){
   const file=e.target.files[0];if(!file)return;
   const aiBox=document.getElementById('aiBox'),aiStatus=document.getElementById('aiStatus');
-  aiBox.classList.add('show');aiStatus.textContent='Leyendo imagen...';
+  aiBox.classList.add('show');
+  aiStatus.textContent='Leyendo imagen...';
+
+  // mostrar preview
+  const fotoPreview=document.getElementById('fotoPreview');
+  const url=URL.createObjectURL(file);
+  fotoPreview.src=url;fotoPreview.style.display='block';
+  _fotoDataUrl=url;
+
   try{
     const base64=await toBase64(file);
     aiStatus.textContent='Analizando con IA Claude...';
-    const res=await fetch('https://api.anthropic.com/v1/messages',{
+    const res=await fetch('/api/analyze-invoice',{
       method:'POST',
       headers:{'Content-Type':'application/json'},
       body:JSON.stringify({
-        model:'claude-sonnet-4-20250514',max_tokens:1000,
         messages:[{role:'user',content:[
-          {type:'image',source:{type:'base64',media_type:file.type||'image/jpeg',data:base64}},
-          {type:'text',text:`Analiza esta factura de construcción/remodelación en Puerto Rico. Responde SOLO con JSON sin backticks ni texto adicional:
-{"fecha":"YYYY-MM-DD","monto":0.00,"contratista":"nombre empresa o persona","categoria":"una de: Techo|Electricidad|Plomería|Albañilería / Estructura|Pintura|Ventanas / Puertas|Baños|Cocina|Limpieza / Excavación|Materiales|Permisos / ARPE|Agrimensura / Segregación|Abogado / Notaría|Otros","descripcion":"descripción breve del trabajo"}
-Fecha de hoy si no está clara: ${new Date().toISOString().split('T')[0]}`}
+          {type:'image',source:{type:'base64',media_type:file.type.startsWith('image')?file.type:'image/jpeg',data:base64}},
+          {type:'text',text:`Analiza esta factura de construcción/remodelación en Puerto Rico. Responde SOLO con JSON puro sin backticks:
+{"fecha":"YYYY-MM-DD","monto":0.00,"contratista":"nombre empresa o persona","categoria":"una de: Techo|Electricidad|Plomería|Albañilería / Estructura|Pintura|Ventanas / Puertas|Baños|Cocina|Limpieza / Excavación|Materiales|Permisos / ARPE|Agrimensura / Segregación|Abogado / Notaría|Otros","descripcion":"descripción breve"}
+Hoy: ${new Date().toISOString().split('T')[0]}`}
         ]}]
       })
     });
     const data=await res.json();
     const text=data.content?.map(c=>c.text||'').join('')||'';
     let ext={};
-    try{ext=JSON.parse(text.trim());}catch{const m=text.match(/\{[\s\S]*?\}/);if(m)ext=JSON.parse(m[0]);}
+    try{ext=JSON.parse(text.trim());}catch{const m=text.match(/\{[\s\S]*?\}/);if(m)try{ext=JSON.parse(m[0]);}catch{}}
     if(ext.fecha)document.getElementById('f-fecha').value=ext.fecha;
+    else document.getElementById('f-fecha').value=new Date().toISOString().split('T')[0];
     if(ext.monto)document.getElementById('f-monto').value=ext.monto;
-    if(ext.contratista)document.getElementById('f-cont').value=ext.contratista;
+    if(ext.contratista){
+      const sel=document.getElementById('f-cont-select');
+      // buscar si ya existe en el select
+      let found=false;
+      for(let o of sel.options){if(o.value.toLowerCase().includes(ext.contratista.toLowerCase())||ext.contratista.toLowerCase().includes(o.value.toLowerCase().split('(')[0].trim())){sel.value=o.value;found=true;break;}}
+      if(!found){sel.value='__nuevo__';const txt=document.getElementById('f-cont');txt.style.display='block';txt.value=ext.contratista;}
+    }
     if(ext.descripcion)document.getElementById('f-desc').value=ext.descripcion;
     if(ext.categoria){
       const sel=document.getElementById('f-cat');
-      for(let o of sel.options){if(o.value===ext.categoria){sel.value=o.value;break;}}
+      for(let o of sel.options){if(o.value===ext.categoria||o.text===ext.categoria){sel.value=o.value;break;}}
     }
-    aiStatus.textContent='✅ Datos extraídos — revisa y guarda';
+    aiStatus.textContent='✅ Datos extraídos — revisa y confirma';
     aiBox.querySelector('.spinner').style.display='none';
-  }catch(err){aiStatus.textContent='⚠️ No pude leer — ingresa manualmente.';console.error(err);}
+    // mostrar formulario de confirmación
+    const form=document.getElementById('reg-form');
+    form.style.display='block';
+    const pw=document.getElementById('reg-preview-wrap'),pi=document.getElementById('reg-preview-img');
+    pw.style.display='block';pi.src=_fotoDataUrl||'';
+  }catch(err){
+    aiStatus.textContent='⚠️ No pude leer — ingresa los datos manualmente.';
+    aiBox.querySelector('.spinner').style.display='none';
+    document.getElementById('reg-form').style.display='block';
+    document.getElementById('f-fecha').value=new Date().toISOString().split('T')[0];
+    console.error(err);
+  }
 }
+
 function toBase64(file){return new Promise((r,j)=>{const rd=new FileReader();rd.onload=()=>r(rd.result.split(',')[1]);rd.onerror=j;rd.readAsDataURL(file);});}
+
+// Construir lista de proveedores al cargar
+document.addEventListener('DOMContentLoaded',()=>{_buildProveedoresRecientes();});
 
 // ============ HISTORIAL ============
 function renderHistorial(){
