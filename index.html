@@ -13,6 +13,7 @@
 <title>Proyecto Arroyo 132 — JGarcía Realty</title>
 <link href="https://fonts.googleapis.com/css2?family=Cormorant+Garamond:ital,wght@0,400;0,600;0,700;1,400&family=DM+Sans:wght@300;400;500;600&family=DM+Mono:wght@400;500&display=swap" rel="stylesheet">
 <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js"></script>
+<script src="https://accounts.google.com/gsi/client" async defer></script>
 <style>
 :root {
   --navy:#08152a; --navy2:#0f2040; --navy3:#162d52;
@@ -395,6 +396,12 @@ textarea{resize:vertical;min-height:60px;}
       <div style="display:flex;align-items:center;gap:6px;font-size:11px;color:var(--gray);">
         <div class="status-dot"></div>Activo
       </div>
+      <!-- Drive backup indicator -->
+      <button id="btn-drive" onclick="driveAction()" title="Backup Google Drive"
+        style="background:none;border:none;cursor:pointer;font-size:18px;padding:4px 6px;border-radius:8px;transition:background 0.2s"
+        onmouseover="this.style.background='rgba(255,255,255,0.08)'" onmouseout="this.style.background='none'">
+        ☁️
+      </button>
       <button class="btn btn-sm btn-outline" onclick="exportCSV()">📥 CSV</button>
       <button class="btn btn-sm btn-ghost" onclick="window.print()">🖨️</button>
       <button class="btn btn-sm btn-ghost" onclick="manualLock()" title="Bloquear app" style="color:var(--gold)">🔒</button>
@@ -1511,6 +1518,8 @@ function save(){
   localStorage.setItem('a132_cont',JSON.stringify(contratistas));
   localStorage.setItem('a132_tl',JSON.stringify(timeline));
   localStorage.setItem('a132_docs',JSON.stringify(docs));
+  // Backup automático a Google Drive si está conectado
+  if(typeof backupToDrive==='function') backupToDrive(false);
 }
 
 // ============ UTILS ============
@@ -2626,6 +2635,142 @@ function exportarBanco(){
 updateResumen();
 renderTimeline();
 renderDocs();
+
+// ============ GOOGLE DRIVE BACKUP ============
+const DRIVE_CLIENT_ID = ''; // ← pegar aquí tu Google OAuth Client ID
+const DRIVE_FILE_NAME  = 'arroyo132-datos.json';
+const DRIVE_SCOPE      = 'https://www.googleapis.com/auth/drive.file';
+const DRIVE_TOKEN_KEY  = 'a132_drive_token';
+const DRIVE_EXPIRY_KEY = 'a132_drive_expiry';
+const DRIVE_FILE_KEY   = 'a132_drive_file_id';
+
+let driveTokenClient = null;
+
+function driveTokenValid(){
+  return !!localStorage.getItem(DRIVE_TOKEN_KEY) &&
+    Date.now() < parseInt(localStorage.getItem(DRIVE_EXPIRY_KEY)||'0');
+}
+
+function driveAction(){
+  if(!DRIVE_CLIENT_ID){
+    alert('⚙️ Drive no está configurado aún.\nPide a Claude que agregue el Google Client ID.');
+    return;
+  }
+  if(driveTokenValid()){
+    // Ya conectado — hacer backup manual
+    backupToDrive(true);
+  } else {
+    // Conectar
+    initDriveClient();
+    driveTokenClient.requestAccessToken();
+  }
+}
+
+function initDriveClient(){
+  if(driveTokenClient) return;
+  driveTokenClient = google.accounts.oauth2.initTokenClient({
+    client_id: DRIVE_CLIENT_ID,
+    scope: DRIVE_SCOPE,
+    callback: (resp) => {
+      if(resp.access_token){
+        localStorage.setItem(DRIVE_TOKEN_KEY, resp.access_token);
+        localStorage.setItem(DRIVE_EXPIRY_KEY, String(Date.now() + 3500 * 1000));
+        updateDriveBtn('✅');
+        backupToDrive(true);
+      }
+    },
+  });
+}
+
+function updateDriveBtn(icon){
+  const btn = document.getElementById('btn-drive');
+  if(btn) btn.textContent = icon;
+  // Restaurar ícono normal a los 3 segundos
+  if(icon !== '☁️') setTimeout(()=>{ if(btn) btn.textContent = driveTokenValid()?'🟢':'☁️'; }, 3000);
+}
+
+async function backupToDrive(mostrarFeedback=false){
+  if(!driveTokenValid()) return;
+  const token = localStorage.getItem(DRIVE_TOKEN_KEY);
+  const payload = JSON.stringify({
+    version: 2,
+    fecha: new Date().toISOString(),
+    gastos,
+    servicios,
+    contratistas,
+    viajes,
+  });
+
+  try {
+    updateDriveBtn('⏳');
+    let fileId = localStorage.getItem(DRIVE_FILE_KEY);
+
+    if(!fileId){
+      // Buscar si ya existe el archivo en Drive
+      const search = await fetch(
+        `https://www.googleapis.com/drive/v3/files?q=name='${DRIVE_FILE_NAME}'+and+trashed=false&fields=files(id,name)`,
+        { headers: { Authorization: `Bearer ${token}` } }
+      );
+      const found = await search.json();
+      if(found.files && found.files.length > 0){
+        fileId = found.files[0].id;
+        localStorage.setItem(DRIVE_FILE_KEY, fileId);
+      }
+    }
+
+    if(fileId){
+      // Actualizar archivo existente
+      await fetch(`https://www.googleapis.com/upload/drive/v3/files/${fileId}?uploadType=media`, {
+        method: 'PATCH',
+        headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
+        body: payload,
+      });
+    } else {
+      // Crear archivo nuevo
+      const meta = await fetch('https://www.googleapis.com/drive/v3/files', {
+        method: 'POST',
+        headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
+        body: JSON.stringify({ name: DRIVE_FILE_NAME, mimeType: 'application/json' }),
+      });
+      const metaJson = await meta.json();
+      if(metaJson.id){
+        localStorage.setItem(DRIVE_FILE_KEY, metaJson.id);
+        await fetch(`https://www.googleapis.com/upload/drive/v3/files/${metaJson.id}?uploadType=media`, {
+          method: 'PATCH',
+          headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
+          body: payload,
+        });
+      }
+    }
+    updateDriveBtn('✅');
+    if(mostrarFeedback) console.log('✅ Backup guardado en Google Drive');
+  } catch(err){
+    updateDriveBtn('⚠️');
+    console.error('Drive backup error:', err);
+  }
+}
+
+// Restaurar datos desde Drive
+async function restaurarDesdeDrive(){
+  if(!driveTokenValid()){ alert('Primero conecta Google Drive tocando el ícono ☁️'); return; }
+  const token = localStorage.getItem(DRIVE_TOKEN_KEY);
+  const fileId = localStorage.getItem(DRIVE_FILE_KEY);
+  if(!fileId){ alert('No se encontró backup en Drive. Guarda un gasto primero para crear el archivo.'); return; }
+  try {
+    const res = await fetch(`https://www.googleapis.com/drive/v3/files/${fileId}?alt=media`, {
+      headers: { Authorization: `Bearer ${token}` }
+    });
+    const data = await res.json();
+    if(data.gastos){ gastos = data.gastos; save(); alert(`✅ ${gastos.length} gastos restaurados desde Drive.`); renderDashboard(); }
+  } catch(err){ alert('Error al restaurar: ' + err.message); }
+}
+
+// Actualizar ícono al iniciar
+(function initDriveUI(){
+  const btn = document.getElementById('btn-drive');
+  if(btn && DRIVE_CLIENT_ID) btn.textContent = driveTokenValid() ? '🟢' : '☁️';
+  else if(btn) btn.title = 'Drive no configurado';
+})();
 </script>
 </body>
 </html>
