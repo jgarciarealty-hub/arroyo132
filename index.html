@@ -652,7 +652,7 @@ textarea{resize:vertical;min-height:60px;}
                   <option>Costos de Cierre</option>
                 </optgroup>
                 <optgroup label="📦 Otros">
-                  <option>Materiales</option>
+                  <option selected>Materiales</option>
                   <option>Transportación</option>
                   <option>Herramientas</option>
                   <option>Otros</option>
@@ -1431,7 +1431,7 @@ function changePinFlow(){
 }
 
 // ============ DATA STORE ============
-let gastos = JSON.parse(localStorage.getItem('a132_gastos')||'[]');
+let gastos = (()=>{ try{ return JSON.parse(localStorage.getItem('a132_gastos')||'[]'); }catch(e){ localStorage.removeItem('a132_gastos'); return []; } })();
 let servicios = JSON.parse(localStorage.getItem('a132_servicios')||'null') || {
   '132A': {
     AAA: [
@@ -1791,7 +1791,7 @@ function renderHistorial(){
   const filtered=gastos.filter(g=>(fl?g.lote===fl:true)&&(fc?g.categoria===fc:true)).sort((a,b)=>new Date(b.fecha)-new Date(a.fecha));
   const tbody=document.getElementById('tabla-gastos');
   const sub=document.getElementById('hist-sub');
-  if(sub)sub.textContent=gastos.length===0?'Sin registros — carga tus datos primero':gastos.length+' transacciones en total'+(fl||fc?' — filtros aplicados':'');
+  if(sub)sub.textContent=gastos.length===0?'Sin registros — carga tus datos primero':(gastos.length===1?'1 transacción en total':gastos.length+' transacciones en total')+(fl||fc?' — filtros aplicados':'');
   if(!filtered.length){tbody.innerHTML='<tr><td colspan="7"><div class="empty"><div class="empty-icon">📋</div>'+(gastos.length===0?'No hay datos cargados':'Ningún resultado con estos filtros')+'</div></td></tr>';document.getElementById('tabla-total').textContent='';return;}
   tbody.innerHTML=filtered.map(g=>`<tr>
     <td class="mono" style="font-size:12px">${g.fecha}</td>
