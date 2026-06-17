@@ -1712,24 +1712,34 @@ async function handleUpload(e, source){
   aiBox.classList.add('show');
   aiStatus.textContent='Leyendo imagen...';
 
-  // mostrar preview
+  // mostrar preview (imagen directa; PDFs muestran ícono)
   const fotoPreview=document.getElementById('fotoPreview');
-  const url=URL.createObjectURL(file);
-  fotoPreview.src=url;fotoPreview.style.display='block';
-  _fotoDataUrl=url;
+  if(file.type==='application/pdf'){
+    fotoPreview.src='data:image/svg+xml,<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 80 80"><rect width="80" height="80" fill="%23162032" rx="10"/><text y="52" x="50%" dominant-baseline="middle" text-anchor="middle" font-size="40">📄</text><text y="70" x="50%" dominant-baseline="middle" text-anchor="middle" font-size="10" fill="%23c9a84c">PDF</text></svg>';
+    _fotoDataUrl=null;
+  } else {
+    const url=URL.createObjectURL(file);
+    fotoPreview.src=url;_fotoDataUrl=url;
+  }
+  fotoPreview.style.display='block';
 
   try{
     const base64=await toBase64(file);
     aiStatus.textContent='Analizando con IA Claude...';
+    const esPDF = file.type==='application/pdf';
+    const mediaType = esPDF ? 'application/pdf' : (file.type.startsWith('image/') ? file.type : 'image/jpeg');
+    const contentBlock = esPDF
+      ? {type:'document', source:{type:'base64', media_type:'application/pdf', data:base64}}
+      : {type:'image', source:{type:'base64', media_type:mediaType, data:base64}};
     const res=await fetch('/api/analyze-invoice',{
       method:'POST',
       headers:{'Content-Type':'application/json'},
       body:JSON.stringify({
         messages:[{role:'user',content:[
-          {type:'image',source:{type:'base64',media_type:file.type.startsWith('image')?file.type:'image/jpeg',data:base64}},
-          {type:'text',text:`Analiza esta factura de construcción/remodelación en Puerto Rico. Responde SOLO con JSON puro sin backticks:
-{"fecha":"YYYY-MM-DD","monto":0.00,"contratista":"nombre empresa o persona","categoria":"una de: Techo|Electricidad|Plomería|Albañilería / Estructura|Pintura|Ventanas / Puertas|Baños|Cocina|Limpieza / Excavación|Materiales|Permisos / ARPE|Agrimensura / Segregación|Abogado / Notaría|Otros","descripcion":"descripción breve"}
-Hoy: ${new Date().toISOString().split('T')[0]}`}
+          contentBlock,
+          {type:'text',text:`Analiza esta factura de construcción/remodelación en Puerto Rico. Responde SOLO con JSON puro sin backticks ni markdown:
+{"fecha":"YYYY-MM-DD","monto":0.00,"contratista":"nombre empresa o persona","categoria":"una de: Techo|Electricidad|Plomería|Albañilería / Estructura|Pintura|Ventanas / Puertas|Baños|Cocina|Limpieza / Excavación|Materiales|Permisos / ARPE|Agrimensura / Segregación|Abogado / Notaría|Otros","descripcion":"descripción breve del trabajo o materiales comprados"}
+Si no encuentras algún dato, usa "" para texto y 0 para monto. Hoy: ${new Date().toISOString().split('T')[0]}`}
         ]}]
       })
     });
