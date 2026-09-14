@@ -683,6 +683,24 @@ textarea{resize:vertical;min-height:60px;}
             <div class="fg full"><label>Descripción / Notas</label>
               <textarea id="f-desc" placeholder="¿Qué se compró o qué trabajo se hizo?" rows="2"></textarea>
             </div>
+
+            <!-- Pago parcial / abono (portado desde commit fc0a54e, ver docs/ESTADO_ARROYO_132.md) -->
+            <div class="fg full">
+              <label style="display:flex;align-items:center;gap:8px;font-weight:400;text-transform:none">
+                <input type="checkbox" id="f-abono" onchange="toggleAbono()" style="width:auto">
+                ¿Es pago parcial? — quedan abonos pendientes hasta saldar
+              </label>
+            </div>
+            <div id="f-abono-wrap" style="display:none" class="fg full">
+              <div style="background:rgba(201,168,76,0.06);border:1px solid rgba(201,168,76,0.2);border-radius:8px;padding:10px;display:grid;gap:10px">
+                <div class="fg"><label>Nombre de cuenta / Referencia</label>
+                  <input type="text" id="f-cuenta" placeholder="Ej: Agrimensor Pérez - Segregación">
+                </div>
+                <div class="fg"><label>Monto total acordado ($)</label>
+                  <input type="number" id="f-total" placeholder="0.00" step="0.01">
+                </div>
+              </div>
+            </div>
           </div>
 
           <div class="form-actions" style="margin-top:16px">
@@ -717,6 +735,11 @@ textarea{resize:vertical;min-height:60px;}
         </select>
         <button class="btn btn-sm btn-outline" onclick="exportCSV()">📥 CSV</button>
         <button class="btn btn-sm btn-ghost" onclick="window.print()">🖨️</button>
+      </div>
+
+      <div id="panel-cuentas" class="panel" style="display:none;margin-bottom:14px">
+        <div class="panel-title">💳 Cuentas con Abonos</div>
+        <div id="lista-cuentas"></div>
       </div>
 
       <div class="table-wrap">
@@ -1442,6 +1465,28 @@ function changePinFlow(){
 
 // ============ DATA STORE ============
 let gastos = (()=>{ try{ return JSON.parse(localStorage.getItem('a132_gastos')||'[]'); }catch(e){ localStorage.removeItem('a132_gastos'); return []; } })();
+// Recibos recuperados manualmente — se añaden si no existen (portado desde commit fc0a54e,
+// perdido por accidente en el commit 7735957 del 2026-06-16; ver docs/ESTADO_ARROYO_132.md)
+(function recuperarRecibos(){
+  const recuperados=[
+    {id:700001,fecha:'2026-04-15',contratista:'Ferreterías Maderas 3C',tel:'(787) 474-3333',categoria:'Electricidad',lote:'Compartido',metodo:'tarjeta',monto:293.02,descripcion:'Inv C99711 — Curva Elect. PVC 1½" SCH40 x5, Tubo Elect. PVC Gray 1½"×10\' x17, Tubo Galvanizado ½"×20\', Tubo Galvanizado 2"×20\'',tipo:'manual'},
+    {id:700002,fecha:'2026-04-13',contratista:'AIG Electrical Supply Inc.',tel:'(787) 995-3333',categoria:'Electricidad',lote:'Compartido',metodo:'efectivo',monto:30.22,descripcion:'Ticket INSJ26-07955 — Rigid Condulet Clamp F2 x2 ($16.27), Ground Pipe Clamp ½"-1" x2 ($13.95)',tipo:'manual'},
+    {id:700003,fecha:'2026-04-13',contratista:'Toa Alta Hardware',tel:'(787) 966-7426',categoria:'Electricidad',lote:'Compartido',metodo:'efectivo',monto:22.28,descripcion:'Trans #077757 — Irrigation Valve Box x2 @ $9.99',tipo:'manual'},
+    {id:700004,fecha:'2026-04-13',contratista:'Caribbean Lumber Victory',tel:'(787) 785-5240',categoria:'Electricidad',lote:'Compartido',metodo:'efectivo',monto:5.09,descripcion:'Conector PVC SCH 40 1½" x2, Locknut Rigido 1-1/2 x2',tipo:'manual'},
+    {id:700005,fecha:'2026-04-15',contratista:'Steel Services',tel:'',categoria:'Electricidad',lote:'Compartido',metodo:'efectivo',monto:267.42,descripcion:'Job F26-SSS1 — Varillas 5/8 y aros de ½" para pedesta LUMA, hierro deformado Grade 60, 381.24 lbs',tipo:'manual'},
+    {id:700006,fecha:'2026-04-12',contratista:'Royal Electric',tel:'',categoria:'Electricidad',lote:'Compartido',metodo:'efectivo',monto:12.27,descripcion:'Wire Holder',tipo:'manual'},
+    {id:700007,fecha:'2026-04-15',contratista:'La Ferretería Cataño',tel:'',categoria:'Electricidad',lote:'Compartido',metodo:'efectivo',monto:28.88,descripcion:'2 varillas de Ground (tierra eléctrica)',tipo:'manual'},
+    {id:700008,fecha:'2026-04-15',contratista:'Target Rental Car',tel:'',categoria:'Transportación',lote:'Compartido',metodo:'efectivo',monto:87.86,descripcion:'Alquiler F150 para transporte de materiales al proyecto',tipo:'manual'},
+    {id:700009,fecha:'2026-03-24',contratista:'David Rodríguez',tel:'',categoria:'Electricidad',lote:'Compartido',metodo:'efectivo',monto:900,descripcion:'Cable #2 — 500 pies ($600) + Cable #6 ($300)',tipo:'manual'},
+  ];
+  let cambio=false;
+  recuperados.forEach(r=>{
+    if(!gastos.some(g=>g.id===r.id||(g.contratista===r.contratista&&g.fecha===r.fecha&&Math.abs(g.monto-r.monto)<0.5))){
+      gastos.push(r);cambio=true;
+    }
+  });
+  if(cambio) try{localStorage.setItem('a132_gastos',JSON.stringify(gastos));}catch(e){}
+})();
 let fotos  = (()=>{ try{ return JSON.parse(localStorage.getItem('a132_fotos')||'{}'); }catch(e){ return {}; } })();
 let servicios = JSON.parse(localStorage.getItem('a132_servicios')||'null') || {
   '132A': {
@@ -1669,10 +1714,25 @@ function renderDashboard(){
 }
 
 // ============ GUARDAR GASTO ============
+function toggleAbono(){
+  document.getElementById('f-abono-wrap').style.display=document.getElementById('f-abono').checked?'':'none';
+}
+function nuevoAbono(cuentaNombre){
+  showSectionDirect('registrar');
+  document.getElementById('reg-form').style.display='block';
+  document.getElementById('f-abono').checked=true;toggleAbono();
+  document.getElementById('f-cuenta').value=cuentaNombre;
+  document.getElementById('f-cont').value=cuentaNombre;
+  document.getElementById('f-fecha').value=new Date().toISOString().split('T')[0];
+  document.getElementById('f-fecha').focus();
+}
 function guardarGasto(){
   const fecha=document.getElementById('f-fecha').value;
   const monto=parseFloat(document.getElementById('f-monto').value);
   if(!fecha||!monto||monto<=0){alert('⚠️ Fecha y monto son requeridos.');return;}
+  const esAbono=document.getElementById('f-abono')?.checked||false;
+  const cuentaNombre=document.getElementById('f-cuenta')?.value.trim()||'';
+  const montoTotal=parseFloat(document.getElementById('f-total')?.value)||0;
   const nuevoId=Date.now();
   gastos.push({
     id:nuevoId,fecha,
@@ -1683,7 +1743,10 @@ function guardarGasto(){
     metodo:document.getElementById('f-metodo').value,
     monto,
     descripcion:document.getElementById('f-desc').value.trim(),
-    tipo:'manual'
+    tipo:'manual',
+    es_abono:esAbono,
+    cuenta:esAbono?(cuentaNombre||document.getElementById('f-cont').value.trim()):'',
+    monto_total:esAbono?montoTotal:0
   });
   if(_fotoSmall) fotos[nuevoId]=_fotoSmall;
   save();resetRegistrar();
@@ -1725,7 +1788,12 @@ function resetRegistrar(){
   if(defLote)defLote.classList.add('active');
   document.getElementById('f-lote').value='Compartido';
   // reset campos
-  ['f-fecha','f-monto','f-cont','f-tel','f-desc'].forEach(id=>{const el=document.getElementById(id);if(el)el.value='';});
+  ['f-fecha','f-monto','f-cont','f-tel','f-desc','f-cuenta','f-total'].forEach(id=>{const el=document.getElementById(id);if(el)el.value='';});
+  // reset abono
+  const fAbono=document.getElementById('f-abono');
+  if(fAbono){fAbono.checked=false;}
+  const fAbonoWrap=document.getElementById('f-abono-wrap');
+  if(fAbonoWrap)fAbonoWrap.style.display='none';
   // reset file inputs
   ['facturaCamera','facturaFile'].forEach(id=>{const el=document.getElementById(id);if(el)el.value='';});
 }
@@ -1821,11 +1889,48 @@ function renderHistorial(){
   const tbody=document.getElementById('tabla-gastos');
   const sub=document.getElementById('hist-sub');
   if(sub)sub.textContent=gastos.length===0?'Sin registros — carga tus datos primero':(gastos.length===1?'1 transacción en total':gastos.length+' transacciones en total')+(fl||fc?' — filtros aplicados':'');
+
+  // Panel de cuentas con abonos (usa TODOS los gastos, no solo los filtrados) —
+  // portado desde commit fc0a54e, ver docs/ESTADO_ARROYO_132.md
+  const panelCuentas=document.getElementById('panel-cuentas');
+  if(panelCuentas){
+    const cuentasMap={};
+    gastos.forEach(g=>{
+      if(g.es_abono&&g.cuenta){
+        if(!cuentasMap[g.cuenta]) cuentasMap[g.cuenta]={nombre:g.cuenta,pagado:0,total:0,categoria:g.categoria};
+        cuentasMap[g.cuenta].pagado+=g.monto;
+        if((g.monto_total||0)>cuentasMap[g.cuenta].total) cuentasMap[g.cuenta].total=g.monto_total||0;
+      }
+    });
+    const cuentasList=Object.values(cuentasMap);
+    if(cuentasList.length){
+      panelCuentas.style.display='';
+      document.getElementById('lista-cuentas').innerHTML=cuentasList.map(c=>{
+        const balance=c.total>0?c.total-c.pagado:null;
+        const saldado=balance!==null&&balance<=0;
+        return `<div style="display:flex;align-items:center;justify-content:space-between;padding:10px 14px;background:rgba(255,255,255,0.03);border-radius:8px;margin-bottom:6px;border-left:3px solid ${saldado?'var(--green)':'var(--gold)'};gap:10px;${saldado?'opacity:0.75':''}">
+          <div style="flex:1">
+            <div style="font-size:13px;font-weight:500;color:var(--white)">${c.nombre}</div>
+            <div style="font-size:11px;color:var(--gray)">${c.categoria}</div>
+          </div>
+          <div style="text-align:right;min-width:130px">
+            ${c.total>0?`<div style="font-size:10px;color:var(--gray)">Total: ${fmt(c.total)}</div>`:''}
+            <div style="font-size:12px;color:var(--green)">Pagado: ${fmt(c.pagado)}</div>
+            ${balance!==null?`<div style="font-size:12px;font-weight:600;color:${saldado?'var(--green)':'var(--red)'}">${saldado?'✅ Saldado':'Falta: '+fmt(balance)}</div>`:''}
+          </div>
+          ${!saldado?`<button class="btn btn-xs btn-outline" onclick="nuevoAbono('${c.nombre.replace(/'/g,"\\'").replace(/"/g,'&quot;')}')">+ Abono</button>`:''}
+        </div>`;
+      }).join('');
+    } else {
+      panelCuentas.style.display='none';
+    }
+  }
+
   if(!filtered.length){tbody.innerHTML='<tr><td colspan="7"><div class="empty"><div class="empty-icon">📋</div>'+(gastos.length===0?'No hay datos cargados':'Ningún resultado con estos filtros')+'</div></td></tr>';document.getElementById('tabla-total').textContent='';return;}
   tbody.innerHTML=filtered.map(g=>`<tr>
     <td class="mono" style="font-size:12px">${g.fecha}</td>
     <td>${g.categoria}</td>
-    <td>${g.contratista}${g.tel?'<br><span style="font-size:10px;color:var(--gray)">'+g.tel+'</span>':''}</td>
+    <td>${g.contratista}${g.tel?'<br><span style="font-size:10px;color:var(--gray)">'+g.tel+'</span>':''}${g.es_abono&&g.cuenta?'<br><span style="font-size:10px;color:var(--gold)">⛓ '+g.cuenta+'</span>':''}</td>
     <td><span class="badge badge-${g.lote==='132A'?'A':g.lote==='132B'?'B':'C'}">${g.lote}</span></td>
     <td><span class="badge badge-${g.metodo==='efectivo'?'green':'blue'}">${g.metodo}</span></td>
     <td class="mono">${fmt(g.monto)}</td>
@@ -1844,6 +1949,8 @@ function showGastoDetail(id){
     ${g.tel?`<div class="roi-row"><span class="roi-label">Teléfono</span><span class="mono">${g.tel}</span></div>`:''}
     <div class="roi-row"><span class="roi-label">Lote</span><span class="badge badge-${g.lote==='132A'?'A':g.lote==='132B'?'B':'C'}">${g.lote}</span></div>
     <div class="roi-row"><span class="roi-label">Método</span><span>${g.metodo}</span></div>
+    ${g.es_abono&&g.cuenta?`<div class="roi-row"><span class="roi-label">Cuenta / Abono</span><span style="color:var(--gold)">⛓ ${g.cuenta}</span></div>`:''}
+    ${g.es_abono&&g.monto_total?`<div class="roi-row"><span class="roi-label">Total acordado</span><span>${fmt(g.monto_total)}</span></div>`:''}
     <div class="roi-row hl"><span class="roi-label"><b>Monto</b></span><span class="roi-val gold">${fmt(g.monto)}</span></div>
     ${g.descripcion?`<div style="margin-top:12px;font-size:12px;color:var(--gray);line-height:1.6">${g.descripcion}</div>`:''}
     ${fotos[g.id]?`<div style="margin-top:14px"><div style="font-size:10px;color:var(--gold);text-transform:uppercase;letter-spacing:1px;margin-bottom:6px">📷 Foto del Recibo</div><img src="${fotos[g.id]}" style="width:100%;border-radius:8px;border:1px solid rgba(201,168,76,0.2)" loading="lazy"></div>`:''}
