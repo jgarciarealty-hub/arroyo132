@@ -225,3 +225,38 @@ Aplicando el mismo patrón: `monto:60000` = el compromiso/precio total (coincide
 4. **Los 2 proyectos de Vercel no usados** (`arroyo132-netlify`, y el que no sea el de uso diario entre `arroyo132`/`jgarciarealty-hub-arroyo132`) — pausar o archivar para evitar seguir confundiendo cuál es la URL de trabajo real.
 
 Nada de esto se ejecutó — solo lectura (Tier 0): API de Vercel, `git show`/`git log -p` en las 9 commits reales de `main`, y parseo campo-por-campo de los 4 JSON de respaldo. Ningún dato financiero fue modificado.
+
+---
+
+## 16. PREPARACIÓN 2026-09-13 (Tier 0/1) — port de `recuperarRecibos()` + pagos parciales a `main`, en rama local, sin fusionar ni desplegar
+
+Siguiendo la recomendación de viabilidad ya determinada en el punto 15b (sección "Viabilidad de portar el parche a `main`"), se preparó — sin ejecutar merge ni deploy — el port de las 2 funciones perdidas por accidente en el commit `7735957` (2026-06-16).
+
+### Qué se hizo
+- **Rama nueva local:** `port/recuperar-recibos-y-pagos-parciales`, creada desde `main` (que ya estaba limpio y sincronizado salvo 2 commits de documentación previos, sin relación con este cambio).
+- **Backup previo del archivo** guardado fuera del repo antes de tocar nada (`index.html.backup-preport-20260913230325`, en el directorio scratchpad de la sesión — no en el repo).
+- **Commit:** `8337e72` — "Portar recuperarRecibos() y soporte de pagos parciales (es_abono) a main".
+
+### Qué incluye el port (adaptado al formulario/UX actual de `main`, no una copia literal de `fc0a54e`)
+1. **`recuperarRecibos()`** — IIFE que agrega los 9 gastos originales recuperados (ids `700001`-`700009`, ~$1,647 en materiales/electricidad de abril 2026) a `localStorage` si no existen ya (dedup por `id` o por contratista+fecha+monto±$0.50). Nunca borra ni modifica gastos existentes del usuario.
+2. **Soporte de pago parcial (`es_abono`/`cuenta`/`monto_total`)** — checkbox "¿Es pago parcial?" en Registrar Gasto (oculta por defecto, con campos de cuenta/referencia y monto total acordado), panel "💳 Cuentas con Abonos" en Historial (muestra saldo pendiente por cuenta, botón "+ Abono" vía `nuevoAbono()`), y anotación del abono en el detalle de cada gasto (`showGastoDetail`). Los totales (ROI, Reporte Banco, Dashboard) **siguen sumando `g.monto` crudo sin cambios** — mismo comportamiento que ya se documentó como correcto/intencional en el punto 15b, no se tocó esa lógica.
+
+### Qué NO se portó (fuera de alcance deliberado)
+- La puerta de reset de PIN por URL (`?reset=arroyo132reset`) — es una decisión de seguridad, no técnica, según la instrucción de esta ronda.
+- Los otros 9 cambios del parche manual de julio (auto-backup silencioso, editar gasto, adjuntos múltiples con chips, detección de duplicados, límite de PDF a 5MB, calidad de foto 1600px/90%, etc.) — quedan sin tocar, documentados en el punto 15 original, pendientes de que Jesvan decida si también se quieren portar en una ronda separada.
+- Ningún dato financiero existente (gastos ya guardados, precio de compra, línea de Severa Rosa) — no se modificó nada de eso.
+
+### Verificación de seguridad hecha antes y después de escribir
+- **Antes:** se confirmó (punto 15b) que ninguno de los cambios porteados toca las mismas líneas/funciones que los commits de `main` posteriores a `fc0a54e` (backup a Drive, banner PWA, pagos a contratistas, fix JSON defensivo) — cero conflicto esperado.
+- **Después de escribir:**
+  - `node --check` sobre el JavaScript completo extraído del `<script>` del HTML — sin errores de sintaxis.
+  - Conteo de balance de etiquetas `<div>`/`</div>` antes vs. después: +18 aperturas / +18 cierres — incremento consistente, sin romper estructura HTML.
+  - Revisión manual línea por línea del diff completo (110 inserciones, 3 modificaciones, 1 archivo) — confirmado que solo toca las funciones/HTML relacionadas a este port, nada más.
+- **No se probó en navegador real** (esta sesión no tiene ese acceso) — la verificación de sintaxis y estructura es la disponible sin ejecutar la app.
+
+### Pendiente de tu decisión (Jesvan)
+1. **Fusionar esta rama a `main`** (`git merge port/recuperar-recibos-y-pagos-parciales`) y hacer push — no ejecutado, es tu decisión.
+2. **Redesplegar** el proyecto de Vercel que corresponda una vez fusionado — no ejecutado. Recuerda que esto es independiente de la decisión más grande del punto 15b (qué hacer con las 3 URLs de Vercel, la puerta de reset de PIN, y la línea de Severa Rosa) — este port a `main` no resuelve ni requiere resolver esas 3 decisiones primero.
+3. Todo lo demás pendiente de las secciones 14/15/15b sigue exactamente igual — no se investigó nada nuevo de eso en esta ronda, solo se preparó este port de código.
+
+No se hizo push, no se hizo merge a `main`, no se tocó Vercel, no se modificó ningún dato financiero, no se tocó la puerta de reset de PIN.
