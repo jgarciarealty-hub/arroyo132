@@ -148,3 +148,80 @@ Las 9 redeploys de `arroyo132.vercel.app` entre el 6 y 7 de julio de 2026 (`acto
 4. **Los 2 proyectos de Vercel duplicados/confusos** (`arroyo132-netlify`, `jgarciarealty-hub-arroyo132`) — decidir si se archivan/pausan para evitar seguir confundiendo cuál es la URL real de trabajo.
 
 Nada de esto se ejecutó — son solo hallazgos de lectura (Tier 0), reportados con evidencia exacta.
+
+---
+
+## 15b. AUDITORÍA 2026-09-13 (continuación, misma sesión) — corrige y profundiza los puntos 14/15: no es negligencia, es un downgrade real; el "conflicto" de $60,000 no es un error de datos
+
+**Instrucción explícita de Jesvan para esta ronda: no modificar datos financieros dudosos, solo investigar con evidencia documental y dejar para él únicamente lo que la evidencia no pueda resolver.** Todo lo de abajo es solo lectura (API de Vercel real, `git log -p` completo, diff exacto normalizado por line-endings, y los 4 archivos JSON de respaldo parseados campo por campo). No se desplegó nada, no se hizo push, no se tocó ningún monto.
+
+### Corrección importante al punto 14: `arroyo132.vercel.app` SÍ tuvo el código nuevo — se lo quitaron después
+
+El historial completo de deployments de ese proyecto (`prj_WC9cmqIZXQJjghAz12IEiyetFIVx`, vía API de Vercel) muestra la secuencia real:
+
+1. **2026-05-02 a 2026-06-17:** el proyecto recibió cada commit real de `main` vía push de GitHub genuino (metadata `repoPushedAt`, `githubCommitVerification` presentes) — incluyendo el commit `d1e9f89` (fotos de recibos, banner PWA, backup a Drive, pagos a contratistas) desplegado a producción el **2026-06-17 04:17:35 UTC**, 8 segundos después del push real. Durante ~7 semanas, `arroyo132.vercel.app` tuvo el código más nuevo.
+2. **2026-07-05 20:28 UTC en adelante:** aparecen 7 deployments nuevos a producción, todos con `githubCommitSha` apuntando otra vez al commit viejo `fc0a54e` (2026-05-02) y `gitDirty:"1"`, `actor:"claude-code_2-1-201_agent"` — es decir, deploys manuales desde una carpeta local con cambios sin commitear, **basados en el commit viejo, no en `main`**. El último de estos 7 (2026-07-07 04:07:52 UTC) es el que sigue en producción hoy.
+
+**Conclusión con evidencia, no inferencia:** `arroyo132.vercel.app` no es una versión que "nunca recibió las funciones nuevas" — las tuvo en producción real durante 7 semanas y una sesión de Claude Code (vía CLI, sin pasar por git) **la reemplazó por una versión más vieja con parches propios encima**, el 5-7 de julio. Eso es un downgrade activo, no abandono. `jgarciarealty-hub-arroyo132.vercel.app` (el otro proyecto), en cambio, fue creado el 2026-06-16 23:31 y en los siguientes ~17 minutos Vercel le hizo un backfill automático de todo el historial de git de una sola vez (los 9 commits, terminando en `d1e9f89` a las 04:17:35 — prácticamente el mismo segundo que el deploy real de `arroyo132`) — y no ha vuelto a recibir un solo deploy desde entonces. Ningún humano ni agente lo ha tocado desde su creación.
+
+**`arroyo132-netlify.vercel.app`** (el tercer proyecto) resulta ser un punto intermedio del mismo esfuerzo de parche manual: también corre sobre la base vieja `fc0a54e`, pero con **solo 3 de los 10 gastos añadidos** (700010-700012) y **ninguno** de los demás parches (sin reset de PIN, sin editar gasto, sin auto-backup, sin detección de duplicados). Es, con toda probabilidad, un deploy intermedio guardado antes de que el parche completo se terminara — no un destino de trabajo independiente.
+
+**No hay Web Analytics activado en ninguno de los 3 proyectos** (confirmado — la API devuelve 404 "Web Analytics not found" para los 3), y los Runtime Logs de Vercel en plan Hobby solo retienen 1 hora, así que no hay forma de confirmar con tráfico real cuál URL abres desde el teléfono. **Esto no se puede determinar documentalmente — solo tú sabes qué URL tienes guardada como marcador o instalada como PWA.** Dado que `arroyo132.vercel.app` es el nombre más corto/obvio y es el único de los 3 con actividad de deploy reciente y deliberada (alguien invirtió 7 redeploys en 2 días para parchearlo a mano), es la hipótesis más fuerte, pero sigue siendo hipótesis, no evidencia directa de uso.
+
+### Punto 2: diff exacto y completo, línea por línea (no un resumen)
+
+El diff real entre lo que corre en `arroyo132.vercel.app` hoy y el commit base `fc0a54e` (214 líneas de diferencia, confirmado byte a byte tras normalizar CRLF/LF) contiene exactamente estos cambios — ninguno más:
+
+1. Botón "Guardar Gasto" con auto-disable + texto "Guardando…" (anti doble-click).
+2. Puerta de reset de emergencia `?reset=arroyo132reset` (borra PIN, intentos fallidos y sesión).
+3. 10 gastos añadidos al arreglo `recuperados` dentro de la función `recuperarRecibos()` (ids 700010-700019) — ver hallazgo nuevo abajo, esta función YA EXISTÍA en `fc0a54e`, no se inventó en julio.
+4. Función `autoBackupSilencioso()` — guarda copia completa en `localStorage` en cada save; solo descarga archivo `.json` en desktop (evita duplicar en móvil).
+5. Función `sanitizarNombreArchivo()` + renombrado automático de archivos adjuntos a formato `A132-REC-XXX_Contratista_Fecha.ext`.
+6. Detección de gasto duplicado (mismo contratista+fecha+monto±$0.50) con confirmación antes de guardar.
+7. Ícono de clip 📎 junto al nombre del contratista en Historial cuando el gasto tiene documentos adjuntos.
+8. Manejo de archivo "no disponible" (subido desde otro dispositivo, sin `data` real) — muestra ⚠️ en vez de romper.
+9. Botón "✏️ Editar" en detalle de gasto + funciones `editarGasto()`/`guardarEdicionGasto()` completas (edita monto, fecha, contratista, descripción, categoría, lote, método).
+10. Límite de tamaño de PDF subido a mano: 5MB (antes 1.5MB) + compresión de imagen si aplica; detección de adjunto duplicado por contenido.
+11. Calidad/tamaño de miniatura de fotos de recibo: sube de 800px/72% a 1600px/90% (fotos más nítidas, archivos más pesados).
+
+**Ninguno de estos 11 cambios está en `main` hoy.** Ninguno toca datos financieros existentes — son todos features de UX/flujo, excepto el punto 3 (los 10 gastos) y el reset de PIN.
+
+### Hallazgo nuevo, no reportado en la auditoría anterior: `main` perdió 2 features reales el mismo día que nacieron (commit `7735957`, 2026-06-16)
+
+Al confirmar de dónde salió el parche, encontré que la función `recuperarRecibos()` (con 9 gastos hardcodeados, ids 700001-700009) y todo el soporte de UI para pagos parciales (`es_abono`/`cuenta`/`monto_total` — ver sección siguiente) **sí estaban en el código committeado a git**, en el commit `fc0a54e` (2026-05-02, la migración a Vercel). Verificado commit por commit (`git show <sha>:index.html | grep`):
+
+| Commit | `recuperarRecibos` | `es_abono` |
+|---|---|---|
+| `fc0a54e` (02-may) | ✅ presente (9 gastos) | ✅ presente (5 usos) |
+| `7735957` (16-jun) | ❌ desaparece | ❌ desaparece |
+| todos los commits posteriores hasta `d1e9f89` | ❌ ausente | ❌ ausente |
+
+**Es decir: `main` no es que nunca haya tenido esto — lo tuvo y lo perdió el 16 de junio**, cuando el commit `7735957` ("feat: viajes expandidos + Reporte para Banco con ROI y exportar CSV") se construyó aparentemente sobre una copia de `index.html` más vieja que `fc0a54e` (le faltaban ambas piezas), no sobre `fc0a54e` mismo. El parche manual de julio en `arroyo132.vercel.app`, en cambio, sí partió de `fc0a54e` completo — por eso conservó ambas piezas y las extendió (agregó 10 gastos más al arreglo existente, en vez de crear uno nuevo).
+
+**Viabilidad de portar el parche a `main` (determinada, no ejecutada):** técnicamente segura como forward-port — ninguno de los 11 cambios de la sección anterior toca las mismas líneas/funciones que los commits de `main` posteriores a `fc0a54e` (backup a Drive, banner PWA, pagos a contratistas, fix JSON defensivo). El único trabajo real sería: (a) volver a insertar `recuperarRecibos()` y el soporte `es_abono` en `main` — probablemente deliberado recuperarlos, ya que se perdieron por accidente, no por decisión — y (b) decidir si el reset de PIN por URL se documenta/mantiene o se retira antes de fusionar (es una puerta de acceso real, ver punto 15 original). No requiere resolver primero el punto de los $60,000 (ver abajo) — son independientes.
+
+### Punto 3, resuelto con evidencia — el "$60,000 vs $28,000" NO es una contradicción de datos, es un campo de pago parcial que el resumen anterior no leyó completo
+
+Parseando los 3 archivos de backup con el JSON completo (no solo `monto`/`descripcion` como en la ronda anterior), la línea de Severa Rosa tiene TODOS estos campos:
+
+```json
+{"id":1777256291193,"fecha":"2024-08-28","contratista":"Severa Rosa","categoria":"Costos de Cierre",
+ "metodo":"cheque","monto":60000,"descripcion":"se le entrego cheque de 28k a Severa Rosa",
+ "es_abono":true,"cuenta":"Se le adelanto 28k CK 001","monto_total":28000}
+```
+
+Este es exactamente el mismo esquema de pago parcial que la línea del Agrimensor Carmelo Sierra (`monto:1600` = honorario total acordado, `monto_total:800` = depósito real pagado, `cuenta:"Deposito 50% Agrimensor"`) — un patrón ya usado y consistente en el propio archivo, no un capricho de esta línea.
+
+Aplicando el mismo patrón: `monto:60000` = el compromiso/precio total (coincide exactamente con el "Precio de compra" de $60,000 que la app tiene **hardcodeado por separado** en el calculador ROI y en el Timeline — entrada `{fecha:'2025-04-01',titulo:'Compra de propiedad',desc:'Cierre de compra Lote 132 Arroyo PR - $60,000'}`, presente en los 4 archivos de backup Y en el código actual de `main`, `index.html` líneas 776-778 y 1493). `monto_total:28000` = lo realmente pagado a Severa Rosa hasta ese momento vía cheque, que coincide exactamente con la descripción ("cheque de 28k") y con la nota de cuenta ("Se le adelanto 28k CK 001"). **Los dos números no se contradicen — describen dos cosas distintas del mismo trato: precio total acordado con/vía Severa Rosa ($60,000, igual al precio de compra del lote) vs. abono real ya entregado ($28,000).**
+
+**Lo que si cambia el análisis, con evidencia de código:** ni `main` (hoy) ni ninguna versión de la app calculan los totales de gastos usando `monto_total` — el `reduce()` que suma "Total Obra" en todas las pestañas (Resumen, ROI, Reporte Banco) usa siempre el campo `monto` crudo, sin excepción, confirmado en `index.html` (6 ocurrencias de `gastos.reduce((s,g)=>s+g.monto,0)` o variantes) y en la versión desplegada en `arroyo132.vercel.app` (que sí sabe *mostrar* `es_abono`/`monto_total` como anotación informativa, pero tampoco los usa para sumar). **Esto explica por qué los backups de abril ($65,477.31) y junio ($65,709.79) — los que sí incluyen esta línea — suman $60,000 completos como si fuera un gasto de construcción en efectivo**, cuando documentalmente solo $28,000 habían salido de la cuenta en ese momento, y ese precio además ya está contabilizado aparte como "Precio de compra" del lote (no como gasto de obra). El archivo más completo y reciente (6-jul, $4,912.70) **excluye esta línea por completo** — consistente con haber sido corregido para no duplicar el precio de compra del lote dentro de los "gastos de construcción".
+
+**Lo que la evidencia NO puede resolver, y queda genuinamente para Jesvan:** (1) si el registro de Severa Rosa debe existir como línea de `gastos` en absoluto, dado que el precio de compra del lote ya se rastrea aparte (Timeline + ROI) — es una decisión de categorización contable, no un hecho verificable en archivos; (2) si a la fecha de hoy (más de un año después, 2024-08-28) el saldo pendiente de $32,000 a Severa Rosa fue pagado, parcialmente pagado, o sigue debiéndose — ningún archivo disponible documenta pagos posteriores a esa línea; (3) cuál de las 3 URLs de Vercel usa Jesvan en el día a día — no hay señal de tráfico real disponible (Analytics no activado, retención de logs de 1h).
+
+### Pendiente actualizado — decisiones que solo Jesvan puede tomar (reemplaza la lista de la sección 15 original)
+1. **Confirmar cuál URL usa realmente** (ver arriba — no determinable por archivos/API, solo Jesvan sabe qué tiene guardado en el teléfono).
+2. **Si se consolida a una sola URL:** decidir si se recupera `recuperarRecibos()`/`es_abono` en `main` (parece pérdida accidental, recomendable recuperar) y si el reset de PIN por URL se mantiene, se cambia por algo menos expuesto, o se retira, antes de apuntar `arroyo132.vercel.app` de vuelta a `main`.
+3. **Severa Rosa / $60,000:** decidir si esa línea pertenece a `gastos` (duplicaría el precio de compra ya contado aparte) o debe removerse/recategorizarse, y confirmar el estado real del saldo pendiente de $32,000.
+4. **Los 2 proyectos de Vercel no usados** (`arroyo132-netlify`, y el que no sea el de uso diario entre `arroyo132`/`jgarciarealty-hub-arroyo132`) — pausar o archivar para evitar seguir confundiendo cuál es la URL de trabajo real.
+
+Nada de esto se ejecutó — solo lectura (Tier 0): API de Vercel, `git show`/`git log -p` en las 9 commits reales de `main`, y parseo campo-por-campo de los 4 JSON de respaldo. Ningún dato financiero fue modificado.
