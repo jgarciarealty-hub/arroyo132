@@ -56,7 +56,7 @@ const sandbox = {
     getElementById(id) {
       if (id === 'f-cat' || id === 'e-cat') return fakeSelectCat;
       if (id === 'modal-title') return mkEl('modal-title');
-      if (id === 'modal-body') { const el = mkEl('modal-body'); Object.defineProperty(el, 'innerHTML', { get: () => modalBodyHtml, set: (v) => { modalBodyHtml = v; } }); return el; }
+      if (id === 'modal-body') { const el = mkEl('modal-body'); Object.defineProperty(el, 'innerHTML', { configurable: true, get: () => modalBodyHtml, set: (v) => { modalBodyHtml = v; } }); return el; }
       if (id === 'modal') return { classList: { add: () => { modalShown = true; }, remove: () => { modalShown = false; } } };
       return mkEl(id);
     },
@@ -80,6 +80,7 @@ const sandbox = {
 Object.defineProperty(sandbox, 'lastAlert', { get: () => lastAlert, set: (v) => { lastAlert = v; } });
 Object.defineProperty(sandbox, 'confirmResult', { get: () => confirmResult, set: (v) => { confirmResult = v; } });
 Object.defineProperty(sandbox, 'modalShownFlag', { get: () => modalShown });
+Object.defineProperty(sandbox, 'modalBodyHtmlOut', { get: () => modalBodyHtml });
 vm.createContext(sandbox);
 
 // Run the real script AND the test scenarios in ONE shared lexical scope.
@@ -90,7 +91,8 @@ const combined = realScript + `
 // script) and seeded 9 real historical expenses (700001-700009) -- this IS the recuperarRecibos
 // patch from 2026-09-13 working correctly alongside the 5 patches recovered 2026-09-20.
 const baseCount = gastos.length;
-test('recuperarRecibos() seeded its 9 historical expenses (cross-patch: still works alongside the newer patches)', baseCount === 9, baseCount);
+test('recuperarRecibos() seeded its 11 historical expenses (9 original + 2 recovered 2026-09-20 from the real Google Drive backup)', baseCount === 11, baseCount);
+test('the 2 newly-recovered expenses have their real, evidenced data (not fabricated)', gastos.some(g=>g.id===700010 && g.contratista==='Operador Excavadora' && g.monto===1500) && gastos.some(g=>g.id===700011 && g.contratista==='Ferretería Cosme' && g.monto===152.54));
 
 // Must be the SAME object document.getElementById('btn-guardar-gasto') returns, since
 // resetRegistrar() looks it up by ID independently of the argument passed to guardarGasto()
@@ -143,12 +145,20 @@ test('3 new expenses now exist on top of the 9 seeded (2 confirmed saves + this 
 
 test('PDF_MAX_BYTES still correct after all prior operations', PDF_MAX_BYTES === 5 * 1024 * 1024);
 
+// "Foto no disponible" fallback: showGastoDetail() must render an onerror handler on the
+// <img> tag whenever the expense has a photo, so a broken/missing image (e.g. uploaded from
+// another device, not synced) shows a clear message instead of a raw broken-image icon.
+fotos[id1] = 'data:image/jpeg;base64,FAKE';
+showGastoDetail(id1);
+test('detail view includes an onerror fallback on the photo <img> tag', modalBodyHtmlOut.includes('onerror=') && modalBodyHtmlOut.includes('Foto no disponible'));
+delete fotos[id1];
+
 const idToDelete = gastos[gastos.length - 1].id; // delete the very last one added, unrelated to id1
 globalThis.confirm = function(){ return true; };
 eliminarGasto(idToDelete);
 test('deletion removes exactly one record', gastos.length === baseCount + 2, gastos.length);
 test('the edited record (id1) survived an unrelated deletion', gastos.some(g => g.id === id1 && g.monto === 999.99));
-test('the 9 seeded historical expenses survived unrelated deletion (cross-patch integrity)', gastos.filter(g => g.id >= 700001 && g.id <= 700009).length === 9);
+test('the 11 seeded historical expenses survived unrelated deletion (cross-patch integrity)', gastos.filter(g => g.id >= 700001 && g.id <= 700011).length === 11);
 
 console.log('\\n' + results.pass + ' passed, ' + results.fail + ' failed');
 `;

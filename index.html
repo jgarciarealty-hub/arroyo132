@@ -1478,6 +1478,13 @@ let gastos = (()=>{ try{ return JSON.parse(localStorage.getItem('a132_gastos')||
     {id:700007,fecha:'2026-04-15',contratista:'La Ferretería Cataño',tel:'',categoria:'Electricidad',lote:'Compartido',metodo:'efectivo',monto:28.88,descripcion:'2 varillas de Ground (tierra eléctrica)',tipo:'manual'},
     {id:700008,fecha:'2026-04-15',contratista:'Target Rental Car',tel:'',categoria:'Transportación',lote:'Compartido',metodo:'efectivo',monto:87.86,descripcion:'Alquiler F150 para transporte de materiales al proyecto',tipo:'manual'},
     {id:700009,fecha:'2026-03-24',contratista:'David Rodríguez',tel:'',categoria:'Electricidad',lote:'Compartido',metodo:'efectivo',monto:900,descripcion:'Cable #2 — 500 pies ($600) + Cable #6 ($300)',tipo:'manual'},
+    // 700010-700011: recuperados 2026-09-20 de G:\My Drive\arroyo132-datos.json (backup real
+    // de Google Drive, fechado 2026-06-17T03:46:20Z -- fuente autoritativa, no inferida).
+    // Son 2 de los 10 gastos adicionales del parche manual de julio (ids 700010-700019 en el
+    // parche original); los otros 8 quedan sin recuperar por falta de evidencia verificable
+    // de fecha/descripcion (ver docs/ESTADO_ARROYO_132.md seccion 19, parche #3).
+    {id:700010,fecha:'2025-04-20',contratista:'Operador Excavadora',tel:'',categoria:'Limpieza / Excavación',lote:'Compartido',metodo:'efectivo',monto:1500,descripcion:'Limpieza de terreno con excavadora (digger)',tipo:'manual'},
+    {id:700011,fecha:'2026-06-07',contratista:'Ferretería Cosme',tel:'',categoria:'Electricidad',lote:'Compartido',metodo:'efectivo',monto:152.54,descripcion:'Se compro arena piedra y cemento',tipo:'manual'},
   ];
   let cambio=false;
   recuperados.forEach(r=>{
@@ -2010,7 +2017,7 @@ function showGastoDetail(id){
     ${g.es_abono&&g.monto_total?`<div class="roi-row"><span class="roi-label">Total acordado</span><span>${fmt(g.monto_total)}</span></div>`:''}
     <div class="roi-row hl"><span class="roi-label"><b>Monto</b></span><span class="roi-val gold">${fmt(g.monto)}</span></div>
     ${g.descripcion?`<div style="margin-top:12px;font-size:12px;color:var(--gray);line-height:1.6">${g.descripcion}</div>`:''}
-    ${fotos[g.id]?`<div style="margin-top:14px"><div style="font-size:10px;color:var(--gold);text-transform:uppercase;letter-spacing:1px;margin-bottom:6px">📷 Foto del Recibo</div><img src="${fotos[g.id]}" style="width:100%;border-radius:8px;border:1px solid rgba(201,168,76,0.2)" loading="lazy"></div>`:''}
+    ${fotos[g.id]?`<div style="margin-top:14px"><div style="font-size:10px;color:var(--gold);text-transform:uppercase;letter-spacing:1px;margin-bottom:6px">📷 Foto del Recibo</div><img src="${fotos[g.id]}" style="width:100%;border-radius:8px;border:1px solid rgba(201,168,76,0.2)" loading="lazy" onerror="this.outerHTML='<div style=&quot;padding:16px;text-align:center;color:var(--gray);font-size:12px;background:rgba(255,255,255,0.03);border-radius:8px;border:1px dashed rgba(201,168,76,0.2)&quot;>⚠️ Foto no disponible en este dispositivo</div>'"></div>`:''}
     <div class="form-actions" style="margin-top:16px">
       <button class="btn btn-sm" onclick="editarGasto(${g.id})">✏️ Editar</button>
       <button class="btn btn-sm btn-danger" onclick="eliminarGasto(${g.id})">🗑️ Eliminar</button>
