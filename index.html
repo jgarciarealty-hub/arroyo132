@@ -1726,17 +1726,54 @@ function nuevoAbono(cuentaNombre){
   document.getElementById('f-fecha').value=new Date().toISOString().split('T')[0];
   document.getElementById('f-fecha').focus();
 }
+// Detección de gasto duplicado (mismo contratista+fecha+monto±$0.50) -- recuperado del
+// parche manual de julio 2026 que corría en produccion (arroyo132.vercel.app), nunca
+// llegado a git. Portado 2026-09-20, adaptado al formulario/UX actual de main.
+function encontrarGastoDuplicado(contratista,fecha,monto){
+  const contNorm=(contratista||'').trim().toLowerCase();
+  return gastos.find(g=>
+    (g.contratista||'').trim().toLowerCase()===contNorm &&
+    g.fecha===fecha &&
+    Math.abs(g.monto-monto)<0.5
+  )||null;
+}
+
+// Detección de adjunto duplicado por contenido -- misma fuente que la de arriba.
+// Compara el dataURL de la miniatura comprimida contra las ya guardadas; no es un hash
+// criptográfico del archivo original, es una comparación de igualdad de la miniatura ya
+// generada -- suficiente para detectar "la misma foto subida dos veces", con el límite
+// honesto de que 2 fotos distintas que produzcan una miniatura idéntica byte a byte
+// (extremadamente improbable en la práctica) no se distinguirían.
+function fotoYaExiste(fotoDataUrl){
+  if(!fotoDataUrl) return null;
+  for(const [id,f] of Object.entries(fotos)){
+    if(f===fotoDataUrl) return gastos.find(g=>String(g.id)===String(id))||null;
+  }
+  return null;
+}
+
 function guardarGasto(){
   const fecha=document.getElementById('f-fecha').value;
   const monto=parseFloat(document.getElementById('f-monto').value);
   if(!fecha||!monto||monto<=0){alert('⚠️ Fecha y monto son requeridos.');return;}
+  const contratistaVal=document.getElementById('f-cont').value.trim()||'Sin especificar';
+
+  const dupGasto=encontrarGastoDuplicado(contratistaVal,fecha,monto);
+  if(dupGasto && !confirm(`⚠️ Ya existe un gasto muy parecido:\n${dupGasto.contratista} — ${dupGasto.fecha} — $${dupGasto.monto.toFixed(2)}\n\n¿Guardar de todas formas?`)){
+    return;
+  }
+  const dupFoto=fotoYaExiste(_fotoSmall);
+  if(dupFoto && !confirm(`⚠️ Esta foto ya está guardada en otro gasto:\n${dupFoto.contratista} — ${dupFoto.fecha}\n\n¿Guardar de todas formas?`)){
+    return;
+  }
+
   const esAbono=document.getElementById('f-abono')?.checked||false;
   const cuentaNombre=document.getElementById('f-cuenta')?.value.trim()||'';
   const montoTotal=parseFloat(document.getElementById('f-total')?.value)||0;
   const nuevoId=Date.now();
   gastos.push({
     id:nuevoId,fecha,
-    contratista:document.getElementById('f-cont').value.trim()||'Sin especificar',
+    contratista:contratistaVal,
     tel:document.getElementById('f-tel').value.trim(),
     categoria:document.getElementById('f-cat').value,
     lote:document.getElementById('f-lote').value||'Compartido',
