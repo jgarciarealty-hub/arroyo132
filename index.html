@@ -1845,8 +1845,19 @@ function resetRegistrar(){
 }
 
 
+// Límite de tamaño de PDF -- recuperado del parche manual de julio 2026 (ver commit
+// dc6e024 para contexto completo). `main` no tenía ningún límite: un PDF grande podía
+// fallar silenciosamente contra la API de Claude o agotar la cuota de localStorage al
+// guardar el base64 completo. 5MB es generoso para un recibo/factura escaneada.
+const PDF_MAX_BYTES=5*1024*1024;
+
 async function handleUpload(e, source){
   const file=e.target.files[0];if(!file)return;
+  if(file.type==='application/pdf' && file.size>PDF_MAX_BYTES){
+    alert(`⚠️ El PDF pesa ${(file.size/1024/1024).toFixed(1)}MB — el límite es 5MB. Comprime el archivo o sube una foto en su lugar.`);
+    e.target.value='';
+    return;
+  }
   const aiBox=document.getElementById('aiBox'),aiStatus=document.getElementById('aiStatus');
   aiBox.classList.add('show');
   aiStatus.textContent='Leyendo imagen...';
