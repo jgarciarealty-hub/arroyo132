@@ -705,7 +705,7 @@ textarea{resize:vertical;min-height:60px;}
 
           <div class="form-actions" style="margin-top:16px">
             <button class="btn btn-ghost" onclick="resetRegistrar()">Cancelar</button>
-            <button class="btn btn-gold" style="flex:1;padding:14px;font-size:16px" onclick="guardarGasto()">💾 Guardar Gasto</button>
+            <button id="btn-guardar-gasto" class="btn btn-gold" style="flex:1;padding:14px;font-size:16px" onclick="guardarGasto(this)">💾 Guardar Gasto</button>
           </div>
         </div>
       </div>
@@ -1752,19 +1752,26 @@ function fotoYaExiste(fotoDataUrl){
   return null;
 }
 
-function guardarGasto(){
+function guardarGasto(btn){
+  // Anti doble-click -- recuperado del mismo parche manual de julio 2026 de arriba.
+  // Los confirm() de duplicados abajo pueden dejar el boton pulsable mientras el
+  // dialogo esta abierto; se reactiva en cada salida temprana (cancelado), nunca
+  // queda bloqueado permanentemente.
+  if(btn){ if(btn.disabled) return; btn.disabled=true; btn.textContent='Guardando…'; }
+  const reactivarBoton=()=>{ if(btn){ btn.disabled=false; btn.textContent='💾 Guardar Gasto'; } };
+
   const fecha=document.getElementById('f-fecha').value;
   const monto=parseFloat(document.getElementById('f-monto').value);
-  if(!fecha||!monto||monto<=0){alert('⚠️ Fecha y monto son requeridos.');return;}
+  if(!fecha||!monto||monto<=0){alert('⚠️ Fecha y monto son requeridos.');reactivarBoton();return;}
   const contratistaVal=document.getElementById('f-cont').value.trim()||'Sin especificar';
 
   const dupGasto=encontrarGastoDuplicado(contratistaVal,fecha,monto);
   if(dupGasto && !confirm(`⚠️ Ya existe un gasto muy parecido:\n${dupGasto.contratista} — ${dupGasto.fecha} — $${dupGasto.monto.toFixed(2)}\n\n¿Guardar de todas formas?`)){
-    return;
+    reactivarBoton();return;
   }
   const dupFoto=fotoYaExiste(_fotoSmall);
   if(dupFoto && !confirm(`⚠️ Esta foto ya está guardada en otro gasto:\n${dupFoto.contratista} — ${dupFoto.fecha}\n\n¿Guardar de todas formas?`)){
-    return;
+    reactivarBoton();return;
   }
 
   const esAbono=document.getElementById('f-abono')?.checked||false;
@@ -1811,6 +1818,8 @@ function toggleManual(){
 }
 
 function resetRegistrar(){
+  const btnG=document.getElementById('btn-guardar-gasto');
+  if(btnG){ btnG.disabled=false; btnG.textContent='💾 Guardar Gasto'; }
   _fotoDataUrl=null;
   _fotoSmall=null;
   document.getElementById('aiBox').classList.remove('show');
