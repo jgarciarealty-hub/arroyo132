@@ -260,3 +260,22 @@ Siguiendo la recomendación de viabilidad ya determinada en el punto 15b (secci�
 3. Todo lo demás pendiente de las secciones 14/15/15b sigue exactamente igual — no se investigó nada nuevo de eso en esta ronda, solo se preparó este port de código.
 
 No se hizo push, no se hizo merge a `main`, no se tocó Vercel, no se modificó ningún dato financiero, no se tocó la puerta de reset de PIN.
+
+---
+
+## 17. HALLAZGO URGENTE 2026-09-20 — `arroyo132.vercel.app` fue redesplegado esta madrugada, SIN que esta sesión lo hiciera, y ya NO tiene los parches de julio
+
+Confirmado con evidencia real (API de Vercel, `list_deployments` del proyecto `prj_WC9cmqIZXQJjghAz12IEiyetFIVx`), no inferido: el deployment de producción actualmente en `arroyo132.vercel.app` es `dpl_G6T7T1Lpa4YqRnDyg3Mhug6VLNvu`, creado **2026-09-20T04:14:26Z (12:14 AM hora de Puerto Rico, esta misma madrugada)**, disparado automáticamente por la integración de GitHub de Vercel (`creator.username: "jgarciarealty-hub"`, el bot de la integración, no una persona) al desplegar el commit `7710569` de `main` — ese commit es uno de los 3 commits de solo documentación de la sesión del 2026-09-13 (nunca tocó código real).
+
+**Esto significa que production dejó de correr la base vieja `fc0a54e` + 11 parches manuales de julio, y ahora corre exactamente lo mismo que `main` — confirmado byte a byte** (`index.html` descargado en vivo de `arroyo132.vercel.app`, 159,397 bytes tras normalizar CRLF/LF, diff de 0 líneas contra el `index.html` real del repo local en `main`).
+
+**Qué desapareció de producción esta madrugada, sin autorización de nadie visible en esta sesión:**
+1. Los 10 gastos adicionales recuperados (ids 700010-700019) — el arreglo original de 9 (700001-700009) tampoco está, porque `main` nunca los tuvo (ver hallazgo del punto 15b).
+2. La puerta de reset de PIN por URL (`?reset=arroyo132reset`) — ya no existe en el código servido.
+3. Detección de gasto duplicado, detección de adjunto duplicado, editar gasto, auto-backup silencioso a `localStorage`, adjuntos múltiples con chips, límite de PDF a 5MB, calidad de foto mejorada — los 9 parches restantes de julio, todos ausentes.
+
+**Qué NO se perdió (verificado, no solo asumido):** el backup automático a Google Drive (`9d3bf35`, una función real de `main`, no uno de los parches manuales) sigue presente en el código desplegado hoy — si tenías la nube conectada, tus datos reales de gastos deberían seguir recuperables desde tu Google Drive independientemente de este redeploy. Los datos que ya estaban guardados en el `localStorage` de tu navegador/dispositivo tampoco se borran por un redeploy (viven en el navegador, no en el código) — pero la función que los "reinyecta" automáticamente si algún día se borran (`recuperarRecibos()`) ya no está en el código servido.
+
+**No se intentó revertir ni volver a desplegar nada** — esto es exactamente la decisión de AR-1/AR-3 que ya estaba pendiente de Jesvan (qué URL usar, si consolidar desde `main` o desde el parche), solo que ahora ya ocurrió unilateralmente en producción sin que nadie lo pidiera en esta sesión. Causa exacta de por qué la integración de GitHub de Vercel se "puso al día" justo esta madrugada (tras meses sin desplegar automáticamente, ver punto 15/15b): no determinada — no hay evidencia en la API de Vercel de qué disparó específicamente este catch-up (posible reconexión de la integración GitHub↔Vercel, posible webhook retrasado). No investigado más a fondo por estar fuera del alcance de solo-lectura de esta sesión sin acceso a los logs internos de GitHub Actions/webhooks de Vercel.
+
+**Acción recomendada para Jesvan al despertar (antes de cualquier otra decisión de Arroyo132):** abrir `arroyo132.vercel.app` y confirmar que tus gastos reales siguen ahí (deberían, por localStorage) y que tu Google Drive tiene el backup más reciente. Si algo real falta, avísame antes de que se toque nada más.
