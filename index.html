@@ -2001,6 +2001,7 @@ function showGastoDetail(id){
     ${g.descripcion?`<div style="margin-top:12px;font-size:12px;color:var(--gray);line-height:1.6">${g.descripcion}</div>`:''}
     ${fotos[g.id]?`<div style="margin-top:14px"><div style="font-size:10px;color:var(--gold);text-transform:uppercase;letter-spacing:1px;margin-bottom:6px">📷 Foto del Recibo</div><img src="${fotos[g.id]}" style="width:100%;border-radius:8px;border:1px solid rgba(201,168,76,0.2)" loading="lazy"></div>`:''}
     <div class="form-actions" style="margin-top:16px">
+      <button class="btn btn-sm" onclick="editarGasto(${g.id})">✏️ Editar</button>
       <button class="btn btn-sm btn-danger" onclick="eliminarGasto(${g.id})">🗑️ Eliminar</button>
       <button class="btn btn-sm btn-ghost" onclick="closeModal()">Cerrar</button>
     </div>
@@ -2011,6 +2012,58 @@ function eliminarGasto(id){
   gastos=gastos.filter(g=>g.id!==id);
   delete fotos[id];
   save();closeModal();renderHistorial();renderDashboard();
+}
+
+// Editar gasto ya guardado -- recuperado del parche manual de julio 2026
+// (ver commit dc6e024 para el contexto completo). Reutiliza el <select> de
+// categorías ya existente en el formulario de "Registrar Gasto" (#f-cat)
+// en vez de duplicar la lista de opciones, para no arriesgar que las 2
+// listas diverjan con el tiempo.
+function editarGasto(id){
+  const g=gastos.find(x=>x.id===id);if(!g)return;
+  const catOriginal=document.getElementById('f-cat');
+  const catOptionsHtml=catOriginal?catOriginal.innerHTML:'';
+  openModal('Editar Gasto',`
+    <div class="form-group"><label>Fecha</label><input type="date" id="e-fecha" value="${g.fecha}"></div>
+    <div class="form-group"><label>Contratista</label><input type="text" id="e-cont" value="${(g.contratista||'').replace(/"/g,'&quot;')}"></div>
+    <div class="form-group"><label>Categoría</label><select id="e-cat">${catOptionsHtml}</select></div>
+    <div class="form-group"><label>Lote</label>
+      <select id="e-lote">
+        <option value="132A" ${g.lote==='132A'?'selected':''}>132A</option>
+        <option value="132B" ${g.lote==='132B'?'selected':''}>132B</option>
+        <option value="Compartido" ${g.lote==='Compartido'?'selected':''}>Compartido</option>
+      </select>
+    </div>
+    <div class="form-group"><label>Método</label>
+      <select id="e-metodo">
+        <option value="efectivo" ${g.metodo==='efectivo'?'selected':''}>Efectivo</option>
+        <option value="cheque" ${g.metodo==='cheque'?'selected':''}>Cheque</option>
+        <option value="transferencia" ${g.metodo==='transferencia'?'selected':''}>Transferencia</option>
+      </select>
+    </div>
+    <div class="form-group"><label>Monto</label><input type="number" step="0.01" id="e-monto" value="${g.monto}"></div>
+    <div class="form-group"><label>Descripción</label><textarea id="e-desc">${g.descripcion||''}</textarea></div>
+    <div class="form-actions" style="margin-top:16px">
+      <button class="btn btn-gold btn-sm" onclick="guardarEdicionGasto(${g.id})">💾 Guardar Cambios</button>
+      <button class="btn btn-sm btn-ghost" onclick="showGastoDetail(${g.id})">Cancelar</button>
+    </div>
+  `);
+  if(catOriginal) document.getElementById('e-cat').value=g.categoria;
+}
+function guardarEdicionGasto(id){
+  const g=gastos.find(x=>x.id===id);if(!g)return;
+  const fecha=document.getElementById('e-fecha').value;
+  const monto=parseFloat(document.getElementById('e-monto').value);
+  if(!fecha||!monto||monto<=0){alert('⚠️ Fecha y monto son requeridos.');return;}
+  g.fecha=fecha;
+  g.contratista=document.getElementById('e-cont').value.trim()||'Sin especificar';
+  g.categoria=document.getElementById('e-cat').value;
+  g.lote=document.getElementById('e-lote').value;
+  g.metodo=document.getElementById('e-metodo').value;
+  g.monto=monto;
+  g.descripcion=document.getElementById('e-desc').value.trim();
+  save();closeModal();renderHistorial();renderDashboard();
+  alert('✅ Gasto actualizado.');
 }
 
 // ============ SERVICIOS ============
