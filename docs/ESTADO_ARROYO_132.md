@@ -225,3 +225,57 @@ Aplicando el mismo patrón: `monto:60000` = el compromiso/precio total (coincide
 4. **Los 2 proyectos de Vercel no usados** (`arroyo132-netlify`, y el que no sea el de uso diario entre `arroyo132`/`jgarciarealty-hub-arroyo132`) — pausar o archivar para evitar seguir confundiendo cuál es la URL de trabajo real.
 
 Nada de esto se ejecutó — solo lectura (Tier 0): API de Vercel, `git show`/`git log -p` en las 9 commits reales de `main`, y parseo campo-por-campo de los 4 JSON de respaldo. Ningún dato financiero fue modificado.
+
+---
+
+## 16. PREPARACIÓN 2026-09-13 (Tier 0/1) — port de `recuperarRecibos()` + pagos parciales a `main`, en rama local, sin fusionar ni desplegar
+
+Siguiendo la recomendación de viabilidad ya determinada en el punto 15b (sección "Viabilidad de portar el parche a `main`"), se preparó — sin ejecutar merge ni deploy — el port de las 2 funciones perdidas por accidente en el commit `7735957` (2026-06-16).
+
+### Qué se hizo
+- **Rama nueva local:** `port/recuperar-recibos-y-pagos-parciales`, creada desde `main` (que ya estaba limpio y sincronizado salvo 2 commits de documentación previos, sin relación con este cambio).
+- **Backup previo del archivo** guardado fuera del repo antes de tocar nada (`index.html.backup-preport-20260913230325`, en el directorio scratchpad de la sesión — no en el repo).
+- **Commit:** `8337e72` — "Portar recuperarRecibos() y soporte de pagos parciales (es_abono) a main".
+
+### Qué incluye el port (adaptado al formulario/UX actual de `main`, no una copia literal de `fc0a54e`)
+1. **`recuperarRecibos()`** — IIFE que agrega los 9 gastos originales recuperados (ids `700001`-`700009`, ~$1,647 en materiales/electricidad de abril 2026) a `localStorage` si no existen ya (dedup por `id` o por contratista+fecha+monto±$0.50). Nunca borra ni modifica gastos existentes del usuario.
+2. **Soporte de pago parcial (`es_abono`/`cuenta`/`monto_total`)** — checkbox "¿Es pago parcial?" en Registrar Gasto (oculta por defecto, con campos de cuenta/referencia y monto total acordado), panel "💳 Cuentas con Abonos" en Historial (muestra saldo pendiente por cuenta, botón "+ Abono" vía `nuevoAbono()`), y anotación del abono en el detalle de cada gasto (`showGastoDetail`). Los totales (ROI, Reporte Banco, Dashboard) **siguen sumando `g.monto` crudo sin cambios** — mismo comportamiento que ya se documentó como correcto/intencional en el punto 15b, no se tocó esa lógica.
+
+### Qué NO se portó (fuera de alcance deliberado)
+- La puerta de reset de PIN por URL (`?reset=arroyo132reset`) — es una decisión de seguridad, no técnica, según la instrucción de esta ronda.
+- Los otros 9 cambios del parche manual de julio (auto-backup silencioso, editar gasto, adjuntos múltiples con chips, detección de duplicados, límite de PDF a 5MB, calidad de foto 1600px/90%, etc.) — quedan sin tocar, documentados en el punto 15 original, pendientes de que Jesvan decida si también se quieren portar en una ronda separada.
+- Ningún dato financiero existente (gastos ya guardados, precio de compra, línea de Severa Rosa) — no se modificó nada de eso.
+
+### Verificación de seguridad hecha antes y después de escribir
+- **Antes:** se confirmó (punto 15b) que ninguno de los cambios porteados toca las mismas líneas/funciones que los commits de `main` posteriores a `fc0a54e` (backup a Drive, banner PWA, pagos a contratistas, fix JSON defensivo) — cero conflicto esperado.
+- **Después de escribir:**
+  - `node --check` sobre el JavaScript completo extraído del `<script>` del HTML — sin errores de sintaxis.
+  - Conteo de balance de etiquetas `<div>`/`</div>` antes vs. después: +18 aperturas / +18 cierres — incremento consistente, sin romper estructura HTML.
+  - Revisión manual línea por línea del diff completo (110 inserciones, 3 modificaciones, 1 archivo) — confirmado que solo toca las funciones/HTML relacionadas a este port, nada más.
+- **No se probó en navegador real** (esta sesión no tiene ese acceso) — la verificación de sintaxis y estructura es la disponible sin ejecutar la app.
+
+### Pendiente de tu decisión (Jesvan)
+1. **Fusionar esta rama a `main`** (`git merge port/recuperar-recibos-y-pagos-parciales`) y hacer push — no ejecutado, es tu decisión.
+2. **Redesplegar** el proyecto de Vercel que corresponda una vez fusionado — no ejecutado. Recuerda que esto es independiente de la decisión más grande del punto 15b (qué hacer con las 3 URLs de Vercel, la puerta de reset de PIN, y la línea de Severa Rosa) — este port a `main` no resuelve ni requiere resolver esas 3 decisiones primero.
+3. Todo lo demás pendiente de las secciones 14/15/15b sigue exactamente igual — no se investigó nada nuevo de eso en esta ronda, solo se preparó este port de código.
+
+No se hizo push, no se hizo merge a `main`, no se tocó Vercel, no se modificó ningún dato financiero, no se tocó la puerta de reset de PIN.
+
+---
+
+## 17. HALLAZGO URGENTE 2026-09-20 — `arroyo132.vercel.app` fue redesplegado esta madrugada, SIN que esta sesión lo hiciera, y ya NO tiene los parches de julio
+
+Confirmado con evidencia real (API de Vercel, `list_deployments` del proyecto `prj_WC9cmqIZXQJjghAz12IEiyetFIVx`), no inferido: el deployment de producción actualmente en `arroyo132.vercel.app` es `dpl_G6T7T1Lpa4YqRnDyg3Mhug6VLNvu`, creado **2026-09-20T04:14:26Z (12:14 AM hora de Puerto Rico, esta misma madrugada)**, disparado automáticamente por la integración de GitHub de Vercel (`creator.username: "jgarciarealty-hub"`, el bot de la integración, no una persona) al desplegar el commit `7710569` de `main` — ese commit es uno de los 3 commits de solo documentación de la sesión del 2026-09-13 (nunca tocó código real).
+
+**Esto significa que production dejó de correr la base vieja `fc0a54e` + 11 parches manuales de julio, y ahora corre exactamente lo mismo que `main` — confirmado byte a byte** (`index.html` descargado en vivo de `arroyo132.vercel.app`, 159,397 bytes tras normalizar CRLF/LF, diff de 0 líneas contra el `index.html` real del repo local en `main`).
+
+**Qué desapareció de producción esta madrugada, sin autorización de nadie visible en esta sesión:**
+1. Los 10 gastos adicionales recuperados (ids 700010-700019) — el arreglo original de 9 (700001-700009) tampoco está, porque `main` nunca los tuvo (ver hallazgo del punto 15b).
+2. La puerta de reset de PIN por URL (`?reset=arroyo132reset`) — ya no existe en el código servido.
+3. Detección de gasto duplicado, detección de adjunto duplicado, editar gasto, auto-backup silencioso a `localStorage`, adjuntos múltiples con chips, límite de PDF a 5MB, calidad de foto mejorada — los 9 parches restantes de julio, todos ausentes.
+
+**Qué NO se perdió (verificado, no solo asumido):** el backup automático a Google Drive (`9d3bf35`, una función real de `main`, no uno de los parches manuales) sigue presente en el código desplegado hoy — si tenías la nube conectada, tus datos reales de gastos deberían seguir recuperables desde tu Google Drive independientemente de este redeploy. Los datos que ya estaban guardados en el `localStorage` de tu navegador/dispositivo tampoco se borran por un redeploy (viven en el navegador, no en el código) — pero la función que los "reinyecta" automáticamente si algún día se borran (`recuperarRecibos()`) ya no está en el código servido.
+
+**No se intentó revertir ni volver a desplegar nada** — esto es exactamente la decisión de AR-1/AR-3 que ya estaba pendiente de Jesvan (qué URL usar, si consolidar desde `main` o desde el parche), solo que ahora ya ocurrió unilateralmente en producción sin que nadie lo pidiera en esta sesión. Causa exacta de por qué la integración de GitHub de Vercel se "puso al día" justo esta madrugada (tras meses sin desplegar automáticamente, ver punto 15/15b): no determinada — no hay evidencia en la API de Vercel de qué disparó específicamente este catch-up (posible reconexión de la integración GitHub↔Vercel, posible webhook retrasado). No investigado más a fondo por estar fuera del alcance de solo-lectura de esta sesión sin acceso a los logs internos de GitHub Actions/webhooks de Vercel.
+
+**Acción recomendada para Jesvan al despertar (antes de cualquier otra decisión de Arroyo132):** abrir `arroyo132.vercel.app` y confirmar que tus gastos reales siguen ahí (deberían, por localStorage) y que tu Google Drive tiene el backup más reciente. Si algo real falta, avísame antes de que se toque nada más.
