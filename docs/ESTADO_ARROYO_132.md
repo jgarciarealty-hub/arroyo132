@@ -323,3 +323,34 @@ No se hizo merge ni deploy de ningún cambio de código. Rama `port/recuperar-re
 **Los 8 gastos históricos restantes sin fecha/descripción verificable (ítem 3 de la sección 19) siguen bloqueados -- ninguna fuente nueva fue encontrada esta ronda, no se inventó ningún dato.**
 
 **Nada de código, producción, ni datos financieros fue tocado en esta ronda -- solo lectura y reconciliación documental, tal como se instruyó explícitamente.**
+
+## 21. GD-2 CERRADO EN CÓDIGO 2026-10-09 — IVU, Presupuesto y Diagnóstico de datos (rama sin fusionar)
+
+**Qué se cerró.** De las 8 capacidades perdidas en el rediseño `7735957`, Jesvan autorizó (GD-2) recuperar las 3 de mejor relación valor/costo según el orden recomendado 1 → 2 → 6. Las tres están implementadas, probadas y comprometidas en la rama `feat/recuperar-ivu-presupuesto-diagnostico`, **sin fusionar, sin push y sin deploy**:
+
+| Paso | Capacidad | Commit | Pruebas |
+|---|---|---|---|
+| 1 | Calculadora de IVU 11.5% (casilla + desglose subtotal/IVU/total en Registrar Gasto) | `62ed306` | 7/7 |
+| 2 | Presupuesto vs. Real por Categoría (panel con barras y color por umbral, en ROI) | `024173e` | 12/12 |
+| 3 | Diagnóstico de datos (`diagnosticarDatos`) | `6f33336` | 30/30 |
+
+**El paso 3 exigió recuperar también su fuente, no solo la función.** El `diagnosticarDatos` original compara los gastos reales contra `a132_backup_gastos`, una red de seguridad local que `save()` escribía antes de sobrescribir. Esa escritura también se perdió en el rediseño, así que recuperar solo la función habría dejado un diagnóstico comparando siempre contra 0 — una capacidad **muerta**, es decir un `DONE` falso. Se restauró la escritura en `save()` (dentro de `try`, null-safe, sin cambiar el guardado normal). Es además la primera red de seguridad local contra pérdida accidental de gastos.
+
+**No es copia literal del original (`fc0a54e`) — adaptado a la app de hoy:**
+- El original usaba `fmt()`, que la app actual no tiene; se usa el mismo estilo que el resto (`$` + `toFixed(2)`).
+- El aviso del original decía "Presiona Recuperar Backup", botón que hoy **no existe**; se reescribió hacia la vía de recuperación real de hoy (backup de Google Drive, ícono ☁️ del topbar).
+- La diferencia de totales negativa salía `$-100.00`; ahora se lee `-$100.00`.
+
+**Verificación (no solo presencia — comportamiento real ejercido):**
+- **101 pruebas en 5 suites, 0 fallos:** app actual 36/36 · rama del port 16/16 · IVU 7/7 · Presupuesto 12/12 · Diagnóstico 30/30 (`tests/verificacion_diagnostico.test.js`).
+- La suite nueva cubre: la red de seguridad guarda el estado **anterior** (no el nuevo), detección de pérdida cuando el backup supera al actual, diferencia de totales, tope de 15 en el listado, **solo-lectura** (el diagnóstico no modifica `localStorage`) y robustez ante JSON corrupto.
+- **Navegador REAL (Chromium sobre `file://`), 25/25:** las 3 capacidades operadas por su interfaz de verdad — marcar la casilla de IVU tecleando 111.50 produce subtotal $100.00 / IVU $11.50 / total $111.50; el panel de presupuesto pinta 300/400 al 75% en naranja y al 100% en rojo; el botón 🔍 abre el diálogo y reporta 2 actuales vs 1 en backup con la diferencia `-$111.50`. Artefacto: `council_runtime/ops_snapshots/verificar_gd2_navegador.js`.
+- Proyección del merge: la suite de la app actual (que lee `main:index.html`) pasa **36/36 también contra el archivo de trabajo**, así que no se anticipa regresión al fusionar.
+
+**Dos hechos reales de la app que la suite documenta y que NO son defectos:** (1) al arrancar, la app siembra de forma **idempotente** los 11 recibos recuperados en `a132_gastos` (solo añade los que falten, por id o por contratista+fecha+monto), sin pasar por `save()`; (2) `diagnosticarDatos()` inspecciona el **estado persistido** en `localStorage`, no el arreglo `gastos` en memoria — para un diagnóstico de datos eso es lo correcto.
+
+**Producción intacta.** No se hizo push ni deploy: `arroyo132.vercel.app` sigue sirviendo el estado aprobado de GD-1 (173.452 bytes / sha256 `43fa04e71c757bfc`). El push a producción es **Human Decision Gate** y se presenta aparte.
+
+**Rollback si hiciera falta:** la rama es local; volver a `main` deja el repo exactamente como está producción. Respaldo previo del archivo: `council_runtime/ops_snapshots/arroyo_index_backup_pre_gd2_diagnostico.html`.
+
+**Incidente menor de esta sesión (registrado por honestidad, sin impacto):** un `node -e` con comillas dobles ejecutó por accidente el contenido entre backticks como comandos de shell, incluido un `git checkout main` no intencional. El árbol estaba limpio (todo ya comprometido), así que no se perdió nada: se volvió a la rama y se verificó el `sha256` del `index.html` (`01045a5b…`, 185.431 bytes) y que este documento seguía intacto. Lección: no pasar texto con backticks/`$` a `node -e`; usar Write/Edit.
