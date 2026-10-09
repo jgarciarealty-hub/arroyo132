@@ -403,6 +403,7 @@ textarea{resize:vertical;min-height:60px;}
         ☁️
       </button>
       <button class="btn btn-sm btn-outline" onclick="exportCSV()">📥 CSV</button>
+      <button class="btn btn-sm btn-ghost" onclick="diagnosticarDatos()" title="Ver diagnostico de datos" style="color:var(--blue)">&#128269;</button>
       <button class="btn btn-sm btn-ghost" onclick="window.print()">🖨️</button>
       <button class="btn btn-sm btn-ghost" onclick="manualLock()" title="Bloquear app" style="color:var(--gold)">🔒</button>
     </div>
@@ -1604,6 +1605,13 @@ if(gastos.length===0){
 }
 
 function save(){
+  // Red de seguridad local (recuperado 2026-10-09 de fc0a54e, GD-2): conserva el estado ANTERIOR
+  // antes de sobrescribir. Es la fuente que alimenta diagnosticarDatos(). Null-safe y en try:
+  // si algo falla, el guardado normal sigue igual que siempre.
+  try{
+    const prev=localStorage.getItem('a132_gastos');
+    if(prev&&prev!=='[]'&&prev!=='null') localStorage.setItem('a132_backup_gastos',prev);
+  }catch(e){}
   localStorage.setItem('a132_gastos',JSON.stringify(gastos));
   localStorage.setItem('a132_servicios',JSON.stringify(servicios));
   localStorage.setItem('a132_cont',JSON.stringify(contratistas));
@@ -1838,6 +1846,39 @@ function renderPresupuesto(){
       +' oninput="presupuesto[this.dataset.cat]=parseFloat(this.value)||0;renderPresupuesto()" data-cat="'+cat+'">'
       +'</div>';
   }).join('');
+}
+// ---- Diagnostico de datos (recuperado 2026-10-09 de fc0a54e, GD-2) ----
+// Compara los gastos reales contra la red de seguridad local que escribe save().
+// Sirve para reconciliacion: dice si el estado actual coincide con el ultimo respaldo.
+function diagnosticarDatos(){
+  const leer=k=>{try{return JSON.parse(localStorage.getItem(k)||'[]');}catch(e){return [];}};
+  const g=leer('a132_gastos');
+  const b=leer('a132_backup_gastos');
+  const suma=a=>a.reduce((s,x)=>s+(parseFloat(x&&x.monto)||0),0);
+  const money=n=>(n<0?'-$':'$')+Math.abs(n).toFixed(2);  // negativo se lee -$100.00, no $-100.00
+  const sg=suma(g), sb=suma(b);
+  let msg='📊 DIAGNÓSTICO DE DATOS\n';
+  msg+='─────────────────────\n';
+  msg+='Gastos actuales: '+g.length+' ('+money(sg)+')\n';
+  msg+='Backup disponible: '+b.length+' gastos ('+money(sb)+')\n\n';
+  if(b.length===0){
+    msg+='ℹ️ Todavía no hay copia local. Se crea sola al guardar el próximo gasto\n';
+    msg+='(conserva el estado anterior antes de sobrescribir).\n\n';
+  }else if(b.length>g.length){
+    msg+='⚠️ El backup tiene MÁS datos que el actual: puede que se haya perdido algo.\n';
+    msg+='Otra vía de recuperación es el backup de Google Drive (ícono ☁️ arriba).\n\n';
+  }else{
+    msg+='✅ El estado actual tiene los mismos registros o más que el backup.\n\n';
+  }
+  if(b.length&&g.length&&Math.abs(sg-sb)>0.005){
+    msg+='Diferencia de total (actual − backup): '+money(sg-sb)+'\n\n';
+  }
+  if(b.length){
+    msg+='Gastos en backup:\n';
+    b.slice(0,15).forEach((x,i)=>{msg+=(i+1)+'. '+(x&&x.fecha)+' | '+(x&&x.contratista)+' | $'+(x&&x.monto)+'\n';});
+    if(b.length>15) msg+='... y '+(b.length-15)+' más.\n';
+  }
+  alert(msg);
 }
 function guardarGasto(btn){
   // Anti doble-click -- recuperado del mismo parche manual de julio 2026 de arriba.
