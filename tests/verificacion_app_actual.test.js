@@ -84,8 +84,10 @@ if (scriptMatch) {
       createElement: () => ({ getContext: () => ({ drawImage() {} }), width: 0, height: 0, toDataURL: () => 'data:image/jpeg;base64,' }),
       visibilityState: 'visible',
     },
-    window: { addEventListener() {}, location: { search: '', href: '' }, innerWidth: 1024, matchMedia: () => ({ matches: false, addEventListener() {} }) },
+    window: { addEventListener() {}, location: { search: '', href: '' }, innerWidth: 1024, scrollTo() {}, matchMedia: () => ({ matches: false, addEventListener() {} }) },
     navigator: { onLine: true },
+    // El navegador provee el global `event` dentro de un manejador inline; showSection() lo usa.
+    event: { target: { classList: { add() {}, remove() {}, contains() { return false; } }, parentElement: null } },
     setInterval: () => 0, clearInterval() {}, setTimeout: () => 0, clearTimeout() {},
     alert() {}, confirm: () => true,
     localStorage: { setItem(k, v) { store[k] = String(v); }, getItem(k) { return k in store ? store[k] : null; }, removeItem(k) { delete store[k]; } },
@@ -107,6 +109,44 @@ if (scriptMatch) {
   const antes = gastos.length;
   try { guardarGasto(document.getElementById('btn-guardar-gasto')); } catch (e) { test('guardarGasto no lanza excepción', false, e.message); }
   test('guardar un gasto válido lo agrega al estado', gastos.length === antes + 1, { antes, despues: gastos.length });
+
+  // ---- Cobertura por FLUJO: las funciones que cada area requiere existen de verdad ----
+  const FLUJOS = {
+    'navegacion/secciones': ['showSection', 'showSectionDirect', 'bnav', 'updateDots'],
+    'gastos': ['guardarGasto', 'eliminarGasto', 'showGastoDetail', 'resetRegistrar'],
+    'servicios publicos': ['addServicio', 'saveServicio', 'renderServicios', 'totalesServicios'],
+    'documentos': ['addDoc', 'updateDoc', 'eliminarDoc', 'renderDocs'],
+    'contratistas': ['addContratista', 'registrarPagoCont', 'renderContratistas', 'eliminarContratista'],
+    'timeline': ['addTimeline', 'renderTimeline'],
+    'viajes': ['guardarViaje', 'eliminarViaje', 'renderViajes', 'calcViaje'],
+    'financiero/ROI': ['calcROI', 'calcTuCoop', 'renderBanco', 'exportCSV', 'exportarBanco', 'compartirReporte'],
+    'Google Drive': ['initDriveClient', 'backupToDrive', 'restaurarDesdeDrive', 'driveTokenValid'],
+    'PIN/seguridad': ['hashPin', 'processPin', 'pinKey', 'changePinFlow', 'lockApp', 'unlockApp', 'checkLockout'],
+    'graficas': ['renderCharts', 'destroyChart'],
+    'PWA': ['installPWA'],
+    'persistencia': ['save'],
+  };
+  for (const [area, fns] of Object.entries(FLUJOS)) {
+    // Las declaraciones de funcion de nivel superior SI se cuelgan del global del contexto en vm
+    // (a diferencia de let/const), asi que basta con mirar globalThis.
+    const faltan = fns.filter((f) => typeof globalThis[f] !== 'function');
+    test('flujo "' + area + '" (' + fns.length + ' funciones)', faltan.length === 0, faltan);
+  }
+
+  // ---- Comportamiento real en los puntos que el sandbox puede ejercer con honestidad ----
+  try { save(); test('save() persiste el estado en localStorage', !!localStorage.getItem('a132_gastos'), Object.keys(localStorage)); }
+  catch (e) { test('save() no lanza excepcion', false, e.message); }
+  try {
+    const n0 = gastos.length;
+    if (n0 > 0) { eliminarGasto(gastos[n0 - 1].id); test('eliminarGasto() quita exactamente un registro', gastos.length === n0 - 1, { n0, n1: gastos.length }); }
+    else test('eliminarGasto() quita exactamente un registro', false, 'no hay gastos que eliminar');
+  } catch (e) { test('eliminarGasto() no lanza excepcion', false, e.message); }
+  try {
+    const h = hashPin('1234');
+    test('hashPin() produce un valor no trivial (no guarda el PIN en claro)', typeof h === 'string' && h.length >= 16 && !h.includes('1234'), typeof h === 'string' ? h.slice(0, 10) + '…' : typeof h);
+  } catch (e) { test('hashPin() no lanza excepcion', false, e.message); }
+  try { showSection('historial'); test('showSection() acepta una seccion real sin lanzar', true); }
+  catch (e) { test('showSection() acepta una seccion real sin lanzar', false, e.message); }
 })();
 `;
   let cargaOk = true, errCarga = null;

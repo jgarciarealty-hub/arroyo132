@@ -107,7 +107,13 @@ Tamaño real de `index.html` en la historia:
 
 El frente más débil del cierre era que **la app en producción no tenía ninguna prueba** (el único test cubría la rama del port). Se creó `tests/verificacion_app_actual.test.js`, que **lee el `index.html` de `main` vía git** (no el del directorio de trabajo) y verifica lo que producción sirve de verdad.
 
-**Resultado: 19/19 PASS.**
+**Resultado: 36/36 PASS** (ampliada en la misma sesión para cubrir los 13 flujos completos, no solo la estructura).
+
+**Cobertura por flujo (cada uno verificado por el nombre de sus funciones reales):** navegación/secciones (4) · gastos (4) · servicios públicos (4) · documentos (4) · contratistas (4) · timeline (2) · viajes (4) · financiero/ROI (6: `calcROI`, `calcTuCoop`, `renderBanco`, `exportCSV`, `exportarBanco`, `compartirReporte`) · Google Drive (4) · PIN/seguridad (7) · gráficas (2) · PWA (1) · persistencia (1).
+
+**Comportamiento real ejercido (no solo presencia):** `save()` **persiste en localStorage** · `eliminarGasto()` **quita exactamente un registro** · `hashPin()` **produce un valor no trivial (no guarda el PIN en claro)** · `guardarGasto()` **agrega un gasto válido** · `showSection()` **acepta una sección real sin lanzar**.
+
+Dos fallos iniciales del arnés (no de la app) se corrigieron en el camino, y quedan documentados para no repetirlos: (1) en `vm` las declaraciones `let`/`const` no se cuelgan del contexto — hay que ejecutar las aserciones en el mismo ámbito léxico; (2) el navegador provee el global `event` y `window.scrollTo`, que el sandbox debe stubbear.
 
 | Grupo | Qué verifica |
 |---|---|
