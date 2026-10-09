@@ -349,7 +349,9 @@ No se hizo merge ni deploy de ningún cambio de código. Rama `port/recuperar-re
 
 **Dos hechos reales de la app que la suite documenta y que NO son defectos:** (1) al arrancar, la app siembra de forma **idempotente** los 11 recibos recuperados en `a132_gastos` (solo añade los que falten, por id o por contratista+fecha+monto), sin pasar por `save()`; (2) `diagnosticarDatos()` inspecciona el **estado persistido** en `localStorage`, no el arreglo `gastos` en memoria — para un diagnóstico de datos eso es lo correcto.
 
-**Producción intacta.** No se hizo push ni deploy: `arroyo132.vercel.app` sigue sirviendo el estado aprobado de GD-1 (173.452 bytes / sha256 `43fa04e71c757bfc`). El push a producción es **Human Decision Gate** y se presenta aparte.
+**Producción intacta y verificada.** No se hizo push ni deploy. Comprobado en vivo contra `arroyo132.vercel.app`: sirve contenido **idéntico byte a byte** a `main:index.html` — **174.485 bytes, sha256 `f9641cb679f0ea57…`, 0 diferencias línea a línea**, y sin ninguna inyección de Vercel (`/_vercel/`, insights: 0 ocurrencias). El push a producción es **Human Decision Gate** y se presenta aparte.
+
+**Reconciliación de las dos cifras de GD-1 (aparente contradicción, no lo es).** El cierre de GD-1 registró `173.452 bytes / 43fa04e71c757bfc`; hoy la misma producción mide `174.485 bytes / f9641cb679f0ea57…`. **Es el mismo contenido medido de dos formas:** `173.452` / `43fa04e7…` corresponden al contenido **sin el salto de línea final**, que es lo que devuelve una sustitución de shell (`$(curl …)` elimina los saltos de línea finales). Reproducido: quitar el `\n` final de `main:index.html` da exactamente `173.452` caracteres y `sha256 43fa04e71c757bfc`. Con el byte final incluido —lo que realmente sirve el servidor— son `174.485` bytes y `f9641cb679f0ea57…`. **Producción no cambió desde GD-1.**
 
 **Rollback si hiciera falta:** la rama es local; volver a `main` deja el repo exactamente como está producción. Respaldo previo del archivo: `council_runtime/ops_snapshots/arroyo_index_backup_pre_gd2_diagnostico.html`.
 
