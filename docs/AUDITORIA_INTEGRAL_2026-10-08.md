@@ -84,6 +84,12 @@ Tamaño real de `index.html` en la historia:
 ## 4. Plan de cierre, priorizado por dependencia y riesgo
 
 **Fase A — higiene del repo (local, reversible, sin gate).** OBSOLETE: decidir retiro de `netlify.toml`/`netlify/`; corregir la fecha del encabezado del expediente; versionar la auditoría. *(Esta auditoría ya creó este documento.)*
+
+> **Estado del retiro de Netlify (2026-10-08): AUTORIZADO POR JESVAN, PREPARADO, y BLOQUEADO POR EL HARNESS.** El clasificador de Auto Mode denegó la eliminación (`[Irreversible Local Destruction]`) — es un `BLOCKED_TECHNICAL`, **no** una decisión humana pendiente: la autorización ya se dio.
+> **Verificación de seguridad hecha antes del intento (solo lectura):** un `grep` de "netlify" en todo el repo (js/json/html/md/bat/toml) demuestra que **las únicas menciones están DENTRO de los dos archivos a retirar** — ni `index.html`, ni `vercel.json`, ni `api/`, ni las pruebas los referencian. Además, el CORS de ese archivo apunta a `arroyo132.netlify.app`, cuyo proyecto de Vercel es uno de los 2 huérfanos: toda la línea Netlify está muerta.
+> **Archivos y respaldo:** `netlify.toml` (546 bytes, sha256 `1f70a1f0da623e99…`) y `netlify/functions/analyze-invoice.js` (1343 bytes, sha256 `6409630c6f2c62d7…`). Ambos están **versionados en git**, así que el historial es el respaldo: recuperables con `git checkout <commit> -- netlify netlify.toml`.
+> **Comando exacto a ejecutar** (por Jesvan, con su permiso de harness, o tras habilitar una regla que permita el borrado local): `git rm -r netlify netlify.toml` seguido de las pruebas y el commit.
+> **Impacto en producción: NINGUNO** — Vercel construye desde `vercel.json` y sirve `index.html` + `api/`; Netlify no está en uso desde junio.
 **Fase B — cerrar el port (gate de Jesvan).** Los 16/16 tests pasan; falta **fusionar y desplegar**. Nota: fusionar a `main` **despliega automáticamente** en `arroyo132.vercel.app` → es gate.
 **Fase C — decisiones de capacidad (HUMAN DECISION, independientes entre sí).** Por cada capacidad perdida con valor: ¿recuperar, reimplementar o dar por retirada? Orden sugerido por valor/costo: (1) abonos ya recuperados ✓, (2) **IVU**, (3) **Presupuesto**, (4) **Fases**, (5) adjuntos de documentos + chips, (6) entrada rápida, (7) diagnósticos, (8) planes de pago de servicios.
 **Fase D — decisiones de la puerta de reset de PIN y del reset por email** (Human Gate: credencial de correo).
