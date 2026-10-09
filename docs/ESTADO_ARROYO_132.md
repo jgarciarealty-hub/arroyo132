@@ -324,9 +324,9 @@ No se hizo merge ni deploy de ningún cambio de código. Rama `port/recuperar-re
 
 **Nada de código, producción, ni datos financieros fue tocado en esta ronda -- solo lectura y reconciliación documental, tal como se instruyó explícitamente.**
 
-## 21. GD-2 CERRADO EN CÓDIGO 2026-10-09 — IVU, Presupuesto y Diagnóstico de datos (rama sin fusionar)
+## 21. GD-2 DESPLEGADO Y VERIFICADO EN PRODUCCIÓN 2026-10-09 — IVU, Presupuesto y Diagnóstico de datos
 
-**Qué se cerró.** De las 8 capacidades perdidas en el rediseño `7735957`, Jesvan autorizó (GD-2) recuperar las 3 de mejor relación valor/costo según el orden recomendado 1 → 2 → 6. Las tres están implementadas, probadas y comprometidas en la rama `feat/recuperar-ivu-presupuesto-diagnostico`, **sin fusionar, sin push y sin deploy**:
+**Qué se cerró.** De las 8 capacidades perdidas en el rediseño `7735957`, Jesvan autorizó (GD-2) recuperar las 3 de mejor relación valor/costo según el orden recomendado 1 → 2 → 6. Las tres están implementadas, probadas y **publicadas en producción** (fusionadas a `main` y desplegadas; ver la verificación al final de esta sección):
 
 | Paso | Capacidad | Commit | Pruebas |
 |---|---|---|---|
@@ -349,10 +349,18 @@ No se hizo merge ni deploy de ningún cambio de código. Rama `port/recuperar-re
 
 **Dos hechos reales de la app que la suite documenta y que NO son defectos:** (1) al arrancar, la app siembra de forma **idempotente** los 11 recibos recuperados en `a132_gastos` (solo añade los que falten, por id o por contratista+fecha+monto), sin pasar por `save()`; (2) `diagnosticarDatos()` inspecciona el **estado persistido** en `localStorage`, no el arreglo `gastos` en memoria — para un diagnóstico de datos eso es lo correcto.
 
-**Producción intacta y verificada.** No se hizo push ni deploy. Comprobado en vivo contra `arroyo132.vercel.app`: sirve contenido **idéntico byte a byte** a `main:index.html` — **174.485 bytes, sha256 `f9641cb679f0ea57…`, 0 diferencias línea a línea**, y sin ninguna inyección de Vercel (`/_vercel/`, insights: 0 ocurrencias). El push a producción es **Human Decision Gate** y se presenta aparte.
+**Producción: publicado y verificado.** Jesvan autorizó publicar el 2026-10-09 y se ejecutó la secuencia completa BACKUP → TEST → MERGE → VERIFICAR → DEPLOY → VERIFICAR PRODUCCIÓN:
+- **MERGE fast-forward** `83102ef` → `21e7c4d` (5 commits, +453/−2 en 5 archivos; `main` era ancestro de la rama, así que el árbol fusionado es idéntico al probado).
+- **TEST:** 101/101 en 5 suites **antes y después** del merge. Re-ejecutar no fue trámite: la suite de la app actual lee `main:index.html` vía git, así que antes del merge evaluaba el HTML viejo y después evalúa el nuevo.
+- **DEPLOY:** `push 83102ef..21e7c4d`.
+- **VERIFICACIÓN byte a byte:** `arroyo132.vercel.app` sirve contenido **idéntico** a `git main:index.html` — **182.138 bytes / `sha256 9f1636224e8577cb…`**.
+- **VERIFICACIÓN de punta a punta en vivo (navegador real contra la URL de producción): 17/17.** Las tres funciones operadas en la app publicada, con la matemática real. Cero errores de script.
+- **Rollback:** `git reset --hard 83102ef && git push --force-with-lease origin main`.
+
+**Atención al comparar tamaños (evita un falso positivo):** el archivo de trabajo local mide 185.431 bytes porque el checkout de Windows usa CRLF; el blob de git y lo que sirve el servidor miden 182.138 bytes con LF. La comparación válida contra producción es la del blob de git.
 
 **Reconciliación de las dos cifras de GD-1 (aparente contradicción, no lo es).** El cierre de GD-1 registró `173.452 bytes / 43fa04e71c757bfc`; hoy la misma producción mide `174.485 bytes / f9641cb679f0ea57…`. **Es el mismo contenido medido de dos formas:** `173.452` / `43fa04e7…` corresponden al contenido **sin el salto de línea final**, que es lo que devuelve una sustitución de shell (`$(curl …)` elimina los saltos de línea finales). Reproducido: quitar el `\n` final de `main:index.html` da exactamente `173.452` caracteres y `sha256 43fa04e71c757bfc`. Con el byte final incluido —lo que realmente sirve el servidor— son `174.485` bytes y `f9641cb679f0ea57…`. **Producción no cambió desde GD-1.**
 
-**Rollback si hiciera falta:** la rama es local; volver a `main` deja el repo exactamente como está producción. Respaldo previo del archivo: `council_runtime/ops_snapshots/arroyo_index_backup_pre_gd2_diagnostico.html`.
+**Rollback si hiciera falta:** `git reset --hard 83102ef && git push --force-with-lease origin main` (devuelve la app al estado aprobado antes de GD-2). Respaldo previo del archivo en la sesión de trabajo: `council_runtime/ops_snapshots/arroyo_index_backup_pre_gd2_diagnostico.html`.
 
 **Incidente menor de esta sesión (registrado por honestidad, sin impacto):** un `node -e` con comillas dobles ejecutó por accidente el contenido entre backticks como comandos de shell, incluido un `git checkout main` no intencional. El árbol estaba limpio (todo ya comprometido), así que no se perdió nada: se volvió a la rama y se verificó el `sha256` del `index.html` (`01045a5b…`, 185.431 bytes) y que este documento seguía intacto. Lección: no pasar texto con backticks/`$` a `node -e`; usar Write/Edit.
