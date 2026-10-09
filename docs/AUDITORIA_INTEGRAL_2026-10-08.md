@@ -121,6 +121,25 @@ Tamaño real de `index.html` en la historia:
 
 ---
 
+## 6b. GD-2 — Qué capacidad perdida recuperar (informe de decisión, evidencia del código original)
+
+Extraído del `index.html` de `fc0a54e` (la versión que tenía estas funciones). **Ninguna se ha recuperado; esto es solo para que la decisión sea informada.** "Costo" = esfuerzo de traerla a la arquitectura actual; "Conflicto" = si choca con algo que hoy existe.
+
+| # | Capacidad | Qué hace (según su código) | Valor | Costo / Conflicto |
+|---|---|---|---|---|
+| 1 | **Calculadora de IVU** (`calcIVU`/`toggleIVU`) | Al registrar un gasto, si marcas la casilla, calcula el IVU sobre el monto | **Alto para costos reales** — el IVU es un costo de construcción real que hoy no se desglosa | Bajo. Independiente, se añade al formulario |
+| 2 | **Presupuesto por categoría** (`renderPresupuesto`) | Agrega los gastos por categoría en una vista de presupuesto | **Alto** — es lo que dice si una partida se está pasando | Bajo-medio. Necesita su vista |
+| 3 | **Fases del proyecto por lote con FOTOS** (`renderFases`/`addFotoFase`/`verFotoFase`) | Paneles separados para 132A y 132B con fotos de avance por fase | **Muy alto** — es el seguimiento visual de la obra, el corazón de la app | **Alto + CONFLICTO:** su pestaña fue la que `7735957` **reemplazó por "Reporte para Banco"**. Recuperarla implica **añadir una 14ª pestaña** (recomendado) o quitar Banco (**regresión**, no recomendado) |
+| 4 | **Balances y planes de pago de servicios públicos** (`balancePendienteServicios`/`generarPlanPagos`/`addPagoServicio`) | "Cuánto falta por pagar" de servicios, y planes de pago por mes/monto | **Alto** — responde una de las preguntas abiertas del expediente (AAA/LUMA 100 % pendientes) | Medio. La sección Servicios ya existe; hay que ampliarla |
+| 5 | **Entrada rápida con catálogo de proveedores** (`entradaRapida`) | Formulario corto con una lista de proveedores ya conocidos (ej. AIG Electrical) + su categoría | Medio — ahorra tecleo | Bajo |
+| 6 | **Diagnóstico de datos** (`diagnosticarDatos`) | Compara los gastos reales contra el auto-backup y reporta diferencias | **Bajo-medio pero valioso:** es exactamente la herramienta para la **reconciliación financiera** que quedó abierta | Bajo |
+| 7 | **Adjuntos de documentos + varios archivos por gasto** (`adjuntarDoc`/`renderChipsForm`) | Adjuntar archivos a documentos, y varios archivos por gasto con chips | Medio | Medio. toca el modelo de adjuntos |
+| 8 | **Importar backup local** (`importarBackup`) | Importar un backup desde archivo (hoy solo hay exportar + Drive) | Medio — una vía más de recuperación si Drive falla | Bajo |
+
+**Recomendación (criterio técnico, la decisión es de producto):** por valor/costo, el orden más eficiente es **1 (IVU) → 2 (Presupuesto) → 6 (Diagnóstico) → 8 (Importar)**, que son de costo bajo y valor directo sobre dinero; **3 (Fases con fotos)** es la de mayor valor para el propósito de la app pero la de mayor costo y la única con conflicto de navegación; **4 (planes de servicios)** es la que responde un pendiente real del expediente. **5 y 7** son las de menor urgencia.
+
+**Ninguna se implementó. Cada una es una decisión independiente.**
+
 ## 6. Fase G iniciada — la app ACTUAL queda verificada por pruebas (2026-10-08)
 
 El frente más débil del cierre era que **la app en producción no tenía ninguna prueba** (el único test cubría la rama del port). Se creó `tests/verificacion_app_actual.test.js`, que **lee el `index.html` de `main` vía git** (no el del directorio de trabajo) y verifica lo que producción sirve de verdad.
