@@ -814,6 +814,14 @@ textarea{resize:vertical;min-height:60px;}
       </div>
 
       <div class="panel" style="margin-bottom:16px;">
+        <div class="panel-title">🎯 Presupuesto vs. Real por Categoría</div>
+        <div style="font-size:11px;color:var(--gray);margin-bottom:12px">Escribe el presupuesto en cada campo — la barra muestra cuánto llevas gastado.</div>
+        <div id="presupuesto-bars"></div>
+        <button class="btn btn-sm btn-gold" style="margin-top:10px" onclick="guardarPresupuesto()">💾 Guardar presupuestos</button>
+      </div>
+
+
+      <div class="panel" style="margin-bottom:16px;">
         <div class="panel-title">⚙️ Parámetros</div>
         <div class="form-grid">
           <div class="fg"><label>Precio Venta 132A ($)</label><input type="number" id="roi-vA" value="160000" oninput="calcROI()"></div>
@@ -1653,6 +1661,7 @@ function showSectionDirect(name){
 }
 
 function showSection(name){
+  if(name==='roi'){ try{ renderPresupuesto(); }catch(e){} }
   // Update sidebar active
   document.querySelectorAll('.nav-item').forEach(n=>n.classList.remove('active'));
   if(event && event.currentTarget) event.currentTarget.classList.add('active');
@@ -1797,6 +1806,38 @@ function calcIVU(){
   const s=document.getElementById('ivu-subtotal'); if(s) s.textContent=money(sub);
   const a=document.getElementById('ivu-amount'); if(a) a.textContent=money(ivu);
   const t=document.getElementById('ivu-total'); if(t) t.textContent=money(total);
+}
+// ---- Presupuesto por categoria (recuperado 2026-10-09 de fc0a54e, adaptado a la seccion ROI actual) ----
+let presupuesto = {};
+try { presupuesto = JSON.parse(localStorage.getItem('a132_presupuesto')||'{}') || {}; } catch(e) { presupuesto = {}; }
+function guardarPresupuesto(){
+  try { localStorage.setItem('a132_presupuesto', JSON.stringify(presupuesto)); } catch(e) {}
+  alert('Presupuestos guardados');
+}
+function renderPresupuesto(){
+  const cats={};
+  gastos.forEach(g=>{ if(g.monto>0) cats[g.categoria]=(cats[g.categoria]||0)+g.monto; });
+  const todasCats=[...new Set([...Object.keys(presupuesto),...Object.keys(cats)])].sort();
+  const el=document.getElementById('presupuesto-bars'); if(!el) return;
+  if(!todasCats.length){ el.innerHTML='<div style="font-size:12px;color:var(--gray)">Registra gastos para ver el analisis.</div>'; return; }
+  el.innerHTML=todasCats.map(cat=>{
+    const slug=cat.replace(/[^a-z0-9]/gi,'_');
+    const real=cats[cat]||0, bud=presupuesto[cat]||0;
+    const pct=bud>0?Math.min(real/bud*100,100):0;
+    const color=pct>=100?'var(--red)':pct>=75?'#e67e22':'var(--green)';
+    const etiqueta='$'+real.toFixed(2)+(bud>0?' / $'+bud.toFixed(2):'');
+    return '<div style="margin-bottom:12px">'
+      +'<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:4px">'
+      +'<span style="font-size:12px">'+cat+'</span>'
+      +'<span style="font-size:11px;font-family:\'DM Mono\',monospace">'+etiqueta+'</span>'
+      +'</div>'
+      +'<div style="background:rgba(255,255,255,0.06);border-radius:6px;height:8px;overflow:hidden">'
+      +'<div style="width:'+pct+'%;height:100%;background:'+color+'"></div></div>'
+      +'<input type="number" id="pres_'+slug+'" value="'+(bud||'')+'" placeholder="Presupuesto" step="100"'
+      +' style="margin-top:6px;font-size:12px;width:100%;background:transparent;border:1px solid rgba(255,255,255,0.12);border-radius:6px;padding:4px 8px;color:inherit"'
+      +' oninput="presupuesto[this.dataset.cat]=parseFloat(this.value)||0;renderPresupuesto()" data-cat="'+cat+'">'
+      +'</div>';
+  }).join('');
 }
 function guardarGasto(btn){
   // Anti doble-click -- recuperado del mismo parche manual de julio 2026 de arriba.
