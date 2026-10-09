@@ -2,7 +2,7 @@
 
 **Proyecto independiente.** No mezclado con Terreno Ocala, JGarcia Realty, JGarciaIA, ni CouncilOS — este archivo vive únicamente dentro de este repositorio (`arroyo132-git/`), que es la fuente canónica del código de este proyecto.
 
-**Última actualización:** 2026-08-24 (auditoría completa, solo lectura, sin ejecutar nada)
+**Última actualización:** 2026-10-08 (auditoría integral). **[Corrección 2026-10-08: este encabezado decía "2026-08-24" mientras el documento ya contenía secciones del 13 y 21 de septiembre — estaba desactualizado y no reflejaba su propio contenido. Las secciones 1-13 son del 24-ago; de la 14 en adelante son posteriores.]**
 
 ---
 
@@ -311,3 +311,15 @@ Confirmado con evidencia real (API de Vercel, `list_deployments` del proyecto `p
 **Resumen final: 7 de 11 recuperados por completo (1,6,8,9,10-parte A,10-parte B) + 2 ya cubiertos por mecanismos equivalentes o superiores en `main` (4,7) + 1 parcialmente recuperado con evidencia real, 8 sub-ítems bloqueados por falta de datos verificables (3) + 2 Human Gate genuinos de decisión/arquitectura (2,11).**
 
 No se hizo merge ni deploy de ningún cambio de código. Rama `port/recuperar-recibos-y-pagos-parciales`, 9 commits de código/test, lista para tu revisión.
+
+---
+
+## 20. Reconciliación 2026-09-21 (solo documentación/verificación, código y producción congelados)
+
+**Severa Rosa / $60,000 -- confirmado que el sistema NO duplica el costo de adquisición, no requiere cambio.** El archivo más completo y reciente de gastos (6-jul-2026, $4,912.70) ya excluye por completo la línea de Severa Rosa de `gastos` -- el precio de compra del lote ($60,000, de los cuales $28,000 pagados vía cheque y $32,000 pendientes a esa fecha) sigue rastreado una sola vez, en Timeline y en el calculador ROI (`{fecha:'2025-04-01', titulo:'Compra de propiedad', desc:'Cierre de compra Lote 132 Arroyo PR - $60,000'}`), presente tanto en los 4 backups como en `main` actual. Los 2 backups más viejos (abril/junio) sí incluían esa línea duplicada en `gastos` -- pero ya no son la fuente activa. **No se requiere ningún cambio de código ni de datos** -- el estado actual ya es correcto. El saldo de $32,000 pendiente a Severa Rosa (a la fecha 2024-08-28, sin confirmación de pagos posteriores en ningún archivo disponible) sigue siendo una pregunta abierta solo para Jesvan, no verificable documentalmente.
+
+**Vercel -- confirmado cuál proyecto/URL sirve producción hoy.** `https://arroyo132.vercel.app/` (la URL de uso diario confirmada por Jesvan) está conectada al repo real de GitHub (`jgarciarealty-hub/arroyo132`) y se despliega automáticamente en cada push a `main` -- confirmado por el evento real del 2026-09-20 (redeploy automático disparado por la integración de GitHub, no por ninguna sesión de Claude). Hoy sirve exactamente el HEAD de `main`, byte a byte. Tratada como la URL canónica, tal como confirmó Jesvan -- **no se tocaron, migraron ni eliminaron** `arroyo132-netlify.vercel.app` ni `jgarciarealty-hub-arroyo132.vercel.app` (ambos proyectos de Vercel siguen intactos, sin acción). La rama `port/recuperar-recibos-y-pagos-parciales` (7 de 11 parches ya recuperados en código, probados, `node --check` limpio) **sigue sin fusionar y sin desplegar** -- pendiente del gate de Jesvan, sin cambios en esta ronda.
+
+**Los 8 gastos históricos restantes sin fecha/descripción verificable (ítem 3 de la sección 19) siguen bloqueados -- ninguna fuente nueva fue encontrada esta ronda, no se inventó ningún dato.**
+
+**Nada de código, producción, ni datos financieros fue tocado en esta ronda -- solo lectura y reconciliación documental, tal como se instruyó explícitamente.**
