@@ -90,7 +90,19 @@ Tamaño real de `index.html` en la historia:
 > **Archivos y respaldo:** `netlify.toml` (546 bytes, sha256 `1f70a1f0da623e99…`) y `netlify/functions/analyze-invoice.js` (1343 bytes, sha256 `6409630c6f2c62d7…`). Ambos están **versionados en git**, así que el historial es el respaldo: recuperables con `git checkout <commit> -- netlify netlify.toml`.
 > **Comando exacto a ejecutar** (por Jesvan, con su permiso de harness, o tras habilitar una regla que permita el borrado local): `git rm -r netlify netlify.toml` seguido de las pruebas y el commit.
 > **Impacto en producción: NINGUNO** — Vercel construye desde `vercel.json` y sirve `index.html` + `api/`; Netlify no está en uso desde junio.
-**Fase B — cerrar el port (gate de Jesvan).** Los 16/16 tests pasan; falta **fusionar y desplegar**. Nota: fusionar a `main` **despliega automáticamente** en `arroyo132.vercel.app` → es gate.
+**Fase B — cerrar el port: ✅ CERRADA Y VERIFICADA EN PRODUCCIÓN (2026-10-09).** Jesvan autorizó GD-1 y se ejecutó la secuencia completa:
+
+| Paso | Resultado |
+|---|---|
+| **BACKUP** | SHAs de rollback registrados: `main` `d1832d5`, `origin/main` `7710569`, port `98d6879`. Producción ANTES: `158.475 bytes / sha256 37a5b157f167a920` (idéntica a `main`). Árbol limpio. |
+| **MERGE** | `main` era **ancestro** del port → **fast-forward**, sin conflictos posibles (`git merge-tree` ya lo había confirmado). `d1832d5` → `98d6879`. |
+| **TEST COMPLETO** | **36/36** (app) + **16/16** (port) + `node --check` del endpoint OK + `manifest.json`/`vercel.json` válidos. |
+| **VERIFICAR** | `diff main..port` **vacío** (nada inesperado); funciones recuperadas presentes en `main`; `main` fusionado = `173.452 bytes / sha256 43fa04e71c757bfc`. |
+| **DEPLOY** | `git push origin main` → **`7710569..98d6879`** (16 commits) |
+| **VERIFICAR PRODUCCIÓN** | `arroyo132.vercel.app` sirve **`173.452 bytes / sha256 43fa04e71c757bfc`** — **idéntico al estado aprobado, byte a byte** (coincidió en el primer sondeo). |
+| **Funciones recuperadas operando** | En el HTML **desplegado**: `recuperarRecibos`, `toggleAbono`, `nuevoAbono`, `es_abono` presentes; y las preexistentes intactas (`backupToDrive`, `pinKey`, `guardarGasto`, `beforeinstallprompt`, `installPWA`). **`netlify`: 0 ocurrencias.** |
+
+**Rollback si hiciera falta:** `git reset --hard 7710569 && git push --force-with-lease origin main` (el estado remoto previo era `7710569`).
 **Fase C — decisiones de capacidad (HUMAN DECISION, independientes entre sí).** Por cada capacidad perdida con valor: ¿recuperar, reimplementar o dar por retirada? Orden sugerido por valor/costo: (1) abonos ya recuperados ✓, (2) **IVU**, (3) **Presupuesto**, (4) **Fases**, (5) adjuntos de documentos + chips, (6) entrada rápida, (7) diagnósticos, (8) planes de pago de servicios.
 **Fase D — decisiones de la puerta de reset de PIN y del reset por email** (Human Gate: credencial de correo).
 **Fase E — limpieza de Vercel**: archivar los 2 proyectos sobrantes (Human Decision). **Evidencia nueva 2026-10-08, y simplifica mucho la decisión:** las **TRES** URLs sirven hoy **contenido idéntico** — `arroyo132.vercel.app`, `arroyo132-netlify.vercel.app` y `jgarciarealty-hub-arroyo132.vercel.app` devuelven el mismo `sha256 37a5b157f167…` y los mismos 159.397 bytes, o sea **las tres corren ya `main`**. En septiembre servían tres versiones distintas (§14); hoy son **duplicados exactos de producción**, así que archivarlas/pausarlas es de **riesgo cero** (nada único vive ya en ellas) y **la pregunta "¿cuál URL usas?" pierde urgencia funcional**: la respuesta da igual, las tres muestran la misma app.
