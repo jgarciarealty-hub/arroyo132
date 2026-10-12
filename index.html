@@ -2020,16 +2020,56 @@ async function handleUpload(e, source){
     aiStatus.textContent='Analizando con IA Claude...';
     const esPDF = file.type==='application/pdf';
     const mediaType = esPDF ? 'application/pdf' : (file.type.startsWith('image/') ? file.type : 'image/jpeg');
+    // TAMAÑO (2026-10-12): las fotos del teléfono llegan a 4000 px y varios MB. Se envían a la
+    // IA reducidas a 1600 px, que es lo máximo que el servicio aprovecha igual: no cambia la
+    // lectura y evita subidas gigantes (y el rechazo por tamaño de la función del servidor).
+    const paraIA = esPDF
+      ? {base64:base64, mediaType:'application/pdf'}
+      : await reducirParaIA(base64, file.type);
     const contentBlock = esPDF
-      ? {type:'document', source:{type:'base64', media_type:'application/pdf', data:base64}}
-      : {type:'image', source:{type:'base64', media_type:mediaType, data:base64}};
+      ? {type:'document', source:{type:'base64', media_type:paraIA.mediaType, data:paraIA.base64}}
+      : {type:'image', source:{type:'base64', media_type:paraIA.mediaType, data:paraIA.base64}};
 
-    // AUTENTICACIÓN (2026-10-12): el endpoint exige un token de identidad de Google. Sin él
-    // rechaza la petición — así nadie más puede gastar el crédito de Anthropic. Si no se puede
-    // obtener (sin conexión, sin cuenta de Google), se sigue a la entrada manual: la app
-    // funciona igual, solo sin el precrellenado automático.
-    const idToken = await asegurarIdToken(true);
-    if(!idToken){
+    // AHORRO (2026-10-12) — no gastar dos veces por el mismo recibo:
+    // (a) si esta misma foto ya está guardada en un gasto, no se llama a la IA: se rellenan los
+    //     datos que YA se conocen y se avisa. Antes se pagaba otra lectura para descubrirlo.
+    // (b) si esta misma imagen ya se analizó antes (aunque el gasto no se llegara a guardar),
+    //     se reutiliza la lectura guardada en la caché local.
+    if(!esPDF && _fotoSmall){
+      const yaGuardado = fotoYaExiste(_fotoSmall);
+      if(yaGuardado){
+        aiStatus.textContent='♻️ Esta foto ya está guardada en otro gasto — no se gastó una lectura nueva.';
+        aiBox.querySelector('.spinner').style.display='none';
+        document.getElementById('f-fecha').value=yaGuardado.fecha||'';
+        document.getElementById('f-monto').value=yaGuardado.monto||'';
+        document.getElementById('f-cont').value=yaGuardado.contratista||'';
+        document.getElementById('f-desc').value=yaGuardado.descripcion||'';
+        const sel=document.getElementById('f-cat');
+        if(sel&&yaGuardado.categoria) for(let o of sel.options){ if(o.value===yaGuardado.categoria||o.text===yaGuardado.categoria){ sel.value=o.value; break; } }
+        document.getElementById('reg-form').style.display='block';
+        const pwY=document.getElementById('reg-preview-wrap'),piY=document.getElementById('reg-preview-img');
+        pwY.style.display='block';piY.src=_fotoDataUrl||'';
+        return;
+      }
+    }
+    const huella = huellaImagen(base64);
+    const cacheIA = leerCacheIA()[huella];
+    if(cacheIA){
+      aiStatus.textContent='♻️ Este recibo ya se había leído — se reutiliza sin gastar una lectura nueva.';
+      aiBox.querySelector('.spinner').style.display='none';
+      precrellenarConIA(cacheIA);
+      document.getElementById('reg-form').style.display='block';
+      const pwC=document.getElementById('reg-preview-wrap'),piC=document.getElementById('reg-preview-img');
+      pwC.style.display='block';piC.src=_fotoDataUrl||'';
+      return;
+    }
+
+    // AUTENTICACIÓN (2026-10-12): el endpoint exige una credencial de Google del usuario y la
+    // verifica en el servidor. Sin ella rechaza la petición — así nadie más puede gastar el
+    // crédito de Anthropic. Si no se puede obtener (sin conexión, sin cuenta de Google), se
+    // sigue a la entrada manual: la app funciona igual, solo sin el precrellenado automático.
+    const tokenIA = await asegurarTokenIA(true);
+    if(!tokenIA){
       aiStatus.textContent='⚠️ Conecta tu Google (ícono ☁️ arriba) para leer el recibo con IA. Mientras tanto, llena los datos a mano.';
       aiBox.querySelector('.spinner').style.display='none';
       document.getElementById('reg-form').style.display='block';
@@ -2041,7 +2081,7 @@ async function handleUpload(e, source){
 
     const res=await fetch('/api/analyze-invoice',{
       method:'POST',
-      headers:{'Content-Type':'application/json','Authorization':'Bearer '+idToken},
+      headers:{'Content-Type':'application/json','Authorization':'Bearer '+tokenIA},
       body:JSON.stringify({
         messages:[{role:'user',content:[
           contentBlock,
@@ -2068,15 +2108,8 @@ Si no encuentras algún dato, usa "" para texto y 0 para monto. Hoy: ${new Date(
     const text=data.content?.map(c=>c.text||'').join('')||'';
     let ext={};
     try{ext=JSON.parse(text.trim());}catch{const m=text.match(/\{[\s\S]*?\}/);if(m)try{ext=JSON.parse(m[0]);}catch{}}
-    if(ext.fecha)document.getElementById('f-fecha').value=ext.fecha;
-    else document.getElementById('f-fecha').value=new Date().toISOString().split('T')[0];
-    if(ext.monto)document.getElementById('f-monto').value=ext.monto;
-    if(ext.contratista)document.getElementById('f-cont').value=ext.contratista;
-    if(ext.descripcion)document.getElementById('f-desc').value=ext.descripcion;
-    if(ext.categoria){
-      const sel=document.getElementById('f-cat');
-      for(let o of sel.options){if(o.value===ext.categoria||o.text===ext.categoria){sel.value=o.value;break;}}
-    }
+    guardarEnCacheIA(huella, ext);      // para no volver a pagar si se reintenta el mismo recibo
+    precrellenarConIA(ext);
     aiStatus.textContent='✅ Datos extraídos — revisa y confirma';
     aiBox.querySelector('.spinner').style.display='none';
     // mostrar formulario de confirmación
@@ -2094,6 +2127,72 @@ Si no encuentras algún dato, usa "" para texto y 0 para monto. Hoy: ${new Date(
 }
 
 function toBase64(file){return new Promise((r,j)=>{const rd=new FileReader();rd.onload=()=>r(rd.result.split(',')[1]);rd.onerror=j;rd.readAsDataURL(file);});}
+
+// ── Ahorro de IA (2026-10-12) ───────────────────────────────────────────────────────────────
+// Huella de la imagen: sirve de clave de caché para no pagar dos veces la lectura del mismo
+// recibo. Se recorre todo el contenido (no una muestra), para que dos fotos distintas no puedan
+// compartir clave por accidente y heredar datos equivocados.
+function huellaImagen(base64){
+  const s=String(base64||'');
+  let h1=0x811c9dc5, h2=0x1000193;
+  for(let i=0;i<s.length;i++){
+    const c=s.charCodeAt(i);
+    h1=((h1^c)*16777619)>>>0;
+    h2=((h2+c)*2654435761)>>>0;
+  }
+  return h1.toString(16)+'-'+h2.toString(16)+'-'+s.length;
+}
+
+const IA_CACHE_KEY='a132_ia_cache';
+const IA_CACHE_MAX=50;   // techo de memoria en el dispositivo
+
+function leerCacheIA(){
+  try{ const c=JSON.parse(localStorage.getItem(IA_CACHE_KEY)||'{}'); return (c&&typeof c==='object')?c:{}; }catch(e){ return {}; }
+}
+function guardarEnCacheIA(huella, extraccion){
+  if(!huella || !extraccion) return;
+  try{
+    const c=leerCacheIA();
+    c[huella]={datos:extraccion, fecha:new Date().toISOString()};
+    const claves=Object.keys(c);
+    if(claves.length>IA_CACHE_MAX){                     // se descartan las más viejas
+      claves.sort((a,b)=>String(c[a].fecha).localeCompare(String(c[b].fecha)));
+      claves.slice(0, claves.length-IA_CACHE_MAX).forEach(k=>delete c[k]);
+    }
+    localStorage.setItem(IA_CACHE_KEY, JSON.stringify(c));
+  }catch(e){ /* si no cabe, simplemente no se cachea */ }
+}
+
+// Reduce la foto antes de mandarla a la IA. Si algo falla, se manda la original: nunca se pierde
+// la lectura por culpa de la optimización.
+async function reducirParaIA(base64, tipoMime){
+  const tipo = (tipoMime||'').startsWith('image/') ? tipoMime : 'image/jpeg';
+  try{
+    const img=new Image();
+    await new Promise((r,j)=>{ img.onload=r; img.onerror=j; img.src='data:'+tipo+';base64,'+base64; });
+    const MAX=1600;
+    const escala=Math.min(1, MAX/Math.max(img.width||1, img.height||1));
+    if(escala>=1) return {base64:base64, mediaType:tipo};
+    const cv=document.createElement('canvas');
+    cv.width=Math.round(img.width*escala); cv.height=Math.round(img.height*escala);
+    cv.getContext('2d').drawImage(img,0,0,cv.width,cv.height);
+    return {base64: cv.toDataURL('image/jpeg',0.85).split(',')[1], mediaType:'image/jpeg'};
+  }catch(e){ return {base64:base64, mediaType:tipo}; }
+}
+
+// Rellena el formulario con lo que leyó la IA. NO guarda nada: la persona revisa y confirma.
+function precrellenarConIA(ext){
+  const e = ext || {};
+  if(e.fecha) document.getElementById('f-fecha').value=e.fecha;
+  else document.getElementById('f-fecha').value=new Date().toISOString().split('T')[0];
+  if(e.monto) document.getElementById('f-monto').value=e.monto;
+  if(e.contratista) document.getElementById('f-cont').value=e.contratista;
+  if(e.descripcion) document.getElementById('f-desc').value=e.descripcion;
+  if(e.categoria){
+    const sel=document.getElementById('f-cat');
+    if(sel) for(let o of sel.options){ if(o.value===e.categoria||o.text===e.categoria){ sel.value=o.value; break; } }
+  }
+}
 
 
 // ============ HISTORIAL ============
@@ -3191,20 +3290,45 @@ JGarcía Realty · Jesvan García · (787) 967-4000`;
 // ============ GOOGLE DRIVE BACKUP ============
 const DRIVE_CLIENT_ID = '797904134164-ldgbl8bj4b79tqc3g7j6rfbq0au0h949.apps.googleusercontent.com';
 const DRIVE_FILE_NAME  = 'arroyo132-datos.json';
-// `openid email` se añaden para poder pedir un ID token (JWT firmado por Google). Ese token es
-// la AUTENTICACIÓN REAL que /api/analyze-invoice exige desde el 2026-10-12: sin él, el endpoint
-// rechaza la petición. Antes el endpoint era un proxy abierto que cualquiera podía usar para
-// gastar el crédito de Anthropic. `drive.file` sigue siendo el permiso de Drive.
+// Permisos que se piden a Google: `drive.file` para el respaldo, y `openid email` para que
+// Google entregue el correo verificado de la sesión. El token que devuelve este flujo es un
+// token de ACCESO (no un ID token) y el servidor lo verifica contra Google.
 const DRIVE_SCOPE      = 'openid email https://www.googleapis.com/auth/drive.file';
+// ── Sincronización segura entre VARIOS DISPOSITIVOS (2026-10-12) ──────────────────────────
+// Riesgo que se corrige: un solo archivo compartido no basta. Si el teléfono tiene 20 gastos
+// y la computadora 15, el último que respalde sobrescribe al otro y se pierde trabajo.
+// Solución, con la infraestructura que ya existe (Google Drive, sin servicios nuevos):
+//   · Cada dispositivo escribe SU PROPIO archivo (`arroyo132-datos-<dispositivo>.json`). Ese
+//     archivo solo lo escribe su dueño: nunca puede pisar a otro. Es la red de seguridad.
+//   · El archivo combinado (`arroyo132-datos.json`) se actualiza con LEER → FUSIONAR →
+//     ESCRIBIR, y la fusión **nunca descarta un registro**: si algo no está, se añade.
+//   · Un índice (`arroyo132-dispositivos.json`) deja ver qué dispositivos han respaldado.
+//   · Las diferencias se REGISTRAN y se avisan; no se resuelven en silencio.
+// Ningún dispositivo se lleva datos del otro sin que el usuario lo pida (restaurar).
+const DRIVE_INDEX_NAME = 'arroyo132-dispositivos.json';
+const DEVICE_KEY       = 'a132_device_id';
+const CONFLICT_KEY     = 'a132_conflictos';
 const DRIVE_TOKEN_KEY  = 'a132_drive_token';
 const DRIVE_EXPIRY_KEY = 'a132_drive_expiry';
-const DRIVE_FILE_KEY   = 'a132_drive_file_id';
+const DRIVE_FILE_KEY   = 'a132_drive_file_id';        // id del archivo COMBINADO
+const DEVICE_FILE_KEY  = 'a132_drive_device_file_id'; // id de la copia propia de este dispositivo
 // Estado del respaldo (2026-10-12): antes el respaldo a Drive podía fallar en silencio durante
 // meses sin que la app lo dijera. Estas 3 claves hacen visible ese estado y permiten reintentar.
-const DRIVE_IDTOKEN_KEY  = 'a132_drive_idtoken';
-const DRIVE_IDTOKEN_EXP  = 'a132_drive_idtoken_exp';
 const DRIVE_LASTOK_KEY   = 'a132_drive_lastok';      // ISO de la última subida correcta
 const DRIVE_PENDING_KEY  = 'a132_drive_pendiente';   // '1' si hay cambios sin respaldar
+
+// Identificador estable de ESTE dispositivo (navegador). Se genera una sola vez y no cambia.
+function deviceId(){
+  let id = null;
+  try{ id = localStorage.getItem(DEVICE_KEY); }catch(e){}
+  if(id) return id;
+  const aleatorio = Math.random().toString(36).slice(2,8);
+  const etiqueta = /Android|iPhone|iPad|iPod/i.test(navigator.userAgent||'') ? 'movil' : 'computadora';
+  id = etiqueta+'-'+Date.now().toString(36)+'-'+aleatorio;
+  try{ localStorage.setItem(DEVICE_KEY, id); }catch(e){}
+  return id;
+}
+function deviceFile(){ return 'arroyo132-datos-'+deviceId()+'.json'; }
 
 let driveTokenClient = null;
 let driveOkCallback = null;   // resuelve la promesa de la peticion de token en curso
@@ -3215,24 +3339,18 @@ function driveTokenValid(){
     Date.now() < parseInt(localStorage.getItem(DRIVE_EXPIRY_KEY)||'0');
 }
 
-// ---- Identidad de Google (autenticación real del endpoint de IA) ----
+// ---- Credencial de Google para el endpoint de IA (autenticación real) ----
 // El token de acceso de Drive dura ~58 min y luego muere en silencio: por eso el respaldo
 // automático podía llevar meses sin funcionar sin avisar (verificado 2026-10-12: el archivo en
 // Drive seguía con los datos del 2026-06-17). Aquí se renueva sin molestar cuando Google ya
 // tiene el consentimiento, y se pide una sola vez cuando no lo tiene.
-function guardarIdToken(idToken){
-  if(!idToken) return;
-  try{
-    const payload=JSON.parse(atob(idToken.split('.')[1].replace(/-/g,'+').replace(/_/g,'/')));
-    localStorage.setItem(DRIVE_IDTOKEN_KEY, idToken);
-    localStorage.setItem(DRIVE_IDTOKEN_EXP, String((payload.exp||0)*1000));
-  }catch(e){ /* si no se puede leer, simplemente no se guarda */ }
-}
-
-function idTokenValido(){
-  const t=localStorage.getItem(DRIVE_IDTOKEN_KEY);
-  const exp=parseInt(localStorage.getItem(DRIVE_IDTOKEN_EXP)||'0');
-  return (t && Date.now() < exp - 60000) ? t : null;
+//
+// CORRECCIÓN 2026-10-12 (segunda pasada): la primera versión guardaba `resp.id_token`, que el
+// flujo `initTokenClient` NUNCA devuelve (ese flujo entrega un token de acceso). Resultado: no
+// había credencial y el escaneo con IA habría caído siempre a entrada manual. Ahora se usa el
+// token de acceso, que sí llega, y el servidor lo verifica contra Google.
+function tokenIAValido(){
+  return driveTokenValid() ? localStorage.getItem(DRIVE_TOKEN_KEY) : null;
 }
 
 function pedirTokenDrive(interactivo){
@@ -3257,12 +3375,13 @@ async function asegurarTokenDrive(interactivo){
   return t ? localStorage.getItem(DRIVE_TOKEN_KEY) : null;
 }
 
-// Devuelve un ID token válido para /api/analyze-invoice, o null si no se pudo obtener.
-async function asegurarIdToken(interactivo){
-  const cache=idTokenValido();
+// Devuelve una credencial de Google válida para /api/analyze-invoice, o null si no se pudo
+// obtener (sin conexión, sin consentimiento). El servidor la verifica de verdad.
+async function asegurarTokenIA(interactivo){
+  const cache=tokenIAValido();
   if(cache) return cache;
   await asegurarTokenDrive(interactivo);
-  return idTokenValido();
+  return tokenIAValido();
 }
 
 function driveAction(){
@@ -3289,7 +3408,6 @@ function initDriveClient(){
       if(resp.access_token){
         localStorage.setItem(DRIVE_TOKEN_KEY, resp.access_token);
         localStorage.setItem(DRIVE_EXPIRY_KEY, String(Date.now() + 3500 * 1000));
-        guardarIdToken(resp.id_token);
         updateDriveBtn('✅');
         if(resolver) resolver(resp.access_token);
         backupToDrive(true);
@@ -3339,152 +3457,219 @@ function marcarRespaldoOk(){
 
 function hayRespaldoPendiente(){ try{ return localStorage.getItem(DRIVE_PENDING_KEY)==='1'; }catch(e){ return false; } }
 
-async function backupToDrive(mostrarFeedback=false){
-  // Renovación silenciosa: si el token venció (dura ~58 min) se intenta renovar sin abrir
-  // ninguna ventana. Solo si eso falla se marca el respaldo como pendiente.
-  let token = localStorage.getItem(DRIVE_TOKEN_KEY);
-  if(!driveTokenValid()){
-    token = await asegurarTokenDrive(false);
-    if(!token){ marcarRespaldoPendiente('sesión de Google vencida'); return; }
+// ── Helpers de Drive: subir y descargar un archivo por nombre ──────────────────────────────
+// Si el id guardado ya no sirve (archivo borrado en Drive), se busca otra vez por nombre y se
+// sigue. Antes, un id obsoleto dejaba el respaldo roto para siempre.
+async function driveBuscarId(nombre, token){
+  const q = "name='"+nombre+"' and trashed=false";
+  const search = await fetch('https://www.googleapis.com/drive/v3/files?q='+encodeURIComponent(q)+'&fields=files(id,name)',
+    { headers: { Authorization: 'Bearer '+token } });
+  if(!search.ok) throw new Error('búsqueda en Drive: HTTP '+search.status);
+  const found = await search.json();
+  return (found.files && found.files.length) ? found.files[0].id : null;
+}
+
+async function driveSubir(nombre, texto, token, claveId){
+  let fileId = claveId ? localStorage.getItem(claveId) : null;
+  if(!fileId) fileId = await driveBuscarId(nombre, token);
+  if(fileId){
+    const r = await fetch('https://www.googleapis.com/upload/drive/v3/files/'+fileId+'?uploadType=media', {
+      method:'PATCH', headers:{ Authorization:'Bearer '+token, 'Content-Type':'application/json' }, body:texto });
+    if(r.ok){ if(claveId) localStorage.setItem(claveId, fileId); return fileId; }
+    // El id guardado falló: se olvida y se intenta crear/buscar de nuevo una sola vez.
+    if(claveId) localStorage.removeItem(claveId);
   }
-  // Se guarda el estado completo de la app, no solo una parte: así, al abrirla en la computadora,
-  // no queda nada a medias. (Antes faltaban docs, timeline, presupuesto, tu coop y financiamiento.)
-  const payload = JSON.stringify({
-    version: 4,
-    fecha: new Date().toISOString(),
-    gastos,
-    servicios,
-    contratistas,
-    viajes,
-    fotos,
-    docs,
-    timeline,
-    presupuesto,
-    tucoop: (typeof tuCoop!=='undefined'?tuCoop:null),
-    fin: (()=>{ try{ return JSON.parse(localStorage.getItem('a132_fin')||'null'); }catch(e){ return null; } })(),
-  });
+  const meta = await fetch('https://www.googleapis.com/drive/v3/files', {
+    method:'POST', headers:{ Authorization:'Bearer '+token, 'Content-Type':'application/json' },
+    body: JSON.stringify({ name:nombre, mimeType:'application/json' }) });
+  const metaJson = await meta.json();
+  if(!metaJson.id) throw new Error('no se pudo crear '+nombre+' en Drive');
+  if(claveId) localStorage.setItem(claveId, metaJson.id);
+  const r2 = await fetch('https://www.googleapis.com/upload/drive/v3/files/'+metaJson.id+'?uploadType=media', {
+    method:'PATCH', headers:{ Authorization:'Bearer '+token, 'Content-Type':'application/json' }, body:texto });
+  if(!r2.ok) throw new Error('subida a Drive ('+nombre+'): HTTP '+r2.status);
+  return metaJson.id;
+}
 
-  try {
+// Para LEER se resuelve siempre por nombre, nunca por el id guardado: si el archivo se recreó
+// en Drive, un id viejo devolvería contenido obsoleto sin avisar.
+async function driveDescargar(nombre, token, claveId){
+  const fileId = await driveBuscarId(nombre, token);
+  if(!fileId) return null;
+  const res = await fetch('https://www.googleapis.com/drive/v3/files/'+fileId+'?alt=media',
+    { headers: { Authorization:'Bearer '+token } });
+  if(!res.ok) return null;
+  try{ return await res.json(); }catch(e){ return null; }   // archivo corrupto: no rompe nada
+}
+
+// Evita que dos guardados seguidos lancen dos respaldos a la vez (y que se pisen entre sí).
+let _respaldoEnCurso=false, _otroRespaldoPendiente=false;
+
+async function backupToDrive(mostrarFeedback=false){
+  if(_respaldoEnCurso){ _otroRespaldoPendiente=true; return; }   // el siguiente recoge los cambios
+  _respaldoEnCurso=true;
+  try{
+    // Renovación silenciosa: si el token venció (dura ~58 min) se renueva sin abrir ventana.
+    let token = localStorage.getItem(DRIVE_TOKEN_KEY);
+    if(!driveTokenValid()){
+      token = await asegurarTokenDrive(false);
+      if(!token){ marcarRespaldoPendiente('sesión de Google vencida'); return; }
+    }
     updateDriveBtn('⏳');
-    let fileId = localStorage.getItem(DRIVE_FILE_KEY);
 
-    if(!fileId){
-      // Buscar si ya existe el archivo en Drive
-      const search = await fetch(
-        `https://www.googleapis.com/drive/v3/files?q=name='${DRIVE_FILE_NAME}'+and+trashed=false&fields=files(id,name)`,
-        { headers: { Authorization: `Bearer ${token}` } }
-      );
-      if(!search.ok) throw new Error('búsqueda en Drive: HTTP '+search.status);
-      const found = await search.json();
-      if(found.files && found.files.length > 0){
-        fileId = found.files[0].id;
-        localStorage.setItem(DRIVE_FILE_KEY, fileId);
-      }
-    }
+    // (1) Copia PROPIA de este dispositivo. Este archivo solo lo escribe su dueño: es la red de
+    //     seguridad que garantiza que ningún respaldo puede borrar el trabajo de otro equipo.
+    await driveSubir(deviceFile(), JSON.stringify(contenidoBackup()), token, DEVICE_FILE_KEY);
 
-    if(fileId){
-      // Actualizar archivo existente
-      const r = await fetch(`https://www.googleapis.com/upload/drive/v3/files/${fileId}?uploadType=media`, {
-        method: 'PATCH',
-        headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
-        body: payload,
-      });
-      if(!r.ok) throw new Error('subida a Drive: HTTP '+r.status);
-    } else {
-      // Crear archivo nuevo
-      const meta = await fetch('https://www.googleapis.com/drive/v3/files', {
-        method: 'POST',
-        headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
-        body: JSON.stringify({ name: DRIVE_FILE_NAME, mimeType: 'application/json' }),
-      });
-      const metaJson = await meta.json();
-      if(!metaJson.id) throw new Error('no se pudo crear el archivo en Drive');
-      localStorage.setItem(DRIVE_FILE_KEY, metaJson.id);
-      const r2 = await fetch(`https://www.googleapis.com/upload/drive/v3/files/${metaJson.id}?uploadType=media`, {
-        method: 'PATCH',
-        headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
-        body: payload,
-      });
-      if(!r2.ok) throw new Error('subida a Drive: HTTP '+r2.status);
+    // (2) Archivo combinado: LEER → FUSIONAR → ESCRIBIR. La fusión nunca descarta un registro.
+    const remoto = await driveDescargar(DRIVE_FILE_NAME, token, DRIVE_FILE_KEY);
+    const fusion = fusionarEstado(contenidoBackup(), remoto);
+    if(fusion.conflictos.length || fusion.posiblesDuplicados.length){
+      try{ localStorage.setItem(CONFLICT_KEY, JSON.stringify({
+        fecha:new Date().toISOString(),
+        conflictos:fusion.conflictos,
+        posiblesDuplicados:fusion.posiblesDuplicados.map(p=>({nuevo:p.nuevo, parecidos:p.parecidos}))
+      })); }catch(e){}
     }
+    const combinado = Object.assign(contenidoBackup(), {
+      gastos: fusion.gastos, viajes: fusion.viajes, fotos: fusion.fotos,
+      dispositivo: deviceId(),
+    });
+    await driveSubir(DRIVE_FILE_NAME, JSON.stringify(combinado), token, DRIVE_FILE_KEY);
+
+    // (3) Índice de dispositivos: deja ver desde cualquier equipo quién ha respaldado y cuándo.
+    try{
+      const indice = (await driveDescargar(DRIVE_INDEX_NAME, token, null)) || { dispositivos: [] };
+      const lista = Array.isArray(indice.dispositivos) ? indice.dispositivos : [];
+      const mio = { id: deviceId(), ultimaSubida: new Date().toISOString(),
+                    gastos: gastos.length, viajes: viajes.length, fotos: Object.keys(fotos||{}).length };
+      const otros = lista.filter(d => d.id !== mio.id);
+      await driveSubir(DRIVE_INDEX_NAME, JSON.stringify({ version:1, fecha:mio.ultimaSubida, dispositivos: otros.concat([mio]) }), token, null);
+    }catch(e){ /* el índice es informativo: si falla, el respaldo ya está hecho */ }
+
     marcarRespaldoOk();
     if(mostrarFeedback) alert('✅ Respaldo guardado en Google Drive.');
   } catch(err){
     marcarRespaldoPendiente(err && err.message ? err.message : 'error de red');
     console.error('Drive backup error:', err);
     if(mostrarFeedback) alert('⚠️ No se pudo respaldar a Google Drive.\nTus datos están guardados en este dispositivo y se reintentará solo.\nMotivo: '+(err && err.message ? err.message : err));
+  } finally {
+    _respaldoEnCurso=false;
+    if(_otroRespaldoPendiente){ _otroRespaldoPendiente=false; backupToDrive(false); }
   }
 }
 
-// Une los gastos que llegan de Drive con los que ya hay en este dispositivo, sin duplicar y sin
-// borrar nada. Antes esta función REEMPLAZABA la lista completa: si el respaldo estaba viejo,
-// abrir la app en la computadora borraba gastos que solo existían en ese dispositivo.
-function fusionarGastos(locales, remotos){
-  const vistos=new Set();
-  const clave=g=>`${(g.contratista||'').trim().toLowerCase()}|${g.fecha||''}|${Math.round((Number(g.monto)||0)*100)}`;
-  const salida=[];
-  // Primero los locales (son la fuente más reciente de este dispositivo).
-  (locales||[]).forEach(g=>{ const k=String(g.id); vistos.add(k); salida.push(g); });
-  const clavesLocales=new Set((locales||[]).map(clave));
-  let agregados=0;
-  (remotos||[]).forEach(g=>{
-    const k=String(g.id);
-    if(vistos.has(k)) return;              // mismo id: ya está
-    if(clavesLocales.has(clave(g))) return; // mismo gasto con otro id: no duplicar
-    vistos.add(k); salida.push(g); agregados++;
-  });
-  return { gastos: salida, agregados };
+// ── Fusión de registros: NUNCA descarta, y distingue duplicado de gasto legítimo ─────────────
+// Antes esta función REEMPLAZABA la lista completa (borraba gastos que solo existían aquí) y
+// además descartaba por "parecido", lo que podía hacer desaparecer una compra legítima repetida.
+// Reglas de hoy:
+//   · Mismo `id` en ambos lados → es el mismo registro. Si el contenido difiere, es un CONFLICTO
+//     real (la misma fila editada en dos equipos): se conserva la local y se REGISTRA. No se pisa
+//     en silencio y no se pierde el otro valor: queda en el registro de conflictos.
+//   · Mismo comercio+fecha+importe Y la misma descripción → casi seguro el mismo gasto con otro
+//     id (caso típico de los archivos históricos). No se duplica.
+//   · Mismo comercio+fecha+importe con descripción distinta → PUEDE ser una compra legítima
+//     aparte. Se AÑADE y se marca como posible duplicado para que lo revise una persona.
+// Clave de contenido para reconocer "el mismo gasto escrito de otra forma": se ignoran mayúsculas,
+// acentos y espacios sobrantes (el mismo comercio aparece como "Ferretería Y" y "FERRETERIA Y").
+function normalizarTexto(s){
+  return String(s||'').trim().toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g,'').replace(/\s+/g,' ');
+}
+function claveContenido(g){
+  return normalizarTexto(g.contratista)+'|'+(g.fecha||'')+'|'+Math.round((Number(g.monto)||0)*100);
 }
 
-// Restaurar datos desde Drive
+function fusionarGastos(locales, remotos){
+  const localesArr = Array.isArray(locales)?locales:[];
+  const remotosArr  = Array.isArray(remotos)?remotos:[];
+  const idsLocales  = new Set(localesArr.map(g=>String(g.id)));
+  const porClave    = new Map();
+  localesArr.forEach(g=>{ const k=claveContenido(g); if(!porClave.has(k)) porClave.set(k,[]); porClave.get(k).push(g); });
+
+  const salida = localesArr.slice();
+  const posiblesDuplicados = [];
+  const conflictos = [];
+  let agregados = 0;
+
+  remotosArr.forEach(r=>{
+    if(r === null || typeof r !== 'object') return;      // registro corrupto: se ignora, no rompe
+    if(idsLocales.has(String(r.id))){                    // mismo id
+      const gemelo = localesArr.find(l=>String(l.id)===String(r.id));
+      if(JSON.stringify(gemelo)!==JSON.stringify(r)) conflictos.push({ id:r.id, local:gemelo, remoto:r });
+      return;
+    }
+    const parecidos = porClave.get(claveContenido(r)) || [];
+    const mismoConOtroId = parecidos.some(l =>
+      l.descripcion && r.descripcion && normalizarTexto(l.descripcion) === normalizarTexto(r.descripcion));
+    if(mismoConOtroId) return;                           // mismo gasto, otro id: no duplicar
+    salida.push(r); agregados++;
+    if(parecidos.length) posiblesDuplicados.push({ nuevo:r, parecidos });
+  });
+
+  return { gastos: salida, agregados, posiblesDuplicados, conflictos };
+}
+
+// Fusiona el estado COMPLETO de dos fuentes (para el respaldo combinado y para restaurar).
+function fusionarEstado(local, remoto){
+  const r = (remoto && typeof remoto === 'object') ? remoto : {};
+  const f = fusionarGastos(local.gastos, r.gastos);
+
+  const vLocales = Array.isArray(local.viajes) ? local.viajes : [];
+  const idsViaje = new Set(vLocales.map(v=>String(v.id)));
+  const vNuevos  = (Array.isArray(r.viajes)?r.viajes:[]).filter(v => v && !idsViaje.has(String(v.id)));
+
+  // Fotos: se conservan TODAS; si la misma clave existe en ambos lados, gana la de este equipo.
+  const fotosFusion = Object.assign({}, r.fotos||{}, local.fotos||{});
+
+  // Secciones que no son el núcleo financiero: manda este dispositivo, pero si difieren se avisa
+  // (el otro valor no se pierde: sigue en la copia propia de ese dispositivo).
+  const divergentes = [];
+  ['servicios','contratistas','docs','timeline','presupuesto'].forEach(k=>{
+    const a = JSON.stringify(local[k]); const b = JSON.stringify(r[k]);
+    if(b && b!=='null' && b!=='undefined' && a!==b) divergentes.push(k);
+  });
+
+  return {
+    gastos: f.gastos, viajes: vLocales.concat(vNuevos), fotos: fotosFusion,
+    agregados: f.agregados, viajesAgregados: vNuevos.length,
+    posiblesDuplicados: f.posiblesDuplicados, conflictos: f.conflictos, divergentes,
+  };
+}
+
+// Restaurar datos desde Drive — SIEMPRE no destructivo.
 async function restaurarDesdeDrive(){
   if(!(await asegurarTokenDrive(true))){ alert('Primero conecta Google Drive tocando el ícono ☁️'); return; }
   const token = localStorage.getItem(DRIVE_TOKEN_KEY);
-  let fileId = localStorage.getItem(DRIVE_FILE_KEY);
-  if(!fileId){
-    try{
-      const search = await fetch(
-        `https://www.googleapis.com/drive/v3/files?q=name='${DRIVE_FILE_NAME}'+and+trashed=false&fields=files(id,name)`,
-        { headers: { Authorization: `Bearer ${token}` } }
-      );
-      const found = await search.json();
-      if(found.files && found.files.length){ fileId=found.files[0].id; localStorage.setItem(DRIVE_FILE_KEY, fileId); }
-    }catch(e){}
+  let data = null;
+  try{ data = await driveDescargar(DRIVE_FILE_NAME, token, DRIVE_FILE_KEY); }catch(e){}
+  if(!data){ alert('No se encontró un respaldo legible en Drive. No se tocó nada.'); return; }
+  if(!Array.isArray(data.gastos)){ alert('El archivo de Drive no tiene gastos reconocibles. No se tocó nada.'); return; }
+
+  const fusion = fusionarEstado(contenidoBackup(), data);
+  const lineas = [
+    'Respaldo en Drive: ' + String(data.fecha||'sin fecha').slice(0,16).replace('T',' '),
+    (data.dispositivo ? 'Escrito por: '+data.dispositivo : null),
+    'Gastos aquí: '+gastos.length+'  ·  en el respaldo: '+data.gastos.length,
+    'Se añadirían '+fusion.agregados+' gasto(s) y '+fusion.viajesAgregados+' viaje(s) que no están aquí.',
+    'NADA se borra.',
+  ].filter(Boolean);
+  if(fusion.posiblesDuplicados.length) lineas.push('⚠️ '+fusion.posiblesDuplicados.length+' posible(s) duplicado(s) — se añaden y se marcan para que los revises.');
+  if(fusion.conflictos.length) lineas.push('⚠️ '+fusion.conflictos.length+' conflicto(s): el mismo registro con datos distintos en dos equipos. Se conserva el de aquí.');
+  if(!confirm('☁️ Traer datos desde Google Drive\n\n'+lineas.join('\n')+'\n\n¿Continuar?')) return;
+
+  gastos   = fusion.gastos;
+  viajes   = fusion.viajes;
+  fotos    = fusion.fotos;
+  if(Array.isArray(data.docs) && data.docs.length && !docs.length) docs=data.docs;
+  if(Array.isArray(data.timeline) && data.timeline.length && !timeline.length) timeline=data.timeline;
+  if(data.presupuesto && typeof data.presupuesto==='object' && !Object.keys(presupuesto).length) presupuesto=data.presupuesto;
+  if(fusion.conflictos.length || fusion.posiblesDuplicados.length){
+    try{ localStorage.setItem(CONFLICT_KEY, JSON.stringify({ fecha:new Date().toISOString(),
+      conflictos:fusion.conflictos, posiblesDuplicados:fusion.posiblesDuplicados.map(p=>({nuevo:p.nuevo, parecidos:p.parecidos})) })); }catch(e){}
   }
-  if(!fileId){ alert('No se encontró backup en Drive. Guarda un gasto primero para crear el archivo.'); return; }
-  try {
-    const res = await fetch(`https://www.googleapis.com/drive/v3/files/${fileId}?alt=media`, {
-      headers: { Authorization: `Bearer ${token}` }
-    });
-    if(!res.ok) throw new Error('HTTP '+res.status);
-    const data = await res.json();
-    if(!Array.isArray(data.gastos)){ alert('El archivo de Drive no tiene gastos reconocibles. No se tocó nada.'); return; }
-
-    const fusion=fusionarGastos(gastos, data.gastos);
-    const fotosAntes=Object.keys(fotos||{}).length;
-    const resumen=[
-      `Respaldo en Drive: ${String(data.fecha||'sin fecha').slice(0,16).replace('T',' ')}`,
-      `Gastos en este dispositivo: ${gastos.length}`,
-      `Gastos en el respaldo: ${data.gastos.length}`,
-      `Se añadirían ${fusion.agregados} gasto(s) que no están aquí. NADA se borra.`,
-    ].join('\n');
-    if(!confirm('☁️ Restaurar desde Google Drive\n\n'+resumen+'\n\n¿Continuar?')) return;
-
-    gastos = fusion.gastos;
-    if(data.fotos) fotos = Object.assign({}, data.fotos, fotos);   // lo local gana
-    if(Array.isArray(data.viajes) && data.viajes.length){
-      const idsViaje=new Set((viajes||[]).map(v=>String(v.id)));
-      data.viajes.forEach(v=>{ if(!idsViaje.has(String(v.id))) viajes.push(v); });
-      saveViajes();
-    }
-    if(Array.isArray(data.docs) && data.docs.length && !docs.length) docs=data.docs;
-    if(Array.isArray(data.timeline) && data.timeline.length && !timeline.length) timeline=data.timeline;
-    if(data.presupuesto && typeof data.presupuesto==='object' && !Object.keys(presupuesto).length) presupuesto=data.presupuesto;
-    if(data.servicios && typeof data.servicios==='object') servicios=data.servicios;
-    save();
-    alert(`✅ Restaurado. ${fusion.agregados} gasto(s) añadidos — total ${gastos.length}.\nFotos: ${fotosAntes} → ${Object.keys(fotos||{}).length}. No se borró ningún gasto.`);
-    renderDashboard();
-  } catch(err){ alert('Error al restaurar: ' + (err.message||err)); }
+  save();
+  alert('✅ Traído. '+fusion.agregados+' gasto(s) añadidos — total '+gastos.length+'.\nNo se borró ningún gasto.');
+  renderDashboard();
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -3497,6 +3682,7 @@ function contenidoBackup(){
   return {
     version: 4,
     fecha: new Date().toISOString(),
+    dispositivo: deviceId(),
     gastos, servicios, contratistas, viajes, fotos, docs, timeline, presupuesto,
     tucoop: (typeof tuCoop!=='undefined'?tuCoop:null),
     fin: (()=>{ try{ return JSON.parse(localStorage.getItem('a132_fin')||'null'); }catch(e){ return null; } })(),
@@ -3525,14 +3711,17 @@ function importarBackup(){
     try{
       const data=JSON.parse(await file.text());
       if(!Array.isArray(data.gastos)){ alert('Ese archivo no tiene gastos reconocibles. No se tocó nada.'); return; }
-      const fusion=fusionarGastos(gastos, data.gastos);
-      if(!confirm(`📂 Importar respaldo local\n\nArchivo: ${file.name}\nGastos aquí: ${gastos.length}\nGastos en el archivo: ${data.gastos.length}\nSe añadirían ${fusion.agregados} que no están aquí. NADA se borra.\n\n¿Continuar?`)) return;
+      const fusion=fusionarEstado(contenidoBackup(), data);
+      const avisos=[];
+      if(fusion.posiblesDuplicados.length) avisos.push('⚠️ '+fusion.posiblesDuplicados.length+' posible(s) duplicado(s) — se añaden y se marcan.');
+      if(fusion.conflictos.length) avisos.push('⚠️ '+fusion.conflictos.length+' conflicto(s): el mismo registro con datos distintos. Se conserva el de aquí.');
+      if(!confirm(`📂 Importar respaldo local\n\nArchivo: ${file.name}\nGastos aquí: ${gastos.length}\nGastos en el archivo: ${data.gastos.length}\nSe añadirían ${fusion.agregados} gasto(s) y ${fusion.viajesAgregados} viaje(s). NADA se borra.\n\n${avisos.join('\n')}\n\n¿Continuar?`)) return;
       gastos=fusion.gastos;
-      if(data.fotos) fotos=Object.assign({}, data.fotos, fotos);
-      if(Array.isArray(data.viajes) && data.viajes.length){
-        const ids=new Set((viajes||[]).map(v=>String(v.id)));
-        data.viajes.forEach(v=>{ if(!ids.has(String(v.id))) viajes.push(v); });
-        saveViajes();
+      viajes=fusion.viajes;
+      fotos=fusion.fotos;
+      if(fusion.conflictos.length || fusion.posiblesDuplicados.length){
+        try{ localStorage.setItem(CONFLICT_KEY, JSON.stringify({ fecha:new Date().toISOString(),
+          conflictos:fusion.conflictos, posiblesDuplicados:fusion.posiblesDuplicados.map(p=>({nuevo:p.nuevo, parecidos:p.parecidos})) })); }catch(e){}
       }
       save();
       alert(`✅ Importado. ${fusion.agregados} gasto(s) añadidos — total ${gastos.length}. No se borró ningún gasto.`);

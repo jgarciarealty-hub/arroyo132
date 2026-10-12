@@ -9,10 +9,15 @@
 // Capas de defensa, TODAS obligatorias (CORS NO sustituye a la autenticación):
 //   1. Origen permitido (lista blanca). NO es autenticación: solo evita que una web ajena
 //      use el endpoint desde el navegador de un visitante.
-//   2. AUTENTICACIÓN REAL DEL LADO DEL SERVIDOR: token de identidad de Google (JWT firmado
-//      por Google) verificado contra las llaves públicas de Google, con comprobación de
-//      firma, emisor, audiencia, caducidad y correo en lista blanca. Sin esto → 401.
-//      Es la capa que realmente protege la credencial de Anthropic.
+//   2. AUTENTICACIÓN REAL DEL LADO DEL SERVIDOR: la app envía la credencial de Google del
+//      usuario y el servidor la verifica ÉL MISMO contra Google — nunca la acepta porque el
+//      cliente diga que es válida. Se aceptan las dos formas y cada una se verifica como
+//      corresponde (ver `verificarCredencial`):
+//        · JWT de 3 segmentos → ID token: firma RS256 contra las llaves públicas de Google
+//          (JWKS), más emisor, audiencia, caducidad y correo en lista blanca.
+//        · cualquier otra cosa → token de acceso: se pregunta a Google (`tokeninfo`), que es
+//          quien lo emitió, y se comprueba audiencia, vigencia y correo verificado.
+//      Sin esto → 401. Es la capa que realmente protege la credencial de Anthropic.
 //   3. Límite de peticiones por IP + presupuesto diario global (control de consumo).
 //   4. Validación estricta del cuerpo: la petición tiene que tener forma de "analizar UN
 //      recibo" (una imagen o PDF + un texto corto). No se reenvía un prompt arbitrario.
@@ -30,6 +35,11 @@
 //   A132_MAX_BODY_BYTES      Tamaño máximo del cuerpo en bytes (por defecto 4.2 MB: el límite
 //                            real de cuerpo de una función serverless de Vercel es 4.5 MB).
 //   A132_MAX_TOKENS          max_tokens hacia Anthropic (por defecto 600).
+//   A132_MODEL               Modelo de lectura de recibos. Por defecto `claude-haiku-5-5`
+//                            ($0.10/$0.50 por millón de tokens, 10x más barato que
+//                            `claude-haiku-4-5`; ambos soportan imágenes y PDF, verificado).
+//   A132_EFFORT              Opcional (`low`/`medium`/`high`). Solo lo entienden los modelos
+//                            nuevos; si no se pone, no se envía y funciona con cualquiera.
 // ─────────────────────────────────────────────────────────────────────────────
 'use strict';
 
@@ -39,7 +49,13 @@ const crypto = require('node:crypto');
 // secreto: el secreto aquí es la API key de Anthropic, que vive solo en el servidor.
 const CLIENT_ID_DEFECTO = '797904134164-ldgbl8bj4b79tqc3g7j6rfbq0au0h949.apps.googleusercontent.com';
 const ORIGENES_DEFECTO = 'https://arroyo132.vercel.app';
-const MODELO_FIJO = 'claude-haiku-4-5-20251001';
+// Modelo para leer recibos. Cambiado el 2026-10-12 tras verificar EN VIVO contra la API de
+// modelos: `claude-haiku-5-5` soporta imágenes y PDF y cuesta $0.10/$0.50 por millón de tokens,
+// frente a los $1.00/$5.00 de `claude-haiku-4-5` — **10 veces menos** por el mismo trabajo.
+// La app NUNCA guarda sola: la IA solo precrellena y una persona confirma, así que un cambio de
+// modelo no puede meter un dato malo sin que alguien lo vea. Se puede volver al anterior (o
+// probar otro) sin tocar código: variable de entorno `A132_MODEL`.
+const MODELO_DEFECTO = 'claude-haiku-5-5';
 const TIPOS_MEDIA_PERMITIDOS = new Set(['image/jpeg', 'image/png', 'image/webp', 'image/gif', 'application/pdf']);
 const GOOGLE_JWKS_URL = 'https://www.googleapis.com/oauth2/v3/certs';
 const EMISORES_VALIDOS = new Set(['accounts.google.com', 'https://accounts.google.com']);
@@ -145,6 +161,87 @@ async function verificarIdTokenGoogle(token, opts) {
   if (!email || !emails.includes(email)) return { ok: false, motivo: 'email' };
 
   return { ok: true, email };
+}
+
+// ─────────────────────────── verificación del token de ACCESO ───────────────────────────
+// CORRECCIÓN 2026-10-12 (segunda pasada). La primera versión de este archivo esperaba un ID
+// token (`resp.id_token`) del flujo `google.accounts.oauth2.initTokenClient`. Eso es un ERROR:
+// ese flujo devuelve un **token de acceso** (opaco), NO un ID token — la referencia oficial de
+// Google para `TokenResponse` no incluye `id_token`. Con ese error, la app nunca habría
+// obtenido credencial y el escaneo con IA habría caído siempre a entrada manual.
+//
+// Mecanismo válido, sin credenciales nuevas y sin servicios nuevos: el token de acceso se
+// verifica **preguntándole a Google** (endpoint `tokeninfo`), que es quien lo emitió. Se
+// comprueba que sea de esta aplicación (`audience`) y que no esté vencido (`expires_in`), y se
+// toma el correo verificado de ahí (`email`, presente porque la app pide el alcance `email`).
+// Un token falso o vencido hace que Google responda 400 `invalid_token`.
+const GOOGLE_TOKENINFO_URL = 'https://www.googleapis.com/oauth2/v1/tokeninfo';
+
+// Caché corta por token (evita golpear a Google en cada recibo). Se guarda solo un hash, nunca
+// el token en claro. TTL acotado a 5 min o a lo que le quede de vida al token, lo que sea menor.
+const _tokensVistos = new Map();
+const TTL_CACHE_TOKEN_MS = 5 * 60 * 1000;
+
+function huella(token) {
+  return crypto.createHash('sha256').update(String(token)).digest('hex');
+}
+
+async function verificarTokenDeAccesoGoogle(token, opts) {
+  const o = opts || {};
+  const clientId = o.clientId || process.env.A132_CLIENT_ID || CLIENT_ID_DEFECTO;
+  const emails = o.emails || emailsPermitidos();
+  const ahora = Date.now();
+
+  const h = huella(token);
+  const guardado = _tokensVistos.get(h);
+  if (guardado && ahora < guardado.hasta) {
+    return guardado.resultado;
+  }
+
+  let datos;
+  try {
+    // El token va en el cuerpo del POST para que no quede en los registros de la URL.
+    const r = await fetch(GOOGLE_TOKENINFO_URL, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+      body: 'access_token=' + encodeURIComponent(token),
+    });
+    if (!r.ok) {
+      const fallo = { ok: false, motivo: 'token_rechazado_por_google' };
+      _tokensVistos.set(h, { resultado: fallo, hasta: ahora + 60000 });
+      return fallo;
+    }
+    datos = await r.json();
+  } catch (e) {
+    return { ok: false, motivo: 'sin_respuesta_de_google' };
+  }
+
+  if (Number(datos.expires_in) <= 0) return { ok: false, motivo: 'vencido' };
+  if (datos.audience !== clientId && datos.issued_to !== clientId) return { ok: false, motivo: 'aud' };
+
+  const email = String(datos.email || '').toLowerCase();
+  if (!email) return { ok: false, motivo: 'sin_correo' };
+  if (datos.verified_email === false || datos.email_verified === 'false') return { ok: false, motivo: 'correo_no_verificado' };
+  if (!emails.includes(email)) return { ok: false, motivo: 'email' };
+
+  const resultado = { ok: true, email };
+  const ttl = Math.min(TTL_CACHE_TOKEN_MS, Math.max(0, (Number(datos.expires_in) - 30) * 1000));
+  _tokensVistos.set(h, { resultado, hasta: ahora + ttl });
+  if (_tokensVistos.size > 2000) _tokensVistos.clear();
+  return resultado;
+}
+
+/**
+ * Decide qué tipo de credencial llegó y la verifica en consecuencia.
+ * - Tres segmentos separados por punto → es un JWT: se verifica como ID token de Google.
+ * - Cualquier otra cosa → token de acceso opaco: se verifica contra Google (tokeninfo).
+ * En ambos casos la verificación es del lado del servidor y falla cerrado.
+ */
+async function verificarCredencial(token, opts) {
+  const t = String(token || '');
+  if (t.split('.').length === 3) return verificarIdTokenGoogle(t, opts);
+  if (!t) return { ok: false, motivo: 'vacio' };
+  return verificarTokenDeAccesoGoogle(t, opts);
 }
 
 // ─────────────────────────── CORS ───────────────────────────
@@ -288,7 +385,7 @@ async function handler(req, res) {
   const token = cabecera.startsWith('Bearer ') ? cabecera.slice(7).trim() : '';
   if (!token) return res.status(401).json({ error: 'No autorizado' });
 
-  const verificado = await verificarIdTokenGoogle(token, { emails });
+  const verificado = await verificarCredencial(token, { emails });
   if (!verificado.ok) return res.status(401).json({ error: 'No autorizado' });
 
   // (3) Límites de consumo.
@@ -317,6 +414,16 @@ async function handler(req, res) {
   if (!validado.ok) return res.status(400).json({ error: validado.error });
 
   try {
+    const cuerpoAnthropic = {
+      model: process.env.A132_MODEL || MODELO_DEFECTO,
+      max_tokens: enteroEnv('A132_MAX_TOKENS', 600),
+      messages: [{ role: 'user', content: validado.bloque }],
+    };
+    // `effort` (opcional) solo lo entienden los modelos nuevos. Si no está configurado no se
+    // envía nada, para que el mismo código funcione con cualquier modelo.
+    const esfuerzo = process.env.A132_EFFORT;
+    if (esfuerzo) cuerpoAnthropic.output_config = { effort: esfuerzo };
+
     const respuesta = await fetch('https://api.anthropic.com/v1/messages', {
       method: 'POST',
       headers: {
@@ -324,11 +431,7 @@ async function handler(req, res) {
         'x-api-key': ANTHROPIC_KEY,
         'anthropic-version': '2023-06-01',
       },
-      body: JSON.stringify({
-        model: MODELO_FIJO,
-        max_tokens: enteroEnv('A132_MAX_TOKENS', 600),
-        messages: [{ role: 'user', content: validado.bloque }],
-      }),
+      body: JSON.stringify(cuerpoAnthropic),
     });
     const datos = await respuesta.json();
     if (!respuesta.ok) {
@@ -346,15 +449,18 @@ module.exports = handler;
 // Solo para las pruebas automatizadas (no lo usa Vercel).
 module.exports._internals = {
   verificarIdTokenGoogle,
+  verificarTokenDeAccesoGoogle,
+  verificarCredencial,
   validarCuerpo,
   aplicarCors,
   origenPermitido,
   dentroDeLimite,
   dentroDePresupuesto,
   ipDe,
-  _reiniciar: () => { _ventanas.clear(); _presupuesto = { dia: '', usadas: 0 }; },
+  _reiniciar: () => { _ventanas.clear(); _presupuesto = { dia: '', usadas: 0 }; _tokensVistos.clear(); },
   _ponerJwks: (llaves) => { _jwks = llaves; _jwksExpira = Date.now() + 3600 * 1000; },
-  MODELO_FIJO,
+  MODELO_DEFECTO,
   CLIENT_ID_DEFECTO,
   ORIGENES_DEFECTO,
+  GOOGLE_TOKENINFO_URL,
 };
