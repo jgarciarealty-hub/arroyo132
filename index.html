@@ -2023,9 +2023,25 @@ async function handleUpload(e, source){
     const contentBlock = esPDF
       ? {type:'document', source:{type:'base64', media_type:'application/pdf', data:base64}}
       : {type:'image', source:{type:'base64', media_type:mediaType, data:base64}};
+
+    // AUTENTICACIÓN (2026-10-12): el endpoint exige un token de identidad de Google. Sin él
+    // rechaza la petición — así nadie más puede gastar el crédito de Anthropic. Si no se puede
+    // obtener (sin conexión, sin cuenta de Google), se sigue a la entrada manual: la app
+    // funciona igual, solo sin el precrellenado automático.
+    const idToken = await asegurarIdToken(true);
+    if(!idToken){
+      aiStatus.textContent='⚠️ Conecta tu Google (ícono ☁️ arriba) para leer el recibo con IA. Mientras tanto, llena los datos a mano.';
+      aiBox.querySelector('.spinner').style.display='none';
+      document.getElementById('reg-form').style.display='block';
+      document.getElementById('f-fecha').value=new Date().toISOString().split('T')[0];
+      const pw0=document.getElementById('reg-preview-wrap'),pi0=document.getElementById('reg-preview-img');
+      pw0.style.display='block';pi0.src=_fotoDataUrl||'';
+      return;
+    }
+
     const res=await fetch('/api/analyze-invoice',{
       method:'POST',
-      headers:{'Content-Type':'application/json'},
+      headers:{'Content-Type':'application/json','Authorization':'Bearer '+idToken},
       body:JSON.stringify({
         messages:[{role:'user',content:[
           contentBlock,
@@ -2035,6 +2051,19 @@ Si no encuentras algún dato, usa "" para texto y 0 para monto. Hoy: ${new Date(
         ]}]
       })
     });
+    if(!res.ok){
+      let motivo='';
+      try{ motivo=(await res.json()).error||''; }catch(e){}
+      if(res.status===401) motivo='Tu sesión de Google no es válida o venció. Toca el ícono ☁️ para reconectar.';
+      else if(res.status===429) motivo='Demasiadas lecturas seguidas. Espera un minuto.';
+      aiStatus.textContent='⚠️ No se pudo leer con IA'+(motivo?` — ${motivo}`:'')+'. Ingresa los datos manualmente.';
+      aiBox.querySelector('.spinner').style.display='none';
+      document.getElementById('reg-form').style.display='block';
+      document.getElementById('f-fecha').value=new Date().toISOString().split('T')[0];
+      const pw1=document.getElementById('reg-preview-wrap'),pi1=document.getElementById('reg-preview-img');
+      pw1.style.display='block';pi1.src=_fotoDataUrl||'';
+      return;
+    }
     const data=await res.json();
     const text=data.content?.map(c=>c.text||'').join('')||'';
     let ext={};
@@ -2678,11 +2707,38 @@ function renderDocs(){
         <tbody>${filas}</tbody>
       </table>
     </div>
-    <div style="margin-top:14px;display:flex;gap:8px;justify-content:flex-end;">
+    <div style="margin-top:14px;display:flex;gap:8px;justify-content:flex-end;flex-wrap:wrap;">
       <button class="btn btn-sm btn-outline" onclick="showAddDoc()">+ Añadir Documento</button>
       <a href="https://drive.google.com/drive/folders/11yIIr6FrK2I4pFLtDiW-pcyUbuSGLSE6" target="_blank" class="btn btn-sm btn-ghost">📂 Abrir Drive</a>
     </div>
+
+    <div class="panel" style="margin-top:16px">
+      <div class="panel-title">💾 Respaldo y sincronización</div>
+      <div id="respaldo-estado" style="font-size:12px;color:var(--gray);margin-bottom:10px">${estadoRespaldoTexto()}</div>
+      <div style="display:flex;gap:8px;flex-wrap:wrap">
+        <button class="btn btn-sm btn-gold" onclick="restaurarDesdeDrive()">☁️ Traer datos desde Google Drive</button>
+        <button class="btn btn-sm btn-outline" onclick="exportarBackup()">⬇️ Exportar respaldo (archivo)</button>
+        <button class="btn btn-sm btn-outline" onclick="importarBackup()">⬆️ Importar respaldo (archivo)</button>
+      </div>
+      <div style="font-size:11px;color:var(--gray);margin-top:10px">
+        El respaldo a Google Drive es automático al guardar. "Traer datos desde Google Drive" es lo que
+        se usa en la computadora para ver los recibos registrados desde el teléfono: <b>solo añade</b> lo
+        que falte, nunca borra.
+      </div>
+    </div>
   `;
+}
+
+// Estado visible del respaldo (para el panel de arriba). Sin esto, un respaldo caído era
+// invisible: la app parecía estar respaldando y no lo estaba.
+function estadoRespaldoTexto(){
+  const ultimo=localStorage.getItem(DRIVE_LASTOK_KEY);
+  const pend=hayRespaldoPendiente();
+  const partes=[];
+  partes.push(driveTokenValid()?'Google Drive: conectado 🟢':'Google Drive: no conectado ☁️');
+  partes.push(ultimo?('Último respaldo correcto: '+String(ultimo).slice(0,16).replace('T',' ')):'Último respaldo correcto: ninguno en este dispositivo');
+  if(pend) partes.push('⚠️ HAY CAMBIOS SIN RESPALDAR');
+  return partes.join(' · ');
 }
 
 function updateDoc(id,estado){
@@ -3128,23 +3184,85 @@ JGarcía Realty · Jesvan García · (787) 967-4000`;
 }
 
 // ============ INIT ============
-updateResumen();
-renderTimeline();
-renderDocs();
+// (Movido al final del script el 2026-10-12: aquí, a mitad del archivo, se ejecutaba ANTES de
+// declararse las constantes de Google Drive — `renderDocs()` ya lee el estado de respaldo, y
+// tocar una `const` antes de su declaración lanza ReferenceError y corta todo el script.)
 
 // ============ GOOGLE DRIVE BACKUP ============
 const DRIVE_CLIENT_ID = '797904134164-ldgbl8bj4b79tqc3g7j6rfbq0au0h949.apps.googleusercontent.com';
 const DRIVE_FILE_NAME  = 'arroyo132-datos.json';
-const DRIVE_SCOPE      = 'https://www.googleapis.com/auth/drive.file';
+// `openid email` se añaden para poder pedir un ID token (JWT firmado por Google). Ese token es
+// la AUTENTICACIÓN REAL que /api/analyze-invoice exige desde el 2026-10-12: sin él, el endpoint
+// rechaza la petición. Antes el endpoint era un proxy abierto que cualquiera podía usar para
+// gastar el crédito de Anthropic. `drive.file` sigue siendo el permiso de Drive.
+const DRIVE_SCOPE      = 'openid email https://www.googleapis.com/auth/drive.file';
 const DRIVE_TOKEN_KEY  = 'a132_drive_token';
 const DRIVE_EXPIRY_KEY = 'a132_drive_expiry';
 const DRIVE_FILE_KEY   = 'a132_drive_file_id';
+// Estado del respaldo (2026-10-12): antes el respaldo a Drive podía fallar en silencio durante
+// meses sin que la app lo dijera. Estas 3 claves hacen visible ese estado y permiten reintentar.
+const DRIVE_IDTOKEN_KEY  = 'a132_drive_idtoken';
+const DRIVE_IDTOKEN_EXP  = 'a132_drive_idtoken_exp';
+const DRIVE_LASTOK_KEY   = 'a132_drive_lastok';      // ISO de la última subida correcta
+const DRIVE_PENDING_KEY  = 'a132_drive_pendiente';   // '1' si hay cambios sin respaldar
 
 let driveTokenClient = null;
+let driveOkCallback = null;   // resuelve la promesa de la peticion de token en curso
+let driveErrCallback = null;
 
 function driveTokenValid(){
   return !!localStorage.getItem(DRIVE_TOKEN_KEY) &&
     Date.now() < parseInt(localStorage.getItem(DRIVE_EXPIRY_KEY)||'0');
+}
+
+// ---- Identidad de Google (autenticación real del endpoint de IA) ----
+// El token de acceso de Drive dura ~58 min y luego muere en silencio: por eso el respaldo
+// automático podía llevar meses sin funcionar sin avisar (verificado 2026-10-12: el archivo en
+// Drive seguía con los datos del 2026-06-17). Aquí se renueva sin molestar cuando Google ya
+// tiene el consentimiento, y se pide una sola vez cuando no lo tiene.
+function guardarIdToken(idToken){
+  if(!idToken) return;
+  try{
+    const payload=JSON.parse(atob(idToken.split('.')[1].replace(/-/g,'+').replace(/_/g,'/')));
+    localStorage.setItem(DRIVE_IDTOKEN_KEY, idToken);
+    localStorage.setItem(DRIVE_IDTOKEN_EXP, String((payload.exp||0)*1000));
+  }catch(e){ /* si no se puede leer, simplemente no se guarda */ }
+}
+
+function idTokenValido(){
+  const t=localStorage.getItem(DRIVE_IDTOKEN_KEY);
+  const exp=parseInt(localStorage.getItem(DRIVE_IDTOKEN_EXP)||'0');
+  return (t && Date.now() < exp - 60000) ? t : null;
+}
+
+function pedirTokenDrive(interactivo){
+  return new Promise(resolve=>{
+    if(!DRIVE_CLIENT_ID || typeof google==='undefined' || !google.accounts){
+      resolve(null); return;
+    }
+    try{ initDriveClient(); }catch(e){ resolve(null); return; }
+    driveOkCallback = resolve;
+    driveErrCallback = () => resolve(null);
+    try{
+      // prompt:'' intenta SIN abrir ventana; si Google necesita consentimiento, falla y se
+      // devuelve null, sin interrumpir al usuario en un guardado automático.
+      driveTokenClient.requestAccessToken(interactivo ? {} : {prompt:''});
+    }catch(e){ driveOkCallback=null; driveErrCallback=null; resolve(null); }
+  });
+}
+
+async function asegurarTokenDrive(interactivo){
+  if(driveTokenValid()) return localStorage.getItem(DRIVE_TOKEN_KEY);
+  const t = await pedirTokenDrive(interactivo);
+  return t ? localStorage.getItem(DRIVE_TOKEN_KEY) : null;
+}
+
+// Devuelve un ID token válido para /api/analyze-invoice, o null si no se pudo obtener.
+async function asegurarIdToken(interactivo){
+  const cache=idTokenValido();
+  if(cache) return cache;
+  await asegurarTokenDrive(interactivo);
+  return idTokenValido();
 }
 
 function driveAction(){
@@ -3156,9 +3274,8 @@ function driveAction(){
     // Ya conectado — hacer backup manual
     backupToDrive(true);
   } else {
-    // Conectar
-    initDriveClient();
-    driveTokenClient.requestAccessToken();
+    // Conectar (interactivo: aquí sí se puede abrir la ventana de Google)
+    asegurarTokenDrive(true).then(t=>{ if(t) updateDriveBtn('✅'); });
   }
 }
 
@@ -3168,12 +3285,19 @@ function initDriveClient(){
     client_id: DRIVE_CLIENT_ID,
     scope: DRIVE_SCOPE,
     callback: (resp) => {
+      const resolver=driveOkCallback; driveOkCallback=null; driveErrCallback=null;
       if(resp.access_token){
         localStorage.setItem(DRIVE_TOKEN_KEY, resp.access_token);
         localStorage.setItem(DRIVE_EXPIRY_KEY, String(Date.now() + 3500 * 1000));
+        guardarIdToken(resp.id_token);
         updateDriveBtn('✅');
+        if(resolver) resolver(resp.access_token);
         backupToDrive(true);
-      }
+      } else if(resolver){ resolver(null); }
+    },
+    error_callback: () => {
+      const resolver=driveOkCallback; driveOkCallback=null; driveErrCallback=null;
+      if(resolver) resolver(null);
     },
   });
 }
@@ -3181,21 +3305,63 @@ function initDriveClient(){
 function updateDriveBtn(icon){
   const btn = document.getElementById('btn-drive');
   if(btn) btn.textContent = icon;
-  // Restaurar ícono normal a los 3 segundos
-  if(icon !== '☁️') setTimeout(()=>{ if(btn) btn.textContent = driveTokenValid()?'🟢':'☁️'; }, 3000);
+  // Restaurar ícono normal a los 3 segundos — salvo que haya un respaldo pendiente, en cuyo
+  // caso el aviso se queda visible (antes se perdía a los 3 s y el fallo quedaba invisible).
+  if(icon !== '☁️') setTimeout(()=>{
+    if(!btn) return;
+    if(hayRespaldoPendiente()){ marcarRespaldoPendiente(); return; }
+    btn.textContent = driveTokenValid()?'🟢':'☁️';
+  }, 3000);
 }
 
+// Marca que hay cambios sin respaldar y lo dice en la barra superior, en vez de fallar en
+// silencio (que es exactamente lo que pasó hasta 2026-10-12: el archivo de Drive estuvo sin
+// actualizarse desde el 2026-06-17 sin que la app avisara nunca).
+function marcarRespaldoPendiente(motivo){
+  try{ localStorage.setItem(DRIVE_PENDING_KEY,'1'); }catch(e){}
+  const btn=document.getElementById('btn-drive');
+  if(btn){
+    btn.textContent='⚠️';
+    const ultimo=localStorage.getItem(DRIVE_LASTOK_KEY);
+    btn.title='⚠️ Hay cambios SIN respaldar'+(ultimo?` — último respaldo correcto: ${ultimo.slice(0,16).replace('T',' ')}`:' — nunca se ha respaldado en este dispositivo')+(motivo?` (${motivo})`:'');
+  }
+}
+
+function marcarRespaldoOk(){
+  const ahoraIso=new Date().toISOString();
+  try{
+    localStorage.setItem(DRIVE_LASTOK_KEY, ahoraIso);
+    localStorage.removeItem(DRIVE_PENDING_KEY);
+  }catch(e){}
+  const btn=document.getElementById('btn-drive');
+  if(btn){ btn.textContent='✅'; btn.title='Respaldo al día — '+ahoraIso.slice(0,16).replace('T',' '); }
+}
+
+function hayRespaldoPendiente(){ try{ return localStorage.getItem(DRIVE_PENDING_KEY)==='1'; }catch(e){ return false; } }
+
 async function backupToDrive(mostrarFeedback=false){
-  if(!driveTokenValid()) return;
-  const token = localStorage.getItem(DRIVE_TOKEN_KEY);
+  // Renovación silenciosa: si el token venció (dura ~58 min) se intenta renovar sin abrir
+  // ninguna ventana. Solo si eso falla se marca el respaldo como pendiente.
+  let token = localStorage.getItem(DRIVE_TOKEN_KEY);
+  if(!driveTokenValid()){
+    token = await asegurarTokenDrive(false);
+    if(!token){ marcarRespaldoPendiente('sesión de Google vencida'); return; }
+  }
+  // Se guarda el estado completo de la app, no solo una parte: así, al abrirla en la computadora,
+  // no queda nada a medias. (Antes faltaban docs, timeline, presupuesto, tu coop y financiamiento.)
   const payload = JSON.stringify({
-    version: 3,
+    version: 4,
     fecha: new Date().toISOString(),
     gastos,
     servicios,
     contratistas,
     viajes,
     fotos,
+    docs,
+    timeline,
+    presupuesto,
+    tucoop: (typeof tuCoop!=='undefined'?tuCoop:null),
+    fin: (()=>{ try{ return JSON.parse(localStorage.getItem('a132_fin')||'null'); }catch(e){ return null; } })(),
   });
 
   try {
@@ -3208,6 +3374,7 @@ async function backupToDrive(mostrarFeedback=false){
         `https://www.googleapis.com/drive/v3/files?q=name='${DRIVE_FILE_NAME}'+and+trashed=false&fields=files(id,name)`,
         { headers: { Authorization: `Bearer ${token}` } }
       );
+      if(!search.ok) throw new Error('búsqueda en Drive: HTTP '+search.status);
       const found = await search.json();
       if(found.files && found.files.length > 0){
         fileId = found.files[0].id;
@@ -3217,11 +3384,12 @@ async function backupToDrive(mostrarFeedback=false){
 
     if(fileId){
       // Actualizar archivo existente
-      await fetch(`https://www.googleapis.com/upload/drive/v3/files/${fileId}?uploadType=media`, {
+      const r = await fetch(`https://www.googleapis.com/upload/drive/v3/files/${fileId}?uploadType=media`, {
         method: 'PATCH',
         headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
         body: payload,
       });
+      if(!r.ok) throw new Error('subida a Drive: HTTP '+r.status);
     } else {
       // Crear archivo nuevo
       const meta = await fetch('https://www.googleapis.com/drive/v3/files', {
@@ -3230,43 +3398,169 @@ async function backupToDrive(mostrarFeedback=false){
         body: JSON.stringify({ name: DRIVE_FILE_NAME, mimeType: 'application/json' }),
       });
       const metaJson = await meta.json();
-      if(metaJson.id){
-        localStorage.setItem(DRIVE_FILE_KEY, metaJson.id);
-        await fetch(`https://www.googleapis.com/upload/drive/v3/files/${metaJson.id}?uploadType=media`, {
-          method: 'PATCH',
-          headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
-          body: payload,
-        });
-      }
+      if(!metaJson.id) throw new Error('no se pudo crear el archivo en Drive');
+      localStorage.setItem(DRIVE_FILE_KEY, metaJson.id);
+      const r2 = await fetch(`https://www.googleapis.com/upload/drive/v3/files/${metaJson.id}?uploadType=media`, {
+        method: 'PATCH',
+        headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
+        body: payload,
+      });
+      if(!r2.ok) throw new Error('subida a Drive: HTTP '+r2.status);
     }
-    updateDriveBtn('✅');
-    if(mostrarFeedback) console.log('✅ Backup guardado en Google Drive');
+    marcarRespaldoOk();
+    if(mostrarFeedback) alert('✅ Respaldo guardado en Google Drive.');
   } catch(err){
-    updateDriveBtn('⚠️');
+    marcarRespaldoPendiente(err && err.message ? err.message : 'error de red');
     console.error('Drive backup error:', err);
+    if(mostrarFeedback) alert('⚠️ No se pudo respaldar a Google Drive.\nTus datos están guardados en este dispositivo y se reintentará solo.\nMotivo: '+(err && err.message ? err.message : err));
   }
+}
+
+// Une los gastos que llegan de Drive con los que ya hay en este dispositivo, sin duplicar y sin
+// borrar nada. Antes esta función REEMPLAZABA la lista completa: si el respaldo estaba viejo,
+// abrir la app en la computadora borraba gastos que solo existían en ese dispositivo.
+function fusionarGastos(locales, remotos){
+  const vistos=new Set();
+  const clave=g=>`${(g.contratista||'').trim().toLowerCase()}|${g.fecha||''}|${Math.round((Number(g.monto)||0)*100)}`;
+  const salida=[];
+  // Primero los locales (son la fuente más reciente de este dispositivo).
+  (locales||[]).forEach(g=>{ const k=String(g.id); vistos.add(k); salida.push(g); });
+  const clavesLocales=new Set((locales||[]).map(clave));
+  let agregados=0;
+  (remotos||[]).forEach(g=>{
+    const k=String(g.id);
+    if(vistos.has(k)) return;              // mismo id: ya está
+    if(clavesLocales.has(clave(g))) return; // mismo gasto con otro id: no duplicar
+    vistos.add(k); salida.push(g); agregados++;
+  });
+  return { gastos: salida, agregados };
 }
 
 // Restaurar datos desde Drive
 async function restaurarDesdeDrive(){
-  if(!driveTokenValid()){ alert('Primero conecta Google Drive tocando el ícono ☁️'); return; }
+  if(!(await asegurarTokenDrive(true))){ alert('Primero conecta Google Drive tocando el ícono ☁️'); return; }
   const token = localStorage.getItem(DRIVE_TOKEN_KEY);
-  const fileId = localStorage.getItem(DRIVE_FILE_KEY);
+  let fileId = localStorage.getItem(DRIVE_FILE_KEY);
+  if(!fileId){
+    try{
+      const search = await fetch(
+        `https://www.googleapis.com/drive/v3/files?q=name='${DRIVE_FILE_NAME}'+and+trashed=false&fields=files(id,name)`,
+        { headers: { Authorization: `Bearer ${token}` } }
+      );
+      const found = await search.json();
+      if(found.files && found.files.length){ fileId=found.files[0].id; localStorage.setItem(DRIVE_FILE_KEY, fileId); }
+    }catch(e){}
+  }
   if(!fileId){ alert('No se encontró backup en Drive. Guarda un gasto primero para crear el archivo.'); return; }
   try {
     const res = await fetch(`https://www.googleapis.com/drive/v3/files/${fileId}?alt=media`, {
       headers: { Authorization: `Bearer ${token}` }
     });
+    if(!res.ok) throw new Error('HTTP '+res.status);
     const data = await res.json();
-    if(data.gastos){ gastos = data.gastos; if(data.fotos) fotos = data.fotos; save(); alert(`✅ ${gastos.length} gastos restaurados desde Drive.`); renderDashboard(); }
-  } catch(err){ alert('Error al restaurar: ' + err.message); }
+    if(!Array.isArray(data.gastos)){ alert('El archivo de Drive no tiene gastos reconocibles. No se tocó nada.'); return; }
+
+    const fusion=fusionarGastos(gastos, data.gastos);
+    const fotosAntes=Object.keys(fotos||{}).length;
+    const resumen=[
+      `Respaldo en Drive: ${String(data.fecha||'sin fecha').slice(0,16).replace('T',' ')}`,
+      `Gastos en este dispositivo: ${gastos.length}`,
+      `Gastos en el respaldo: ${data.gastos.length}`,
+      `Se añadirían ${fusion.agregados} gasto(s) que no están aquí. NADA se borra.`,
+    ].join('\n');
+    if(!confirm('☁️ Restaurar desde Google Drive\n\n'+resumen+'\n\n¿Continuar?')) return;
+
+    gastos = fusion.gastos;
+    if(data.fotos) fotos = Object.assign({}, data.fotos, fotos);   // lo local gana
+    if(Array.isArray(data.viajes) && data.viajes.length){
+      const idsViaje=new Set((viajes||[]).map(v=>String(v.id)));
+      data.viajes.forEach(v=>{ if(!idsViaje.has(String(v.id))) viajes.push(v); });
+      saveViajes();
+    }
+    if(Array.isArray(data.docs) && data.docs.length && !docs.length) docs=data.docs;
+    if(Array.isArray(data.timeline) && data.timeline.length && !timeline.length) timeline=data.timeline;
+    if(data.presupuesto && typeof data.presupuesto==='object' && !Object.keys(presupuesto).length) presupuesto=data.presupuesto;
+    if(data.servicios && typeof data.servicios==='object') servicios=data.servicios;
+    save();
+    alert(`✅ Restaurado. ${fusion.agregados} gasto(s) añadidos — total ${gastos.length}.\nFotos: ${fotosAntes} → ${Object.keys(fotos||{}).length}. No se borró ningún gasto.`);
+    renderDashboard();
+  } catch(err){ alert('Error al restaurar: ' + (err.message||err)); }
 }
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Red de seguridad LOCAL (2026-10-12). Sirve cuando Google Drive no está disponible:
+// sin conexión, sesión de Google vencida, o Drive caído. Exporta/importa el mismo contenido
+// que el respaldo de Drive, a un archivo que Jesvan guarda donde quiera (o comparte al
+// teléfono). Se recuperó la capacidad "Importar backup local" que se perdió en el rediseño.
+// ─────────────────────────────────────────────────────────────────────────────
+function contenidoBackup(){
+  return {
+    version: 4,
+    fecha: new Date().toISOString(),
+    gastos, servicios, contratistas, viajes, fotos, docs, timeline, presupuesto,
+    tucoop: (typeof tuCoop!=='undefined'?tuCoop:null),
+    fin: (()=>{ try{ return JSON.parse(localStorage.getItem('a132_fin')||'null'); }catch(e){ return null; } })(),
+  };
+}
+
+function exportarBackup(){
+  try{
+    const texto=JSON.stringify(contenidoBackup());
+    const blob=new Blob([texto],{type:'application/json'});
+    const url=URL.createObjectURL(blob);
+    const a=document.createElement('a');
+    const hoy=new Date().toISOString().slice(0,10);
+    a.href=url; a.download=`arroyo132-backup-${hoy}.json`;
+    document.body.appendChild(a); a.click();
+    setTimeout(()=>{ URL.revokeObjectURL(url); a.remove(); },1000);
+    alert(`✅ Archivo descargado: arroyo132-backup-${hoy}.json\nGuárdalo en Drive o mándalo a tu computadora.`);
+  }catch(e){ alert('No se pudo exportar: '+(e.message||e)); }
+}
+
+function importarBackup(){
+  const input=document.createElement('input');
+  input.type='file'; input.accept='application/json,.json';
+  input.onchange=async ()=>{
+    const file=input.files && input.files[0]; if(!file) return;
+    try{
+      const data=JSON.parse(await file.text());
+      if(!Array.isArray(data.gastos)){ alert('Ese archivo no tiene gastos reconocibles. No se tocó nada.'); return; }
+      const fusion=fusionarGastos(gastos, data.gastos);
+      if(!confirm(`📂 Importar respaldo local\n\nArchivo: ${file.name}\nGastos aquí: ${gastos.length}\nGastos en el archivo: ${data.gastos.length}\nSe añadirían ${fusion.agregados} que no están aquí. NADA se borra.\n\n¿Continuar?`)) return;
+      gastos=fusion.gastos;
+      if(data.fotos) fotos=Object.assign({}, data.fotos, fotos);
+      if(Array.isArray(data.viajes) && data.viajes.length){
+        const ids=new Set((viajes||[]).map(v=>String(v.id)));
+        data.viajes.forEach(v=>{ if(!ids.has(String(v.id))) viajes.push(v); });
+        saveViajes();
+      }
+      save();
+      alert(`✅ Importado. ${fusion.agregados} gasto(s) añadidos — total ${gastos.length}. No se borró ningún gasto.`);
+      renderDashboard();
+    }catch(e){ alert('Archivo inválido: '+(e.message||e)); }
+  };
+  input.click();
+}
+
+// Reintento automático del respaldo pendiente. Si el teléfono recupera señal o la sesión de
+// Google se renueva, los cambios sin respaldar se suben solos en cuanto la app vuelve a estar
+// en primer plano. No se pierde nada mientras tanto: los datos viven en localStorage.
+async function reintentarRespaldoPendiente(){
+  if(!hayRespaldoPendiente()) return;
+  if(!driveTokenValid()) return;   // sin sesión válida no se puede; se reintenta al conectar
+  await backupToDrive(false);
+}
+window.addEventListener('online', ()=>{ reintentarRespaldoPendiente(); });
+document.addEventListener('visibilitychange', ()=>{ if(document.visibilityState==='visible') reintentarRespaldoPendiente(); });
+setTimeout(reintentarRespaldoPendiente, 4000);
 
 // Actualizar ícono al iniciar
 (function initDriveUI(){
   const btn = document.getElementById('btn-drive');
   if(btn && DRIVE_CLIENT_ID) btn.textContent = driveTokenValid() ? '🟢' : '☁️';
   else if(btn) btn.title = 'Drive no configurado';
+  // Si quedó un respaldo pendiente de la sesión anterior, el aviso se ve desde que abre.
+  if(hayRespaldoPendiente()) marcarRespaldoPendiente();
 })();
 
 // ============ PWA INSTALL ============
@@ -3288,6 +3582,11 @@ function installPWA(){
     _deferredInstall=null;
   });
 }
+
+// ============ INIT (al final, con todo ya declarado) ============
+updateResumen();
+renderTimeline();
+renderDocs();
 </script>
 </body>
 </html>

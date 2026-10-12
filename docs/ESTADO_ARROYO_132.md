@@ -2,7 +2,7 @@
 
 **Proyecto independiente.** No mezclado con Terreno Ocala, JGarcia Realty, JGarciaIA, ni CouncilOS — este archivo vive únicamente dentro de este repositorio (`arroyo132-git/`), que es la fuente canónica del código de este proyecto.
 
-**Última actualización:** 2026-10-08 (auditoría integral). **[Corrección 2026-10-08: este encabezado decía "2026-08-24" mientras el documento ya contenía secciones del 13 y 21 de septiembre — estaba desactualizado y no reflejaba su propio contenido. Las secciones 1-13 son del 24-ago; de la 14 en adelante son posteriores.]**
+**Última actualización:** 2026-10-12 (recibos, sincronización y seguridad del endpoint — §22). **[Corrección 2026-10-08: este encabezado decía "2026-08-24" mientras el documento ya contenía secciones del 13 y 21 de septiembre — estaba desactualizado y no reflejaba su propio contenido. Las secciones 1-13 son del 24-ago; de la 14 en adelante son posteriores.]**
 
 ---
 
@@ -364,3 +364,27 @@ No se hizo merge ni deploy de ningún cambio de código. Rama `port/recuperar-re
 **Rollback si hiciera falta:** `git reset --hard 83102ef && git push --force-with-lease origin main` (devuelve la app al estado aprobado antes de GD-2). Respaldo previo del archivo en la sesión de trabajo: `council_runtime/ops_snapshots/arroyo_index_backup_pre_gd2_diagnostico.html`.
 
 **Incidente menor de esta sesión (registrado por honestidad, sin impacto):** un `node -e` con comillas dobles ejecutó por accidente el contenido entre backticks como comandos de shell, incluido un `git checkout main` no intencional. El árbol estaba limpio (todo ya comprometido), así que no se perdió nada: se volvió a la rama y se verificó el `sha256` del `index.html` (`01045a5b…`, 185.431 bytes) y que este documento seguía intacto. Lección: no pasar texto con backticks/`$` a `node -e`; usar Write/Edit.
+
+## 22. RECIBOS, SINCRONIZACIÓN Y SEGURIDAD DEL ENDPOINT 2026-10-12 — el respaldo a Drive llevaba ~4 meses caído en silencio
+
+**Naturaleza:** auditoría de solo lectura + corrección de código **local, en rama `feat/seguridad-y-sincronizacion-recibos`, sin fusionar y sin desplegar**. Informe completo: `docs/VERIFICACION_RECIBOS_Y_SINCRONIZACION_2026-10-12.md`. Herramientas de auditoría (solo lectura): `council_runtime/supervisor/arroyo132_recibos_20261012/`.
+
+**Hallazgo central — el respaldo automático a Google Drive lleva caído desde el 2026-06-17, sin avisar.** El archivo que la app mantiene (`G:\My Drive\arroyo132-datos.json`) sigue en `version: 2`, con 2 gastos, 0 viajes y 0 imágenes. Causa raíz verificada en el código: el token de Google dura ~58 min (`Date.now() + 3500 * 1000`); al vencer, `driveTokenValid()` da `false` y `backupToDrive()` **salía con `return` en su primera línea, sin avisar**. Todo lo registrado desde el teléfono desde esa fecha existe **solo en el `localStorage` de ese teléfono**.
+
+**Recibos — cuántos y dónde (verificado archivo por archivo):** 13 documentos de recibo en `…\Bo Palmas Arroyo\Recibos\` (`A132-REC-001…014`), **8 PDFs de recibo embebidos en los respaldos de abril y junio** (4.90 MB; 6 adjuntos a gastos y 2 a un ítem de servicio), **0** en el respaldo del 6 de julio y **0** en el archivo vivo. Los 11 gastos embebidos en el código **no son todos los recibos**: son 11 registros sin imagen. **29 gastos únicos** cruzando las 4 fuentes históricas; **0 duplicados dentro de cada fuente**. Por contenido (sha256) hay **19 grupos duplicados**, de los cuales **13 son el mismo recibo guardado dos veces** (nombre original + copia `A132-REC-*`) — **ninguno fue tocado**.
+
+**Gastos de viaje y peajes: SÍ aparecen, como registros sin comprobante.** 4 viajes ($271.30 total; peajes $32.80 = $8.20 por viaje, ida y vuelta PR-5/PR-52), presentes en los respaldos de abril y junio pero **ausentes del respaldo del 6 de julio y del archivo vivo**. Más un 5.º gasto de transportación (Target Rental Car $87.86). **No existe ni una sola imagen de recibo de peaje**: los $8.20 son la tarifa calculada por la app, no un comprobante.
+
+**Respuesta a las preguntas sobre Drive:** el respaldo es **automático por diseño pero estaba caído en la práctica**; **incluye solo miniaturas de 320 px**, nunca la foto completa del recibo; **no incluía** documentos, timeline, presupuesto, Tu Coop ni financiamiento; y **consultarlo desde la computadora era imposible** porque `restaurarDesdeDrive()` existía en el código **sin ningún botón en la interfaz**, y al restaurar **reemplazaba** los gastos en vez de unirlos.
+
+**Corregido y probado (sin desplegar):** renovación silenciosa del token; el fallo deja de ser invisible (⚠️ persistente + fecha del último respaldo bueno + estado en el panel); reintento automático al volver la conexión; el respaldo pasa a `version: 4` con el estado completo; `restaurarDesdeDrive()` **fusiona sin borrar ni duplicar**; botones nuevos (Traer de Drive / Exportar / Importar) y red de seguridad local en archivo; y **corregido un error de orden real** — el bloque `INIT` se ejecutaba antes de declararse las constantes de Drive, lo que con el nuevo estado de respaldo habría lanzado `ReferenceError` y cortado todo el JavaScript al abrir la app (movido al final del script).
+
+**Seguridad de `/api/analyze-invoice`:** era un proxy abierto a una API de pago (`Access-Control-Allow-Origin: *`, sin autenticación, sin límite, reenviando cualquier prompt). Ahora: **CORS en lista blanca** (explícitamente **no** tratado como autenticación), **autenticación real** con ID token de Google verificado en el servidor (firma RS256 contra JWKS, `iss`/`aud`/`exp`/`iat`, correo en lista blanca) → 401 sin ella, **falla cerrado** con 503 si falta `A132_ALLOWED_EMAILS`, **límite por IP + presupuesto diario global**, **validación estricta del cuerpo** (solo "un recibo": 1 imagen/PDF + 1 texto), **modelo y `max_tokens` fijados por el servidor**, y errores de Anthropic sin filtrar detalles internos. No se añadió ningún servicio nuevo: se reutiliza el Google que la app ya usa para Drive.
+
+**Asociación recibo ↔ registro:** **12 de 13** recibos tienen su gasto asociado. **`A132-REC-008 National Lumber` (2026-04-13) no tiene ningún gasto con ese nombre** — existe "Caribbean Lumber Victory $5.09" del mismo día; requiere confirmación de Jesvan.
+
+**Pruebas:** 101 previas sin regresión + 71 nuevas (`verificacion_endpoint_seguridad` 27/27, `verificacion_sync_respaldo` 44/44) = **172, 0 fallos**. La suite `verificacion_app_actual` se corrió además contra el archivo de trabajo (**36/36**) para descartar regresión estructural antes de fusionar.
+
+**Pendiente de decisión de Jesvan:** desplegar la rama (cambio de producción; **configurar `A132_ALLOWED_EMAILS` en Vercel antes** o el endpoint responde 503 a propósito); autorizar **una** llamada real a la IA para cerrar la punta a punta; decidir sobre los 19 duplicados de Drive (destructivo); confirmar el recibo National Lumber; y reconciliar las 4 generaciones de gastos contra la app real.
+
+**Falta acceso que esta sesión no tiene:** el **teléfono / los datos del navegador móvil**, para contar los recibos subidos desde el teléfono que aún no están en Drive; y **resolver el ID de la carpeta Drive** del botón "📂 Abrir Drive" (`11yIIr6FrK2I4pFLtDiW-pcyUbuSGLSE6`), cuyas dos carpetas del proyecto (`📸 Facturas y Recibos`, `📋 Documentos Legales`) están **vacías**.
