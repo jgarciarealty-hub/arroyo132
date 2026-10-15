@@ -406,3 +406,15 @@ No se hizo merge ni deploy de ningún cambio de código. Rama `port/recuperar-re
 **Pruebas: 208, 0 fallos** (101 previas sin regresión + 38 de seguridad del endpoint + 69 de sincronización y escenarios adversarios), más la suite de la app corrida **también contra el archivo de trabajo (36/36)**. Cubre los 13 escenarios adversarios del encargo: token vencido, Drive desconectado, sin internet, dos dispositivos con datos distintos, dos gastos legítimos iguales, documento duplicado con otro nombre, respaldo antiguo frente a recientes, fallo a mitad de escritura, imagen ausente, restauración parcial, usuario no autorizado, límite de API alcanzado, recibo ilegible e interrupción del análisis. **En todos, una falla de IA deja el registro manual disponible.**
 
 **Producción sigue intacta:** `arroyo132.vercel.app` ≡ `main:index.html` (182.138 bytes, `sha256 9f1636224e8577cb…`). Nada fusionado, nada desplegado, ningún recibo ni dato financiero tocado, ninguna credencial cambiada, ninguna prueba facturable ejecutada.
+
+
+## 24. RECUPERACIÓN DE DATOS Y PREPARACIÓN DE DESPLIEGUE 2026-10-15 — respaldo independiente, 2 huecos corregidos, GO técnico / NO-GO de producción
+
+**Naturaleza:** auditoría de solo lectura + respaldo + correcciones locales **en la rama `feat/seguridad-y-sincronizacion-recibos`, sin fusionar, sin subir y sin desplegar**. Informes: `docs/RECUPERACION_DE_DATOS_2026-10-15.md` y `docs/PLAN_DESPLIEGUE_Y_ESCANEO_2026-10-15.md`.
+
+- **Respaldo independiente** (52 archivos, hashes verificados, solo lectura) en `Downloads\arroyo132-respaldo-independiente-20261015\`. Ningún dato real fue modificado.
+- **Corrige el §7 y el §22:** el respaldo del 6-jul **no es el más completo**; es idéntico a la hoja «Registro de Recibos» (19 filas, $4,912.70) pero abril/junio tienen 8 filas que él no tiene (incluidos $60,000 de cierre, agrimensor $1,600, plomero $125, AAA $100, Toa Alta $234.15 y 3 viajes). La **unión** (prueba con datos reales) da 31 gastos y 4 viajes sin perder ningún registro. La discrepancia de REC-008 «National Lumber» vs «Caribbean Lumber Victory» es un cambio de nombre entre las dos versiones de la hoja (mismo día y monto); falta que Jesvan confirme el comercio.
+- **Hallazgo:** `CONTRATO_Y_PRIMER_PAGO_PARCIAL.pdf` (481 KB, agrimensor) solo existía dentro del respaldo de abril; quedó extraído a archivo.
+- **Corregido (2 huecos reales):** el archivo combinado de Drive ahora conserva la versión desplazada de un registro en conflicto y las secciones distintas del otro equipo; un `localStorage` de gastos ilegible ya no se borra (copia `a132_gastos_corrupto_*`).
+- **Pruebas:** 229 comprobaciones, 0 fallos (208 previas + 21 nuevas en `tests/verificacion_recuperacion_20261015.test.js`).
+- **NO verificado:** renovación de token de Google en navegador real, variables de entorno de Vercel (403/sin sesión), llamada real a la IA, datos del teléfono. **Producción NO se desplegó** (`main` @ `48d05e8`); recomendación: código GO, producción NO-GO hasta la lista de la §3 del plan.

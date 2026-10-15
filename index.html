@@ -1493,7 +1493,11 @@ function changePinFlow(){
 }
 
 // ============ DATA STORE ============
-let gastos = (()=>{ try{ return JSON.parse(localStorage.getItem('a132_gastos')||'[]'); }catch(e){ localStorage.removeItem('a132_gastos'); return []; } })();
+let gastos = (()=>{ try{ return JSON.parse(localStorage.getItem('a132_gastos')||'[]'); }catch(e){
+  // 2026-10-15: antes se BORRABA el dato ilegible (una escritura cortada a medias destruía el único rastro de los gastos).
+  // Ahora el texto crudo se conserva en una copia aparte para poder recuperarlo a mano; la app arranca con la lista vacía.
+  try{ localStorage.setItem('a132_gastos_corrupto_'+Date.now(), localStorage.getItem('a132_gastos')||''); }catch(e2){}
+  localStorage.removeItem('a132_gastos'); return []; } })();
 // Recibos recuperados manualmente — se añaden si no existen (portado desde commit fc0a54e,
 // perdido por accidente en el commit 7735957 del 2026-06-16; ver docs/ESTADO_ARROYO_132.md)
 (function recuperarRecibos(){
@@ -3535,6 +3539,19 @@ async function backupToDrive(mostrarFeedback=false){
       gastos: fusion.gastos, viajes: fusion.viajes, fotos: fusion.fotos,
       dispositivo: deviceId(),
     });
+    // 2026-10-15: sin marcas de tiempo por registro no se puede saber cuál versión es la más reciente, así que NINGUNA se descarta
+    // de Drive: la versión desplazada de un registro (mismo id, datos distintos) y las secciones distintas del otro equipo quedan
+    // guardadas en el propio archivo combinado (acumulativo, acotado), para que un equipo atrasado no borre el rastro del otro.
+    try{
+      const previos = (remoto && Array.isArray(remoto.conflictos)) ? remoto.conflictos : [];
+      const nuevos = fusion.conflictos.map(c=>({ id:c.id, fecha:new Date().toISOString(), porDispositivo:deviceId(), conservado:c.local, desplazado:c.remoto }));
+      const llaves = new Set(previos.map(p=>JSON.stringify([p.id,p.conservado,p.desplazado])));
+      const unicos = nuevos.filter(n=>!llaves.has(JSON.stringify([n.id,n.conservado,n.desplazado])));
+      if(previos.length || unicos.length) combinado.conflictos = previos.concat(unicos).slice(-200);
+      const alt = Object.assign({}, (remoto && remoto.alternativas && typeof remoto.alternativas==='object') ? remoto.alternativas : {});
+      fusion.divergentes.forEach(k=>{ if(remoto && remoto[k]!==undefined) alt[k] = { fecha:new Date().toISOString(), porDispositivo:deviceId(), valor:remoto[k] }; });
+      if(Object.keys(alt).length) combinado.alternativas = alt;
+    }catch(e){ /* informativo: nunca debe impedir el respaldo */ }
     await driveSubir(DRIVE_FILE_NAME, JSON.stringify(combinado), token, DRIVE_FILE_KEY);
 
     // (3) Índice de dispositivos: deja ver desde cualquier equipo quién ha respaldado y cuándo.
