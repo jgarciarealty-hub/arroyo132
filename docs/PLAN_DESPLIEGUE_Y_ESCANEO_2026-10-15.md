@@ -81,3 +81,63 @@ Google Cloud (OAuth client `797904134164-…`): el origen `https://arroyo132.ver
 - **Una eliminación no se propaga** (la fusión nunca descarta): un gasto borrado en un equipo puede reaparecer al respaldar o traer desde otro. Es la contrapartida de «nada se pierde».
 - Los contadores de límite del endpoint viven en memoria del proceso (no son una cuota global); la barrera real es la autenticación.
 - 3 URLs de Vercel con almacenamiento separado hasta que se decida una sola.
+
+---
+
+## 8. Checklist consolidado de pendientes (2026-10-16, verificación independiente)
+
+**Naturaleza:** verificación de solo lectura + documentación. No se desplegó, no se fusionó, no se tocaron credenciales ni se borró ningún dato. Lo que sigue sustituye a los pendientes dispersos de §3, §7 y del expediente: **una sola representación del estado vigente**.
+
+### 8.1 Los tres despliegues (medidos hoy, `curl` + hash del blob de git)
+
+| URL | bytes | sha256 (16) | sirve | variables de entorno |
+|---|---|---|---|---|
+| **https://arroyo132.vercel.app** | 182.138 | `9f1636224e8577cb` | **`main` byte a byte** | **sí**: `ANTHROPIC_API_KEY` (Production, Preview) |
+| https://arroyo132-netlify.vercel.app | 182.138 | `9f1636224e8577cb` | `main` byte a byte | **ninguna** |
+| https://jgarciarealty-hub-arroyo132.vercel.app | 182.138 | `9f1636224e8577cb` | `main` byte a byte | **ninguna** |
+
+- **Proyecto canónico: `arroyo132`** (`prj_WC9cmqIZXQJjghAz12IEiyetFIVx`, creado 2026-05-02). Es el **único** con clave de IA ⇒ el único donde `/api/analyze-invoice` puede funcionar. Los tres sirven el mismo `main` desde el 2026-10-09 (producción de los 3 creada en el mismo instante, origen rama `main` del repo). Ninguno tiene dominio propio: los tres son solo `.vercel.app`.
+- **La rama verificada NO está desplegada.** Su `index.html` en git es **213.690 bytes / `sha256 e5273110b35d7892…`**.
+- **Nota CRLF (evita un falso positivo al validar):** el árbol de trabajo local mide **217.488 bytes / `814f27e5…`** y el blob de git 213.690; la diferencia (3.798 B, uno por línea) son finales de línea (`core.autocrlf=true`), **no** contenido. **Comparar contra el valor del blob, nunca contra el del archivo local.**
+
+### 8.2 Variables requeridas (nombres tomados del código real: `api/analyze-invoice.js`)
+
+| Variable | Estado verificado hoy | Acción |
+|---|---|---|
+| **`A132_ALLOWED_EMAILS`** | **AUSENTE en los 3 proyectos** | **Obligatoria** (correos de Google autorizados, separados por coma). Sin ella el endpoint responde **503** a propósito |
+| `ANTHROPIC_API_KEY` | Presente **solo** en `arroyo132` (Production, Preview) | Nada; no cambiarla |
+| `A132_ALLOWED_ORIGINS` | Ausente (por defecto `https://arroyo132.vercel.app`) | Opcional |
+| `A132_CLIENT_ID`, `A132_MODEL`, `A132_EFFORT`, `A132_RATE_PER_MIN`, `A132_DAILY_BUDGET` | Ausentes (tienen valor por defecto) | Opcional |
+| Google Cloud → OAuth client | No verificable desde aquí (vive en Google) | Confirmar que el origen de la URL canónica está autorizado |
+
+### 8.3 Pendientes, con evidencia y criterio de cierre
+
+| # | Pendiente | Evidencia de hoy | Cierre verificable |
+|---|---|---|---|
+| 1 | **Desplegar la rama** (§4) | 229/229 comprobaciones, 0 fallos; `main` es ancestro ⇒ `--ff-only` funciona; árbol limpio | `index.html` en vivo ≡ blob de la rama y `/api/analyze-invoice` sin credencial ⇒ 401/503 |
+| 2 | **`A132_ALLOWED_EMAILS`** en `arroyo132` | Ausente en los 3 proyectos | Endpoint deja de responder 503 con sesión válida |
+| 3 | **URL oficial + PWA del teléfono** | Canónico identificado; **en qué URL está instalada la PWA es dato del dispositivo** | Confirmado en el teléfono; si es otra, **exportar antes de desplegar** |
+| 4 | **19 grupos duplicados en Drive** | Verificado por sha256: los 19 son **copias byte-idénticas** (2 por grupo) ⇒ riesgo de pérdida de contenido **cero**. 13 recibos (raíz ↔ `Recibos\A132-REC-*`) + 4 de `Severa Rosa\` + 2 pares entre expedientes. Hay además 1 par de punteros `.gsheet` (2 revisiones de la hoja) | Cada grupo con 1 copia y su hash == el del grupo; el recuento baja en 19 |
+| 4-bis | **17 decidibles / 2 no** | Criterio por defecto: conservar la copia de la subcarpeta específica. **No decidibles:** `2013-198372-DEC-71814\` ↔ `2013-198372-Rec-83218\` (`escritura.pdf`, `Memorial Explicativo.pdf`): retirar uno lo saca de ese expediente | Decisión de Jesvan sobre esos 2 |
+| 5 | **REC-002 (agrimensor)** — **archivo localizado** | `Agrimensor Carmelo\CONTRATO Y PRIMER PAGO PARCIAL.pdf`, 481.041 B, `sha256 8cb21358…` (medido 2 veces: copia de Drive ≡ adjunto embebido del respaldo de abril) | Copiado a `Recibos\` como `A132-REC-002_…`; la hoja deja de decir "Pendiente" |
+| 6 | **7 recibos sin comprobante** (REC-003, 004, 015–019) | Ninguna de las 4 fuentes JSON tiene `fotos` ni `archivos`; los 5 de junio son posteriores al respaldo de abril y no están en el de julio. Si existen, **solo en el `localStorage` del teléfono** | O aparece el archivo, o la hoja los marca **"sin comprobante"** como estado final (hoy "Pendiente" es indefinido) |
+| 7 | **REC-008** (id `700004`, 2026-04-13, $5.09) | Un solo registro con dos nombres; el PDF se llama `National Lumber` y es **escaneo solo-imagen** (ilegible por software); la app dice `Caribbean Lumber Victory` en los 3 respaldos; el dato del "mismo teléfono" **no está transcrito en ningún artefacto** | 1 minuto de Jesvan frente a `Recibos\A132-REC-008_NationalLumber_2026-04-13.pdf`: ¿mismo gasto (renombrar) o compra aparte? Un solo nombre en las 3 fuentes |
+| 8 | **La Ferretería Cataño $28.88 duplicada** (ids `700007` / `1777258444590`) | La hoja solo tiene REC-011 | Decidir si se fusiona (afecta el total) |
+| 9 | **Viajes vs "Gastos de Viaje"** | Abril/junio: 4 viajes ($271.30) **y** 3 gastos "Gastos de Viaje" ($198.35) | Confirmar si es doble conteo |
+| 10 | **Cosme, mismo gasto con ids distintos** | Junio $232.48 con id nuevo vs REC-014 | Un solo registro |
+| 11 | **Propagación de eliminaciones** (§7) | Causa raíz verificada en el código: sin `modificado` por registro y sin tombstone, la fusión **re-añade** lo borrado — incluido el propio dispositivo que borra (E1). **Parche COMPLETO Y PROBADO, en rama local aparte `feat/propagacion-borrados`** (commits `a160afc` + `e71ea12`, desde `e428f41`; `git diff --stat e428f41..feat/propagacion-borrados` = `index.html` +297 y `tests/verificacion_sync_respaldo.test.js` +183 = 451 inserciones / 29 supresiones). Contenido: lápida `{id, borrado, modificado}` + sello `modificado` al crear y al editar + "gana el `modificado` mayor" + la lápida que gana oculta el registro **y su foto** + purga conservadora a ~90 días. Compatibilidad: sin sello un registro nunca pierde, un respaldo antiguo **no puede borrar nada**, el respaldo sigue en `version: 4` (campos nuevos y aditivos). **Sin fusionar, sin push, sin desplegar.** Medición propia: **268 PASS / 0 FAIL** en esa rama (`verificacion_sync_respaldo` 108, era 69) y **229 PASS / 0 FAIL** en la candidata, intacta. Reversión: no usar la rama (`git branch -D feat/propagacion-borrados`) | Decisión de diseño de Jesvan: aprobar y autorizar el merge (el código no toca `A132_ALLOWED_EMAILS`, Drive ni producción). Límite conocido y aceptado a documentar: la regla depende del reloj de cada dispositivo (un reloj adelantado gana); si se quiere neutralizar, hay que acordar una regla extra de desempate |
+| 12 | `localStorage` del teléfono | Los registros creados desde el teléfono después del 17-jun nunca llegaron a Drive | Abrir la app **en ese teléfono** y exportar → importar en la computadora |
+
+### 8.4 Estado de verificación (evidencia de esta pasada)
+
+- **229 comprobaciones / 0 fallos** sobre `e428f41`, medidas por suite: `integration_port_branch` 16 · `verificacion_app_actual` 36 · `verificacion_diagnostico` 30 · `verificacion_endpoint_seguridad` 38 · `verificacion_ivu` 7 · `verificacion_presupuesto` 12 · `verificacion_recuperacion_20261015` 21 · `verificacion_sync_respaldo` 69.
+- **Rama del parche (`feat/propagacion-borrados`, no candidata):** mismas 8 suites, medidas igual ⇒ **268 PASS / 0 FAIL** (`verificacion_sync_respaldo` 108, +39 pruebas nuevas de los apartados O1 a–d: propagación en 2 dispositivos, precedencia del sello, compatibilidad con respaldos viejos, registros heredados sin sello y purga). La rama candidata `e428f41` re-medida tras el trabajo: **229 / 0**, sin cambios.
+- `api/analyze-invoice.js`: `node --check` limpio. `manifest.json` y `vercel.json`: JSON válido. Rama limpia; `git merge-base --is-ancestor main HEAD` ⇒ **fast-forward posible** (3 commits).
+- Respaldo independiente en disco: `C:\Users\Owner\Downloads\arroyo132-respaldo-independiente-20261015\` (**65 archivos**, ~40,8 MB).
+- **Corrección documental aplicada hoy:** `RECUPERACION_DE_DATOS_2026-10-15.md` §2 afirmaba que el contrato del agrimensor «no existe en ninguna carpeta de Drive». **Es falso** (ver #5); queda corregido ahí, con la afirmación anterior marcada como superada. Causa: el respaldo del 15-oct copió 4 orígenes y **ninguna subcarpeta**.
+
+### 8.5 Reversión del despliegue
+
+- Vía preferida: Vercel → Deployments → **Instant Rollback**. El despliegue de producción anterior documentado en §4 es `dpl_5zUwYV766ejfZNpJAd79zzzhHu8o`; **no se pudo reconfirmar por CLI en esta sesión** (el comando no devolvió salida), así que la vía siempre verificable es la del panel o `git revert`.
+- Vía git: `git revert -m 1 <merge>` y push a `main`.
+- **Ninguna de las dos toca datos**: `localStorage` y los archivos de Drive quedan intactos. La versión anterior, al respaldar, vuelve a escribir el archivo combinado `arroyo132-datos.json` con su formato de siempre; las copias por dispositivo `arroyo132-datos-<dispositivo>.json` **no se tocan**.
