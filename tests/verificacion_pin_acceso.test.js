@@ -185,6 +185,61 @@ const en = (sandbox, code) => vm.runInContext(code, sandbox, { timeout: 20000 })
     })()`);
     s6.__setSubtle(true);
 
+    // ---- dos dispositivos reales: escritorio (hash de main) vs celular (hash de julio) ----
+    // Simula el caso reportado 2026-10-19: el escritorio entra y el celular no, con el mismo
+    // PIN y la misma URL. En el celular: credencial de julio + bloqueo vencido + contador en 5.
+    const gastosCelular = JSON.stringify([
+      { id: 2001, monto: 250.5, fecha: '2026-10-02', contratista: 'B' },
+      { id: 2002, monto: 50, fecha: '2026-10-03', contratista: 'C' },
+    ]);
+    const sEscritorio = cargarApp({ a132_pin_hash: en(s, `hashPin('1234')`), a132_gastos: '[]' });
+    await en(sEscritorio, `(async () => {
+      pinBuffer = '1234'; await processPin();
+      test('escritorio (hash de main): entra, como reporta el propietario',
+        !!localStorage.getItem('a132_session'));
+    })()`);
+
+    const sCelular = cargarApp({
+      a132_pin_hash: sha256hex(PIN_SALT + '1234'), a132_gastos: gastosCelular,
+      a132_attempts: '5', a132_lockuntil: String(Date.now() - 60000),
+    });
+    await en(sCelular, `(async () => {
+      pinBuffer = '1234'; await processPin();
+      test('celular (hash de julio): entra al primer intento con el parche',
+        !!localStorage.getItem('a132_session'));
+      // El arranque añade los 11 recibos recuperados si faltan (igual que produccion hoy),
+      // asi que "intactos" = ningun registro original se pierde ni se altera.
+      const orig = JSON.parse(${JSON.stringify(gastosCelular)});
+      const act = JSON.parse(localStorage.getItem('a132_gastos'));
+      test('celular: sus registros originales quedan intactos tras entrar (ni perdidos ni alterados)',
+        orig.every(o => act.some(a => JSON.stringify(a) === JSON.stringify(o))), act.length);
+      test('celular: bloqueo vencido y contador en 5 quedan limpios',
+        !localStorage.getItem('a132_lockuntil') && localStorage.getItem('a132_attempts') === '0');
+    })()`);
+
+    const sCelularViejo = cargarApp({
+      a132_pin_hash: legacySaltHost('1234'), a132_gastos: gastosCelular, a132_attempts: '5',
+    });
+    await en(sCelularViejo, `(async () => {
+      pinBuffer = '1234'; await processPin();
+      test('celular (fallback de julio sin crypto): entra y migra a SHA-256',
+        !!localStorage.getItem('a132_session') &&
+        localStorage.getItem('a132_pin_hash') === ${JSON.stringify(sha256hex(PIN_SALT + '1234'))});
+      const orig = JSON.parse(${JSON.stringify(gastosCelular)});
+      const act = JSON.parse(localStorage.getItem('a132_gastos'));
+      test('celular (fallback): sus registros originales quedan intactos',
+        orig.every(o => act.some(a => JSON.stringify(a) === JSON.stringify(o))), act.length);
+    })()`);
+
+    const sCelularAjeno = cargarApp({
+      a132_pin_hash: sha256hex(PIN_SALT + '1234'), a132_attempts: '0',
+    });
+    await en(sCelularAjeno, `(async () => {
+      pinBuffer = '0000'; await processPin();
+      test('celular: un PIN DISTINTO sigue rechazado (no se desactiva la autenticacion)',
+        !localStorage.getItem('a132_session') && localStorage.getItem('a132_attempts') === '1');
+    })()`);
+
     // ---- PIN nuevo se guarda fuerte y no deja los digitos en el hash ----
     const s7 = cargarApp({});
     await en(s7, `(async () => {

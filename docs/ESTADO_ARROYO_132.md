@@ -2,7 +2,7 @@
 
 **Proyecto independiente.** No mezclado con Terreno Ocala, JGarcia Realty, JGarciaIA, ni CouncilOS — este archivo vive únicamente dentro de este repositorio (`arroyo132-git/`), que es la fuente canónica del código de este proyecto.
 
-**Última actualización:** 2026-10-19 (acceso por PIN: causa raíz demostrada y arreglo local probado — §26; el estado consolidado de pendientes vive en `docs/PLAN_DESPLIEGUE_Y_ESCANEO_2026-10-15.md` §8, del 16-oct, con el PIN añadido como bloqueador). **[Corrección 2026-10-08: este encabezado decía "2026-08-24" mientras el documento ya contenía secciones del 13 y 21 de septiembre — estaba desactualizado y no reflejaba su propio contenido. Las secciones 1-13 son del 24-ago; de la 14 en adelante son posteriores.]**
+**Última actualización:** 2026-10-19 (acceso por PIN: causa raíz, arreglo probado y comparación computadora↔celular — §26 y §27; el estado consolidado de pendientes vive en `docs/PLAN_DESPLIEGUE_Y_ESCANEO_2026-10-15.md` §8, del 16-oct, con el PIN añadido como bloqueador). **[Corrección 2026-10-08: este encabezado decía "2026-08-24" mientras el documento ya contenía secciones del 13 y 21 de septiembre — estaba desactualizado y no reflejaba su propio contenido. Las secciones 1-13 son del 24-ago; de la 14 en adelante son posteriores.]**
 
 ---
 
@@ -457,4 +457,44 @@ No se hizo merge ni deploy de ningún cambio de código. Rama `port/recuperar-re
 
 - **El PIN real del propietario en un navegador real** no se puede probar desde aquí: las pruebas son simuladas. Por eso el PIN queda como **bloqueador de despliegue** hasta probarlo contra la versión nueva (preview o producción ya desplegada y autorizada).
 - **Recuperación de acceso, estado real:** la puerta trasera `?reset=arroyo132reset` **ya no existe** en el código servido (la retiró el redespliegue del 20-sep). El mecanismo decidido —código temporal por correo en lugar de un restablecimiento inseguro— está **diseñado pero no construido**: exige una credencial de correo (gate humano). Mientras tanto, la vía segura si el PIN no funciona tras desplegar es **exportar los datos desde el propio teléfono antes de tocar nada** (§8.3 #12 del plan); nunca borrar los datos del sitio.
-- **Producción no cambió:** sigue `main` @ `48d05e8` (182.138 bytes, `sha256 9f1636224e8577cb…`). El arreglo vive solo en el árbol de trabajo de la rama candidata (sin commit, sin push).
+- **Producción no cambió:** sigue `main` @ `48d05e8` (182.138 bytes, `sha256 9f1636224e8577cb…`). El arreglo vive solo en la rama candidata (commit `88382e4`, sin push).
+
+## 27. DIFERENCIA COMPUTADORA ↔ CELULAR 2026-10-19 — misma URL, mismo código; la diferencia es el estado local del celular
+
+**Hechos confirmados por el propietario:** en la **computadora SÍ entra**; en el **celular NO**; el celular usa **`arroyo132.vercel.app`**. Producción sirve a ambos el **mismo HTML** (182.138 bytes, `sha256 9f1636224e8577cb…`).
+
+**Lo que queda descartado con evidencia:**
+- **No es la versión de la PWA ni una caché vieja:** no hay `serviceWorker`, ni Cache API, ni IndexedDB en la app (búsqueda en el HTML y en el repo: 0 coincidencias; no existe `sw.js`). El `manifest.json` solo declara `start_url: "/"`, `display: standalone`: el ícono abre la **página viva**. Código idéntico en ambos dispositivos ⇒ la diferencia no puede estar en el código.
+- **No es sincronización entre dispositivos:** los datos viven en el `localStorage` de cada navegador; no se comparten.
+- **No es el almacenamiento en sí:** si el PIN guardado no existiera, el celular mostraría «Crea un PIN», no un rechazo con bloqueo.
+
+**Candidatos que quedan y cobertura del arreglo (`88382e4`):**
+| Causa posible en el celular | ¿La cubre el arreglo? | Evidencia |
+|---|---|---|
+| PIN guardado con SHA-256 de julio (64 hex) o con el fallback con sal (8 hex) | **Sí** | acepta los 3 formatos y migra al entrar |
+| Bloqueo vencido con contador todavía en 5 (un intento re-bloqueaba) | **Sí** | limpia bloqueo vencido y reinicia contador |
+| `a132_lockuntil` imposible (reloj del celular cambiado) | **Sí** | descarta fechas a más de 5 min en el futuro |
+| Contador corrupto (`NaN`) | **Sí** | se sanea a 0 |
+| `crypto.subtle` no disponible en ese navegador | **Sí** | acepta el fallback con sal y conserva acceso |
+| **Otro PIN distinto en el celular** | **No, a propósito** | un PIN distinto sigue rechazado; no se desactiva la autenticación |
+
+**Evidencia nueva (simulación de los dos dispositivos, suite `verificacion_pin_acceso` — 36/36):**
+- Escritorio con el hash de `main`: entra.
+- Celular con hash de julio (64 hex), `a132_attempts=5` y bloqueo vencido: **entra al primer intento con el parche**; bloqueo y contador quedan limpios.
+- Celular con fallback de julio (8 hex): entra y **migra a SHA-256**.
+- En ambos casos del celular, **sus registros originales quedan intactos** (ni perdidos ni alterados).
+- Un PIN **distinto** sigue rechazado (1 intento contado) — la autenticación no se debilita.
+
+**Sobre no sobrescribir los datos del teléfono:**
+- Desplegar código **no toca `localStorage`**. La única escritura autónoma al arrancar es la **siembra aditiva de los 11 recibos recuperados si faltan** — código **idéntico al que ya corre hoy en producción** (`git show main:index.html` lo confirma); no borra, no reemplaza ni modifica registros existentes, y no dispara respaldo a Drive. Si `a132_gastos` estuviera ilegible, la rama **conserva una copia** (`a132_gastos_corrupto_*`) antes de apartarlo; `main` no lo hace.
+- **Respaldo del celular antes de cualquier actualización, sin modificar su almacenamiento:** si es **Android**, por USB con `chrome://inspect` → abrir la pestaña de Arroyo → en la consola **solo leer** `localStorage.getItem('a132_gastos')` (y `a132_pin_hash`, `a132_attempts`, `a132_lockuntil`) y copiar el texto a un archivo; conectarse a la consola no escribe nada. Si es **iPhone**, no existe vía segura de solo-lectura sin un Mac con Web Inspector: la vía es desplegar el arreglo (mismo origen), entrar y **exportar de inmediato** desde el panel de respaldo. **Nunca** borrar datos del sitio, «limpiar caché» ni desinstalar la PWA.
+
+**Procedimiento mínimo y seguro (NO ejecutado — requiere autorización):**
+1. Autorización explícita de despliegue.
+2. Publicar la rama `feat/seguridad-y-sincronizacion-recibos` (`88382e4`) en el proyecto `arroyo132` (merge a `main` + push, o deploy directo de la rama; ambos son cambio de producción y ambos gates).
+3. Verificar en vivo: HTTP 200 y `index.html` ≡ blob de la rama.
+4. En el celular: abrir la app **una vez** e introducir el PIN. Si entra → **exportar de inmediato**; si no entra, **detenerse** y reportar el mensaje exacto (no reintentar 5 veces).
+5. Importar el respaldo en la computadora y verificar los registros.
+6. Reversión disponible: Instant Rollback al despliegue anterior.
+
+**Estado:** corregido y probado de forma simulada (BUILT + TESTED); **no desplegado y no verificado en el celular real**. El PIN sigue siendo bloqueador de despliegue hasta el paso 4.
