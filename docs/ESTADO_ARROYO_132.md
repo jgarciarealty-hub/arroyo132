@@ -2,7 +2,7 @@
 
 **Proyecto independiente.** No mezclado con Terreno Ocala, JGarcia Realty, JGarciaIA, ni CouncilOS — este archivo vive únicamente dentro de este repositorio (`arroyo132-git/`), que es la fuente canónica del código de este proyecto.
 
-**Última actualización:** 2026-10-12, segunda pasada (recuperación, multi-dispositivo, costos de IA e integración — §23). **[Corrección 2026-10-08: este encabezado decía "2026-08-24" mientras el documento ya contenía secciones del 13 y 21 de septiembre — estaba desactualizado y no reflejaba su propio contenido. Las secciones 1-13 son del 24-ago; de la 14 en adelante son posteriores.]**
+**Última actualización:** 2026-10-18 (verificación independiente de la rama y del parche de borrados — §25; el estado consolidado de pendientes vive en `docs/PLAN_DESPLIEGUE_Y_ESCANEO_2026-10-15.md` §8, del 16-oct). **[Corrección 2026-10-08: este encabezado decía "2026-08-24" mientras el documento ya contenía secciones del 13 y 21 de septiembre — estaba desactualizado y no reflejaba su propio contenido. Las secciones 1-13 son del 24-ago; de la 14 en adelante son posteriores.]**
 
 ---
 
@@ -418,3 +418,12 @@ No se hizo merge ni deploy de ningún cambio de código. Rama `port/recuperar-re
 - **Corregido (2 huecos reales):** el archivo combinado de Drive ahora conserva la versión desplazada de un registro en conflicto y las secciones distintas del otro equipo; un `localStorage` de gastos ilegible ya no se borra (copia `a132_gastos_corrupto_*`).
 - **Pruebas:** 229 comprobaciones, 0 fallos (208 previas + 21 nuevas en `tests/verificacion_recuperacion_20261015.test.js`).
 - **NO verificado:** renovación de token de Google en navegador real, variables de entorno de Vercel (403/sin sesión), llamada real a la IA, datos del teléfono. **Producción NO se desplegó** (`main` @ `48d05e8`); recomendación: código GO, producción NO-GO hasta la lista de la §3 del plan.
+
+## 25. VERIFICACIÓN INDEPENDIENTE 2026-10-18 — la rama sigue intacta y el parche de borrados fusiona limpio (268/268)
+
+**Naturaleza:** solo lectura y ejecución de pruebas locales. Nada fusionado a `main`, nada subido, nada desplegado, ningún dato financiero, credencial ni archivo de Drive tocado. Las ramas quedaron exactamente como estaban.
+
+- **Rama candidata `feat/seguridad-y-sincronizacion-recibos` @ `62dcaa6`:** las 8 suites re-ejecutadas hoy ⇒ **229 comprobaciones, 0 fallos**, idéntico a la medición del 16-oct (§8.4 del plan). Árbol de trabajo limpio.
+- **Producción `https://arroyo132.vercel.app`:** lectura directa ⇒ **HTTP 200, 182.138 bytes, `sha256 9f1636224e8577cb…`** — sin cambios desde el 09-oct; sigue sirviendo `main` (`48d05e8`) byte a byte.
+- **Parche de propagación de borrados (`feat/propagacion-borrados`, 451 inserciones):** probado el merge real en un worktree temporal sobre la punta de la candidata ⇒ **merge limpio, sin conflictos** (los 2 commits documentales posteriores no tocan `index.html` ni las pruebas) y **268 comprobaciones, 0 fallos** en el árbol fusionado (la suite de sincronización pasa de 69 a 108). El worktree temporal se eliminó; las ramas intactas.
+- **Sigue sin fusionar y sin desplegar**, como estaba. Esta verificación reduce los gates pendientes a un sí/no: **desplegar la rama** (§8.3 #1) y **aprobar el parche de borrados** (#11) ya tienen el código probado; ambos siguen siendo decisión de Jesvan.
