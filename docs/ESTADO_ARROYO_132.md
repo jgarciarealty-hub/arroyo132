@@ -2,7 +2,7 @@
 
 **Proyecto independiente.** No mezclado con Terreno Ocala, JGarcia Realty, JGarciaIA, ni CouncilOS — este archivo vive únicamente dentro de este repositorio (`arroyo132-git/`), que es la fuente canónica del código de este proyecto.
 
-**Última actualización:** 2026-10-18 (verificación independiente de la rama y del parche de borrados — §25; el estado consolidado de pendientes vive en `docs/PLAN_DESPLIEGUE_Y_ESCANEO_2026-10-15.md` §8, del 16-oct). **[Corrección 2026-10-08: este encabezado decía "2026-08-24" mientras el documento ya contenía secciones del 13 y 21 de septiembre — estaba desactualizado y no reflejaba su propio contenido. Las secciones 1-13 son del 24-ago; de la 14 en adelante son posteriores.]**
+**Última actualización:** 2026-10-19 (acceso por PIN: causa raíz demostrada y arreglo local probado — §26; el estado consolidado de pendientes vive en `docs/PLAN_DESPLIEGUE_Y_ESCANEO_2026-10-15.md` §8, del 16-oct, con el PIN añadido como bloqueador). **[Corrección 2026-10-08: este encabezado decía "2026-08-24" mientras el documento ya contenía secciones del 13 y 21 de septiembre — estaba desactualizado y no reflejaba su propio contenido. Las secciones 1-13 son del 24-ago; de la 14 en adelante son posteriores.]**
 
 ---
 
@@ -427,3 +427,34 @@ No se hizo merge ni deploy de ningún cambio de código. Rama `port/recuperar-re
 - **Producción `https://arroyo132.vercel.app`:** lectura directa ⇒ **HTTP 200, 182.138 bytes, `sha256 9f1636224e8577cb…`** — sin cambios desde el 09-oct; sigue sirviendo `main` (`48d05e8`) byte a byte.
 - **Parche de propagación de borrados (`feat/propagacion-borrados`, 451 inserciones):** probado el merge real en un worktree temporal sobre la punta de la candidata ⇒ **merge limpio, sin conflictos** (los 2 commits documentales posteriores no tocan `index.html` ni las pruebas) y **268 comprobaciones, 0 fallos** en el árbol fusionado (la suite de sincronización pasa de 69 a 108). El worktree temporal se eliminó; las ramas intactas.
 - **Sigue sin fusionar y sin desplegar**, como estaba. Esta verificación reduce los gates pendientes a un sí/no: **desplegar la rama** (§8.3 #1) y **aprobar el parche de borrados** (#11) ya tienen el código probado; ambos siguen siendo decisión de Jesvan.
+
+## 26. ACCESO POR PIN 2026-10-19 — causa raíz demostrada, arreglo local probado (29/29), sin desplegar
+
+**Naturaleza:** diagnóstico sobre el historial real de git, corrección local **reversible** en la rama `feat/seguridad-y-sincronizacion-recibos`, pruebas focalizadas. Sin push, sin merge, sin despliegue. No se tocaron credenciales, datos financieros, Drive ni producción. **La autenticación no se desactivó ni se debilitó**: siguen 5 intentos, bloqueo de 5 minutos y sesión de 30 minutos.
+
+### 26.1 Causa concreta (verificada, no inferida)
+
+- La versión que estuvo en producción **del 5-jul al 20-sep** (base `fc0a54e` más los parches manuales de julio) guardaba el PIN con **SHA-256 y sal** (`sha256('a132-jgarcia-realty-2025' + PIN)`, 64 hex, vía `crypto.subtle`; si el navegador no lo soportaba, un hash con sal de 8 hex).
+- Desde `7735957` — y en `main` hoy — `hashPin` es **síncrono y sin sal**: 8 hex + los códigos de carácter del PIN en hexadecimal (16 caracteres en total).
+- Consecuencia: un PIN creado o cambiado en esa ventana **nunca** puede coincidir con el de hoy. El propietario teclea el PIN correcto, la app lo rechaza, a los 5 intentos bloquea 5 minutos, y al terminar el bloqueo **el contador seguía en 5**: un solo intento lo volvía a bloquear de inmediato. Eso explica el "conoce el PIN pero el sistema no lo deja entrar".
+- Defectos adicionales corregidos: un `a132_lockuntil` corrupto o en el futuro lejano (reloj cambiado) bloqueaba **sin fin**; el contador `parseInt` no tenía protección contra NaN; y el formato de `main` **dejaba los dígitos del PIN recuperables** del valor guardado.
+
+### 26.2 Arreglo aplicado (local, `index.html`)
+
+- `verificarPin()` acepta **los tres formatos**: el actual de `main`, el SHA-256 con sal y el fallback con sal de julio. No se elimina ningún control.
+- Al entrar con una credencial antigua, **se migra a SHA-256 con sal** cuando el navegador lo permite; si no, se conserva la anterior y el acceso sigue funcionando (probado).
+- Los PIN **nuevos** se guardan como SHA-256 con sal; el valor guardado ya no contiene los dígitos.
+- `limpiarBloqueoVencido()`: al arrancar o al pulsar, un bloqueo vencido **se borra y reinicia el contador**; un `lockuntil` a más de una ventana completa (5 min) en el futuro se trata como dato corrupto y se descarta. Un bloqueo vigente y legítimo **se respeta** (probado).
+- El contador se sanea (`NaN`/negativo ⇒ 0).
+
+### 26.3 Pruebas
+
+- Nueva suite `tests/verificacion_pin_acceso.test.js`: **29 comprobaciones, 0 fallos**. Cubre los 3 formatos aceptados, rechazo de PIN incorrecto, bloqueo al 5.º intento, limpieza de bloqueo vencido (el defecto que re-bloqueaba), fecha imposible, bloqueo vigente respetado, contador corrupto, navegador sin `crypto.subtle` y creación de PIN nuevo como SHA-256 sin dígitos recuperables.
+- `verificacion_app_actual`: **36/36** (integridad de la app tras el cambio).
+- **No se repitieron las 8 suites completas**: el cambio está aislado al bloque de PIN y la suite nueva ejecuta el script completo; no hay motivo técnico para repetirlas.
+
+### 26.4 Lo que NO se pudo verificar y el mecanismo de recuperación
+
+- **El PIN real del propietario en un navegador real** no se puede probar desde aquí: las pruebas son simuladas. Por eso el PIN queda como **bloqueador de despliegue** hasta probarlo contra la versión nueva (preview o producción ya desplegada y autorizada).
+- **Recuperación de acceso, estado real:** la puerta trasera `?reset=arroyo132reset` **ya no existe** en el código servido (la retiró el redespliegue del 20-sep). El mecanismo decidido —código temporal por correo en lugar de un restablecimiento inseguro— está **diseñado pero no construido**: exige una credencial de correo (gate humano). Mientras tanto, la vía segura si el PIN no funciona tras desplegar es **exportar los datos desde el propio teléfono antes de tocar nada** (§8.3 #12 del plan); nunca borrar los datos del sitio.
+- **Producción no cambió:** sigue `main` @ `48d05e8` (182.138 bytes, `sha256 9f1636224e8577cb…`). El arreglo vive solo en el árbol de trabajo de la rama candidata (sin commit, sin push).

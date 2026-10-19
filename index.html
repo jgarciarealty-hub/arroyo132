@@ -1341,7 +1341,7 @@ const MAX_ATTEMPTS = 5;
 const LOCKOUT_TIME = 5 * 60 * 1000; // 5 minutos bloqueo
 
 let pinBuffer = '';
-let pinAttempts = parseInt(localStorage.getItem('a132_attempts')||'0');
+let pinAttempts = (()=>{ const n = parseInt(localStorage.getItem('a132_attempts')||'0',10); return Number.isFinite(n) && n > 0 ? n : 0; })();
 let isSettingPin = false;
 let pinConfirmBuffer = '';
 
@@ -1355,9 +1355,52 @@ function hashPin(pin){
   return (h>>>0).toString(16).padStart(8,'0') + pin.split('').map(c=>c.charCodeAt(0).toString(16)).join('');
 }
 
+// Compatibilidad de acceso (2026-10-19): la version que estuvo en produccion entre el 5-jul
+// y el 20-sep (base fc0a54e + parches manuales) guardaba el PIN con SHA-256 y sal. El
+// redeploy del 20-sep volvio a main, cuyo hash es distinto, asi que un PIN correcto creado
+// en esa ventana nunca coincidia y el bloqueo de 5 minutos se repetia. Se aceptan los
+// formatos anteriores y, al entrar, la credencial se migra a SHA-256 con sal cuando el
+// navegador lo permite (el hash de main no tiene sal y contiene los digitos del PIN en hex).
+const PIN_SALT = 'a132-jgarcia-realty-2025';
+async function hashPinFuerte(pin){
+  try{
+    const data = new TextEncoder().encode(PIN_SALT + pin);
+    const buf = await crypto.subtle.digest('SHA-256', data);
+    return Array.from(new Uint8Array(buf)).map(b=>b.toString(16).padStart(2,'0')).join('');
+  }catch(e){ return null; }
+}
+function hashPinLegacySalt(pin){
+  let h = 0x9e3779b9;
+  const str = PIN_SALT + pin;
+  for(let i=0;i<str.length;i++){
+    h = Math.imul(h ^ str.charCodeAt(i), 0x9e3779b9);
+    h = ((h<<13)|(h>>>19)) ^ (h+0x6c62272e);
+  }
+  return (h>>>0).toString(16).padStart(8,'0');
+}
+async function verificarPin(pin, stored){
+  if(hashPin(pin) === stored) return { ok:true, migrar:false };          // formato de main
+  const fuerte = await hashPinFuerte(pin);
+  if(fuerte && fuerte === stored) return { ok:true, migrar:false };      // SHA-256 con sal
+  if(hashPinLegacySalt(pin) === stored) return { ok:true, migrar:true }; // fallback de julio sin crypto.subtle
+  return { ok:false, migrar:false };
+}
+
+function limpiarBloqueoVencido(){
+  const lockUntil = parseInt(localStorage.getItem('a132_lockuntil')||'0',10);
+  if(!Number.isFinite(lockUntil) || lockUntil <= 0) return;
+  // Un valor en el futuro mas alla de la ventana completa solo puede venir de un reloj
+  // cambiado o de un dato corrupto: se descarta en vez de dejar la app bloqueada sin fin.
+  if(Date.now() >= lockUntil || lockUntil - Date.now() > LOCKOUT_TIME){
+    localStorage.removeItem('a132_lockuntil');
+    pinAttempts = 0;
+    try{ localStorage.setItem('a132_attempts','0'); }catch(e){}
+  }
+}
 function checkLockout(){
-  const lockUntil = parseInt(localStorage.getItem('a132_lockuntil')||'0');
-  if(Date.now() < lockUntil){
+  limpiarBloqueoVencido();
+  const lockUntil = parseInt(localStorage.getItem('a132_lockuntil')||'0',10);
+  if(Number.isFinite(lockUntil) && lockUntil > 0 && Date.now() < lockUntil){
     const mins = Math.ceil((lockUntil-Date.now())/60000);
     document.getElementById('pinError').textContent = `🔒 Bloqueado por ${mins} min por intentos fallidos`;
     document.getElementById('pinPad').style.pointerEvents='none';
@@ -1388,7 +1431,7 @@ function updateDots(state='normal'){
   }
 }
 
-function processPin(){
+async function processPin(){
   const stored = localStorage.getItem(PIN_KEY);
   if(!stored){
     // Primera vez — establecer PIN
@@ -1401,7 +1444,8 @@ function processPin(){
       document.getElementById('pinError').textContent='';
     } else {
       if(pinBuffer===pinConfirmBuffer){
-        localStorage.setItem(PIN_KEY, hashPin(pinBuffer));
+        const fuerte = await hashPinFuerte(pinBuffer);
+        localStorage.setItem(PIN_KEY, fuerte || hashPin(pinBuffer));
         unlockApp();
       } else {
         updateDots('error');
@@ -1410,11 +1454,16 @@ function processPin(){
       }
     }
   } else {
-    // Verificar PIN existente
-    if(hashPin(pinBuffer)===stored){
+    // Verificar PIN existente (acepta el formato actual y los de la version de julio)
+    const r = await verificarPin(pinBuffer, stored);
+    if(r.ok){
       pinAttempts=0;
       localStorage.setItem('a132_attempts','0');
       localStorage.removeItem('a132_lockuntil');
+      if(r.migrar){
+        const fuerte = await hashPinFuerte(pinBuffer);
+        if(fuerte) localStorage.setItem(PIN_KEY, fuerte);
+      }
       unlockApp();
     } else {
       pinAttempts++;

@@ -2,6 +2,8 @@
 
 **Estado:** preparado, **NADA desplegado**. Rama `feat/seguridad-y-sincronizacion-recibos` (sin fusionar, sin subir). Producción = `main` @ `48d05e8` (deployment `dpl_5zUwYV766ejfZNpJAd79zzzhHu8o`, `isRollbackCandidate: true`).
 
+**2026-10-19 — BLOQUEADOR AÑADIDO:** el **acceso por PIN** (§8.3 #1-bis). Causa raíz demostrada y arreglo local probado (29/29), pero **no verificado con el PIN real del propietario en un navegador real**; hasta entonces el despliegue no se considera seguro. Detalle en `docs/ESTADO_ARROYO_132.md` §26.
+
 ## 1. Recomendación
 
 | Pregunta | Veredicto |
@@ -115,6 +117,7 @@ Google Cloud (OAuth client `797904134164-…`): el origen `https://arroyo132.ver
 | # | Pendiente | Evidencia de hoy | Cierre verificable |
 |---|---|---|---|
 | 1 | **Desplegar la rama** (§4) | 229/229 comprobaciones, 0 fallos; `main` es ancestro ⇒ `--ff-only` funciona; árbol limpio | `index.html` en vivo ≡ blob de la rama y `/api/analyze-invoice` sin credencial ⇒ 401/503 |
+| 1-bis | **Acceso por PIN — BLOQUEADOR de despliegue** | Causa raíz demostrada: la versión en producción del 5-jul al 20-sep (base `fc0a54e`) guardaba el PIN con **SHA-256 + sal**; `main` usa un hash síncrono distinto ⇒ un PIN correcto creado en esa ventana **nunca** coincide; a los 5 intentos bloquea 5 min y, al vencer, el contador seguía en 5 (un intento re-bloqueaba de inmediato). Arreglo local en `index.html`: acepta los 3 formatos, migra a SHA-256 al entrar, limpia bloqueos vencidos/corruptos y sanea el contador — **sin desactivar la autenticación** (5 intentos, 5 min, sesión 30 min). Suite nueva `verificacion_pin_acceso`: **29/29**; app: **36/36**. **No fusionado, no subido, no desplegado** | Jesvan abre la versión nueva (preview o producción ya autorizada) **en su teléfono y en la computadora** y entra con su PIN real, sin bloqueo. Si no entra: **NO borrar datos del sitio**; exportar primero (§8.3 #12). La recuperación por código al correo está diseñada y **no construida** (requiere credencial de correo) |
 | 2 | **`A132_ALLOWED_EMAILS`** en `arroyo132` | Ausente en los 3 proyectos (búsqueda en el repo y en el historial: **nunca se ha configurado**, no hay valor previo que recuperar). **Propuesta para que Jesvan solo confirme:** los 2 correos que ya figuran como suyos — `jesvan@jgarciarealtypr.com` (literal en el repo) y `jgarciarealty@gmail.com`. Debe incluir **la cuenta de Google con la que se abre la app en el teléfono**, o el endpoint responderá 403 a esa sesión | Endpoint deja de responder 503 con una sesión válida, probado con la cuenta real |
 | 3 | **URL oficial + PWA del teléfono** | Canónico identificado; **en qué URL está instalada la PWA es dato del dispositivo** | Confirmado en el teléfono; si es otra, **exportar antes de desplegar** |
 | 4 | **19 grupos duplicados en Drive** | Verificado por sha256: los 19 son **copias byte-idénticas** (2 por grupo) ⇒ riesgo de pérdida de contenido **cero**. 13 recibos (raíz ↔ `Recibos\A132-REC-*`) + 4 de `Severa Rosa\` + 2 pares entre expedientes. Hay además 1 par de punteros `.gsheet` (2 revisiones de la hoja) | Cada grupo con 1 copia y su hash == el del grupo; el recuento baja en 19 |
@@ -135,6 +138,7 @@ Google Cloud (OAuth client `797904134164-…`): el origen `https://arroyo132.ver
 - `api/analyze-invoice.js`: `node --check` limpio. `manifest.json` y `vercel.json`: JSON válido. Rama limpia; `git merge-base --is-ancestor main HEAD` ⇒ **fast-forward posible** (3 commits).
 - Respaldo independiente en disco: `C:\Users\Owner\Downloads\arroyo132-respaldo-independiente-20261015\` (**65 archivos**, ~40,8 MB).
 - **Corrección documental aplicada hoy:** `RECUPERACION_DE_DATOS_2026-10-15.md` §2 afirmaba que el contrato del agrimensor «no existe en ninguna carpeta de Drive». **Es falso** (ver #5); queda corregido ahí, con la afirmación anterior marcada como superada. Causa: el respaldo del 15-oct copió 4 orígenes y **ninguna subcarpeta**.
+- **2026-10-19 — acceso por PIN:** suite nueva `tests/verificacion_pin_acceso.test.js` **29/29** y `verificacion_app_actual` **36/36** sobre el árbol de trabajo con el arreglo. **No se repitieron las 8 suites** (sin cambio que lo justifique: el arreglo está aislado al bloque de PIN y la suite nueva ejecuta el script completo). La cifra 229/229 de arriba sigue siendo la medición de `e428f41`, no de este árbol.
 
 ### 8.5 Reversión del despliegue
 
