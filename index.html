@@ -2936,9 +2936,11 @@ function editarGasto(id){
     </div>
     <div class="form-group"><label>Método</label>
       <select id="e-metodo">
-        <option value="efectivo" ${g.metodo==='efectivo'?'selected':''}>Efectivo</option>
-        <option value="cheque" ${g.metodo==='cheque'?'selected':''}>Cheque</option>
-        <option value="transferencia" ${g.metodo==='transferencia'?'selected':''}>Transferencia</option>
+        <option value="efectivo" ${g.metodo==='efectivo'?'selected':''}>💵 Efectivo</option>
+        <option value="ath" ${g.metodo==='ath'?'selected':''}>ATH Móvil</option>
+        <option value="cheque" ${g.metodo==='cheque'?'selected':''}>🗒 Cheque</option>
+        <option value="tarjeta" ${g.metodo==='tarjeta'?'selected':''}>💳 Tarjeta</option>
+        <option value="transferencia" ${g.metodo==='transferencia'?'selected':''}>🏦 Transferencia</option>
       </select>
     </div>
     <div class="form-group"><label>Monto</label><input type="number" step="0.01" id="e-monto" value="${g.monto}"></div>
@@ -2949,6 +2951,22 @@ function editarGasto(id){
     </div>
   `);
   if(catOriginal) document.getElementById('e-cat').value=g.categoria;
+  // Salvaguarda: si el valor actual del gasto no esta entre las opciones (p. ej. lote '132-B',
+  // categoria o metodo antiguo), se anade y se deja seleccionado: guardar sin tocarlo nunca lo reescribe.
+  asegurarOpcionSelect('e-cat',g.categoria);
+  asegurarOpcionSelect('e-lote',g.lote);
+  asegurarOpcionSelect('e-metodo',g.metodo);
+}
+function asegurarOpcionSelect(selId,valor){
+  const sel=document.getElementById(selId);
+  if(!sel||valor===undefined||valor===null||valor==='')return;
+  const v=String(valor);
+  const existe=Array.prototype.some.call(sel.options||[],o=>o.value===v);
+  if(!existe&&typeof sel.appendChild==='function'){
+    const o=document.createElement('option');
+    o.value=v;o.textContent=v;sel.appendChild(o);
+  }
+  sel.value=v;
 }
 function guardarEdicionGasto(id){
   const g=gastos.find(x=>x.id===id);if(!g)return;
@@ -2956,12 +2974,18 @@ function guardarEdicionGasto(id){
   const monto=parseFloat(document.getElementById('e-monto').value);
   if(!fecha||!monto||monto<=0){alert('⚠️ Fecha y monto son requeridos.');return;}
   g.fecha=fecha;
-  g.contratista=document.getElementById('e-cont').value.trim()||'Sin especificar';
-  g.categoria=document.getElementById('e-cat').value;
-  g.lote=document.getElementById('e-lote').value;
-  g.metodo=document.getElementById('e-metodo').value;
-  g.monto=monto;
-  g.descripcion=document.getElementById('e-desc').value.trim();
+  // Solo se reescribe lo que el usuario realmente cambio (guardar sin cambios deja el gasto identico).
+  const contNuevo=document.getElementById('e-cont').value.trim();
+  if(contNuevo!==String(g.contratista||'').trim()) g.contratista=contNuevo||'Sin especificar';
+  const catNueva=document.getElementById('e-cat').value;
+  if(catNueva!==''||!g.categoria) g.categoria=catNueva;
+  const loteNuevo=document.getElementById('e-lote').value;
+  if(loteNuevo!==''||!g.lote) g.lote=loteNuevo;
+  const metNuevo=document.getElementById('e-metodo').value;
+  if(metNuevo!==''||!g.metodo) g.metodo=metNuevo;
+  if(monto!==g.monto) g.monto=monto;
+  const descNueva=document.getElementById('e-desc').value.trim();
+  if(descNueva!==String(g.descripcion||'').trim()) g.descripcion=descNueva;
   save();closeModal();renderHistorial();renderDashboard();
   alert('✅ Gasto actualizado.');
 }
