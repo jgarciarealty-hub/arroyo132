@@ -67,7 +67,7 @@ function vista(f) { return { id: f.id, name: f.name, size: String(f.datos.length
 // ── Contexto con las funciones REALES ────────────────────────────────────────
 const alm = new Map([['tok','T']]); const idb = new Map();
 const ctx = vm.createContext({
-  fetch: fetchFalso, Blob, crypto: crypto.webcrypto, Uint8Array, DataView, ArrayBuffer, Math, JSON, String, Number, Object, Array, Date, Error, URL, console, Promise, setTimeout,
+  fetch: fetchFalso, AbortController, clearTimeout, Blob, crypto: crypto.webcrypto, Uint8Array, DataView, ArrayBuffer, Math, JSON, String, Number, Object, Array, Date, Error, URL, console, Promise, setTimeout,
   localStorage: { getItem: k => (alm.has(k) ? alm.get(k) : null), setItem: (k, v) => alm.set(k, String(v)), removeItem: k => alm.delete(k) },
   document: { getElementById: () => null },
   DRIVE_TOKEN_KEY: 'tok', driveTokenValid: () => true, asegurarTokenDrive: async () => 'T',
@@ -77,7 +77,7 @@ const ctx = vm.createContext({
   origBorrar: async id => { idb.delete(String(id)); },
   origGuardar: async (id, a) => { idb.set(String(id), { blob: a, tipo: a.type }); return true; },
 });
-const nombres = ['md5Hex', 'sha256Hex', 'extensionDe', 'verificarCargaOriginal', 'driveCarpetaRecibos', 'driveSubirOriginal', 'procesarColaOriginales', 'refrescarPanelRespaldo', 'registrarOriginalNuevo', 'textoEstadoOriginal', 'leerRecibos', 'leerRecibosPend', 'guardarRecibos', 'guardarRecibosPend'];
+const nombres = ['md5Hex', 'sha256Hex', 'extensionDe', 'verificarCargaOriginal', 'driveCarpetaRecibos', 'driveSubirOriginal', 'procesarColaOriginales', 'refrescarPanelRespaldo', 'registrarOriginalNuevo', 'textoEstadoOriginal', 'leerRecibos', 'leerRecibosPend', 'guardarRecibos', 'guardarRecibosPend', 'escribirVerificado', 'actualizarPend', 'escHtml', 'fetchConTiempo'];
 vm.runInContext("const RECIBOS_KEY='a132_recibos', RECIBOS_PEND_KEY='a132_recibos_pend', RECIBOS_CARPETA_KEY='a132_recibos_carpeta', RECIBOS_CARPETA_NOMBRE='Arroyo 132 — Recibos originales'; const DRIVE_CAMPOS_ARCHIVO='id,name,size,md5Checksum,webViewLink,appProperties'; let _colaOriginalesEnCurso=false;\n" + nombres.map(extraer).join('\n'), ctx);
 const R = n => vm.runInContext(n, ctx);
 const fotoFalsa = (bytes, name = 'r.jpg', type = 'image/jpeg') => new File([bytes], name, { type });
@@ -149,6 +149,56 @@ const fotoFalsa = (bytes, name = 'r.jpg', type = 'image/jpeg') => new File([byte
   test('estado final muestra Google Drive y carpeta', /En Google Drive/.test(R('textoEstadoOriginal')(300)) && /Recibos originales/.test(R('textoEstadoOriginal')(300)));
   test('nunca se borra nada en Drive (no hay DELETE)', !drive.llamadas.some(l => l.startsWith('DELETE')));
   test('nunca se sobrescribe (no hay PATCH/PUT de archivos)', !drive.llamadas.some(l => /^(PATCH|PUT)/.test(l)));
+
+
+  // ── Regresiones de la revisión independiente ────────────────────────────────
+  // B-1: un gasto nuevo guardado mientras la cola trabaja NO se pierde
+  alm.clear(); alm.set('tok','T'); idb.clear(); drive.modo='ok';
+  const orig = ctx.fetch; let liberar; const compuerta = new Promise(r => { liberar = r; });
+  let primera = true;
+  ctx.fetch = async (u, o) => { if (primera && /upload/.test(u)) { primera = false; await compuerta; } return orig(u, o); };
+  idb.set('1', { blob: fotoFalsa(crypto.randomBytes(500)), tipo: 'image/jpeg' });
+  R('actualizarPend')(1, { estado: 'pendiente' });
+  const corrida = R('procesarColaOriginales')();            // empieza a subir el gasto 1 y queda detenida en la subida
+  await new Promise(r => setTimeout(r, 20));
+  await R('registrarOriginalNuevo')(2, fotoFalsa(crypto.randomBytes(600)));   // se guarda el gasto 2 durante la corrida
+  liberar(); await corrida;
+  await new Promise(r => setTimeout(r, 50));
+  test('B-1: ambos originales quedan verificados (el gasto guardado durante la cola no se pierde)', !!R('leerRecibos')()[1] && !!R('leerRecibos')()[2] && Object.keys(R('leerRecibosPend')()).length === 0 && idb.size === 0, { refs: Object.keys(R('leerRecibos')()), pend: R('leerRecibosPend')(), idb: [...idb.keys()] });
+  ctx.fetch = orig;
+
+  // B-2: si la referencia no se puede guardar, NO se borra la copia temporal
+  alm.clear(); alm.set('tok','T'); idb.clear();
+  const setOrig = ctx.localStorage.setItem; 
+  ctx.localStorage.setItem = (k, v) => { if (k === 'a132_recibos') throw new Error('QuotaExceededError'); return setOrig(k, v); };
+  idb.set('9', { blob: fotoFalsa(crypto.randomBytes(700)), tipo: 'image/jpeg' });
+  R('actualizarPend')(9, { estado: 'pendiente' });
+  await R('procesarColaOriginales')();
+  test('B-2: sin poder guardar la referencia → copia temporal conservada y estado error visible', idb.has('9') && R('leerRecibosPend')()[9] && R('leerRecibosPend')()[9].estado === 'error' && /referencia/.test(R('leerRecibosPend')()[9].ultimoError), R('leerRecibosPend')());
+  ctx.localStorage.setItem = setOrig;
+
+  // I-A: nombreOriginal en appProperties ≤ 124 bytes (clave+valor) aun con acentos
+  alm.clear(); alm.set('tok','T');
+  await R('driveSubirOriginal')(50, fotoFalsa(crypto.randomBytes(300), 'Factura ÁÉÍÓÚ ñ — muy larga '.repeat(8) + '.pdf', 'application/pdf'), 'T');
+  const ult = [...drive.archivos.values()].pop();
+  test('I-A: nombreOriginal cabe en el límite de Drive (124 bytes clave+valor)', Buffer.byteLength('nombreOriginal' + ult.appProperties.nombreOriginal) <= 124, ult.appProperties.nombreOriginal.length);
+
+  // I-B: HTML en datos de referencia no se inyecta
+  R('guardarRecibos')({ 77: { nombre: '<img src=x onerror=alert(1)>', fecha: '2026-11-01T00:00', driveId: 'z' } });
+  test('I-B: el estado del original escapa HTML', !/<img/.test(R('textoEstadoOriginal')(77)) && /&lt;img/.test(R('textoEstadoOriginal')(77)));
+  test('I-B: el enlace solo se acepta si es https de Google', script.includes("typeof ref.enlace==='string'") && script.includes('google\.com'));
+  test('I-B: la descripción del detalle se escapa', script.includes('${escHtml(g.descripcion)}'));
+
+  // I-C: copia perdida → estado explícito, sin reintento infinito
+  alm.clear(); alm.set('tok','T'); idb.clear();
+  R('actualizarPend')(5, { estado: 'pendiente' });
+  await R('procesarColaOriginales')();
+  test('I-C: si la copia temporal falta queda "sin_copia" con mensaje honesto', R('leerRecibosPend')()[5].estado === 'sin_copia' && /se perdió/.test(R('textoEstadoOriginal')(5)));
+
+  // Subida colgada: el tiempo máximo evita bloquear la cola
+  test('la cola usa fetch con tiempo máximo (AbortController)', script.includes('new AbortController()') && script.includes('await fetchConTiempo(') && !extraer('driveSubirOriginal').includes('await fetch('));
+  test('la vista previa libera su blob', script.split('revokeObjectURL(_fotoDataUrl)').length - 1 >= 2);
+  test('regex del IVU corregida', !script.includes('replace(/[$,s]/g') && /obj\.ivu==null\?'':obj\.ivu\)\.replace\(\/\[\$,\\s\]\/g/.test(script));
 
   // Integración en la app
   test('guardarGasto delega en registrarOriginalNuevo', script.includes('registrarOriginalNuevo(nuevoId,_archivoOriginal)'));
