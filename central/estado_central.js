@@ -13,10 +13,17 @@
   const clon = (x) => JSON.parse(JSON.stringify(x));
   const SECCIONES = ['viajes', 'servicios', 'contratistas', 'docs', 'timeline', 'presupuesto', 'tucoop', 'fin'];
 
-  function nuevoEstado() { return { version: 5, rev: 0, actualizado: null, gastos: {}, recibos: {}, conflictos: [], migracion: null }; }
+  function nuevoEstado() { return { version: 5, rev: 0, actualizado: null, gastos: {}, recibos: {}, conflictos: [], migracion: null, viajesBorrados: [] }; }
   const strip = (r) => { const c = Object.assign({}, r); delete c._v; delete c._t; delete c._o; delete c._del; return c; };
   const estable = (x) => (Array.isArray(x) ? x.map(estable) : (x && typeof x === 'object' ? Object.keys(x).sort().reduce((o, k) => (o[k] = estable(x[k]), o), {}) : x));
   const igualContenido = (a, b) => JSON.stringify(estable(strip(a))) === JSON.stringify(estable(strip(b)));
+
+  // Lista de ids de viajes borrados (lápida): evita que la unión por id resucite un viaje borrado en otro dispositivo.
+  function aplicarViajesBorrados(e, extra) {
+    const vb = new Set((e.viajesBorrados || []).concat(extra || []).map(String)); e.viajesBorrados = [...vb];
+    if (Array.isArray(e.viajes)) e.viajes = e.viajes.filter((v) => !(v && typeof v === 'object' && v.id !== undefined && vb.has(String(v.id))));
+    return e;
+  }
 
   // --- migración v4 (lista de gastos del respaldo del celular) → v5 (mapa por id con versión). No modifica la entrada.
   function migrarAV5(v4, { origen = 'migracion', ahora = new Date().toISOString() } = {}) {
@@ -68,6 +75,7 @@
     if (local && local.recibos && typeof local.recibos === 'object') sal.recibos = Object.assign({}, limpiarRecibos(local.recibos), sal.recibos || {});
     for (const k of SECCIONES) if (Array.isArray(sal[k]) && local && Array.isArray(local[k])) sal[k] = unirListas(sal[k], local[k]);
     sal.conflictos = acotarConflictos(sal.conflictos);
+    aplicarViajesBorrados(sal);
     return { estado: sal, informe };
   }
 
@@ -98,6 +106,7 @@
       else if (Array.isArray(sal[k]) && Array.isArray(b[k])) sal[k] = unirListas(sal[k], b[k]);   // viajes, contratistas, docs, timeline: unión por id
     }
     sal.conflictos = acotarConflictos(sal.conflictos);
+    aplicarViajesBorrados(sal, b.viajesBorrados);
     sal.rev = Math.max(a.rev || 0, b.rev || 0);
     return sal;
   }
@@ -190,5 +199,5 @@
     return a;
   }
 
-  return { unirListas, acotarConflictos, nuevoEstado, migrarAV5, incorporarPerfilLocal, fusionar, guardarGasto, borrarGasto, vigentes, resumen, verificarCentral, importarMapaRecibos, limpiarRecibos, actualizar, instantaneaDiaria, almacenMemoria, claveContenido, strip, igualContenido, clon };
+  return { unirListas, aplicarViajesBorrados, acotarConflictos, nuevoEstado, migrarAV5, incorporarPerfilLocal, fusionar, guardarGasto, borrarGasto, vigentes, resumen, verificarCentral, importarMapaRecibos, limpiarRecibos, actualizar, instantaneaDiaria, almacenMemoria, claveContenido, strip, igualContenido, clon };
 });

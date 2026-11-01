@@ -92,6 +92,33 @@ const mk = (id, c, f, m) => ({ id, contratista: c, fecha: f, monto: m, categoria
   await C.actualizar(V1, (e) => Object.assign(e, { viajes: e.viajes.concat([{ id: 'v3', monto: 27.95 }]) }));
   test('carrera sobre viajes: v1, v2 y v3 se conservan (unión por id)', d9.estado().viajes.map((v) => v.id).sort().join() === 'v1,v2,v3', d9.estado().viajes);
 
+  // 7e. (M-3) el id del archivo puede llevar «:» — el token del archivo vacío no se parte por «:»
+  const dc = driveSimulado(); dc.archivos.set('F:1:x', { id: 'F:1:x', name: D.NOMBRE_CENTRAL, t: 1, revs: [{ id: 'rev:a', text: '' }] });
+  const Cc = dc.dispositivo(); const lc = await Cc.leer();
+  const rcol = await C.actualizar(Cc, () => base);
+  test('M-3: archivo vacío con id que contiene «:» → se reutiliza y se escribe en ese mismo archivo', lc.estado === null && /^vacio:/.test(lc.token) && dc.archivosCentrales() === 1 && C.resumen(dc.estado()).gastos === 2 && rcol.intentos === 1, { tok: lc.token, n: dc.archivosCentrales() });
+
+  // 7f. (M-5) carrera sobre un archivo VACÍO: dos dispositivos leen el mismo token «vacio:»; el segundo en escribir se rechaza
+  const dv = driveSimulado(); dv.archivos.set('Fv', { id: 'Fv', name: D.NOMBRE_CENTRAL, t: 1, revs: [{ id: 'rv1', text: '' }] });
+  const VA = dv.dispositivo(), VB = dv.dispositivo(); const tA = await VA.leer(), tB = await VB.leer();
+  const okA = await VA.escribir(C.guardarGasto(C.clon(base), mk(10, 'A primero', '2026-01-01', 1), 'a'), tA.token);
+  const rechB = await VB.escribir(C.guardarGasto(C.clon(base), mk(11, 'B después', '2026-01-02', 2), 'b'), tB.token);
+  test('M-5: carrera sobre archivo vacío (head del token): el segundo se rechaza y no pisa al primero', okA.ok === true && rechB.ok === false && !!dv.estado().gastos['10'] && !dv.estado().gastos['11'], { okA: okA.ok, rechB: rechB.ok });
+  const dv2 = driveSimulado(); dv2.archivos.set('Fw', { id: 'Fw', name: D.NOMBRE_CENTRAL, t: 1, revs: [{ id: 'rw1', text: '' }] });
+  const WA = dv2.dispositivo(); const tW = await WA.leer();
+  const idMal = await WA.escribir(C.clon(base), 'vacio:' + JSON.stringify(['Fotro', JSON.parse(tW.token.slice(6))[1]]));
+  test('M-5: carrera sobre archivo vacío (id del token): un token de otro archivo se rechaza', idMal.ok === false && dv2.estado() === null, idMal);
+  const tokRoto = await WA.escribir(C.clon(base), 'vacio:no-es-json');
+  test('M-5: un token «vacio:» malformado se rechaza sin escribir', tokRoto.ok === false && dv2.estado() === null);
+
+  // 7g. (M-5) la verificación usa la cabeza REAL del archivo (headRevisionId), no la última revisión del listado
+  const dh = driveSimulado(); const H1 = dh.dispositivo(); await C.actualizar(H1, () => base);
+  dh.revisionFantasma = '{"otra":"revision posterior que no es la cabeza"}';
+  const rh = await C.actualizar(H1, (e) => C.guardarGasto(e, mk(20, 'Con listado desalineado', '2026-02-01', 4), 'a'));
+  const headReal = dh.archivos.get([...dh.archivos.keys()][0]).revs.slice(-1)[0].id;
+  test('M-5: con el listado de revisiones desalineado, la escritura se verifica contra la cabeza real y no falla', rh.intentos === 1 && rh.token === headReal && C.resumen(dh.estado()).gastos === 3, { tok: rh.token, headReal });
+  dh.revisionFantasma = null;
+
   // 8. Drive guarda algo distinto de lo enviado → la verificación falla (no hay "ok")
   const d4 = driveSimulado(); const W = d4.dispositivo(); d4.recortar = true;
   let e5 = null; try { await C.actualizar(W, () => base); } catch (e) { e5 = e.message; }

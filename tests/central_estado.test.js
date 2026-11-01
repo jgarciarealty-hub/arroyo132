@@ -109,6 +109,17 @@ const bufPC = leer('Downloads__arroyo132-datos__copia.json');
   const muchos = []; for (let i = 0; i < 300; i++) muchos.push({ tipo: 'x', id: i });
   test('conflictos: se acotan a 200 y no se repiten', C.acotarConflictos(muchos).length === 200 && C.acotarConflictos([{ tipo: 'x', id: 1 }, { tipo: 'x', id: 1 }]).length === 1);
 
+  // Unión de secciones al incorporar un perfil local (M-5) y lápida de viajes (I-B)
+  const cU = Object.assign(C.nuevoEstado(), { viajes: [{ id: 'v1', monto: 1 }], contratistas: [{ id: 'c1' }] });
+  const uni = C.incorporarPerfilLocal(cU, { gastos: [], viajes: [{ id: 'v1', monto: 1 }, { id: 'v2', monto: 2 }], contratistas: [{ id: 'c1' }, { id: 'c2' }] }).estado;
+  test('incorporarPerfilLocal: une las secciones por id (viajes y contratistas), sin duplicar ni descartar', uni.viajes.map((v) => v.id).join() === 'v1,v2' && uni.contratistas.map((v) => v.id).join() === 'c1,c2', { v: uni.viajes, c: uni.contratistas });
+  const cB = Object.assign(C.nuevoEstado(), { viajes: [], viajesBorrados: ['v1'] });
+  test('incorporarPerfilLocal: un viaje borrado en el central no resucita desde un perfil local antiguo', C.incorporarPerfilLocal(cB, { gastos: [], viajes: [{ id: 'v1' }, { id: 'v9' }] }).estado.viajes.map((v) => v.id).join() === 'v9');
+  const fu = C.fusionar(Object.assign(C.nuevoEstado(), { viajes: [{ id: 'v1' }, { id: 'v2' }] }), Object.assign(C.nuevoEstado(), { viajes: [{ id: 'v2' }], viajesBorrados: ['v1'] }));
+  test('fusionar: la lista viajesBorrados se une y quita el viaje de la unión por id', fu.viajes.map((v) => v.id).join() === 'v2' && fu.viajesBorrados.join() === 'v1', fu);
+  const fu2 = C.fusionar(Object.assign(C.nuevoEstado(), { viajes: [], viajesBorrados: ['v1'] }), Object.assign(C.nuevoEstado(), { viajes: [{ id: 'v1' }] }));
+  test('fusionar: simétrico — el viaje borrado en A no vuelve desde B', fu2.viajes.length === 0 && fu2.viajesBorrados.join() === 'v1');
+
   console.log(`\n${pass} pasaron, ${fail} fallaron`);
   process.exit(fail ? 1 : 0);
 })();

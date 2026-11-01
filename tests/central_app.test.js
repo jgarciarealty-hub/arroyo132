@@ -17,25 +17,25 @@ function extraer(nombre) {
   for (; k < script.length; k++) { if (script[k] === '{') n++; else if (script[k] === '}') { n--; if (!n) break; } }
   return script.slice(ini, k + 1);
 }
-const NOMBRES = ['modoCentral', 'centralLeerBase', 'centralLocal', 'centralMarcar', 'centralCambiosPendientes', 'centralMutador', 'centralAdoptar', 'centralAlmacen', 'centralToken', 'centralSincronizar', 'centralProgramar', 'centralTexto', 'centralActivar', 'leerRecibos', 'leerRecibosPend', 'guardarRecibos', 'escribirVerificado', 'limpiarRecibos', 'actualizarPend', 'centralFoto', 'centralHayCorrupcion', 'centralRevertir', 'restaurarDesdeDrive', 'importarBackup', 'escHtml'];
+const NOMBRES = ['modoCentral', 'centralLeerBase', 'centralLocal', 'centralMarcar', 'centralCambiosPendientes', 'centralMutador', 'centralAdoptar', 'centralAlmacen', 'centralToken', 'centralSincronizar', 'centralProgramar', 'centralTexto', 'centralActivar', 'leerRecibos', 'leerRecibosPend', 'guardarRecibos', 'escribirVerificado', 'limpiarRecibos', 'actualizarPend', 'centralFoto', 'centralClavesCorrupcion', 'centralHayCorrupcion', 'centralCorrupcionRevisada', 'centralBotonesExtra', 'centralConfirmarBorradoMasivo', 'centralRegistrarViajeBorrado', 'centralViajesBorradosPend', 'centralBaseTrasEmpuje', 'eliminarViaje', 'saveViajes', 'centralRevertir', 'restaurarDesdeDrive', 'importarBackup', 'escHtml'];
 
 function dispositivo(nombre, drive, { gastos = [], viajes = [] } = {}) {
   const alm = new Map([['tok', 'T']]);
-  const avisos = [], confirmaciones = [];
+  const avisos = [], confirmaciones = [], cfg = { confirmar: true };
   const ctx = vm.createContext({
     console, JSON, Math, Date, Object, Array, Set, Map, Promise, Error, String, Number, setTimeout, clearTimeout, URL,
     A132Central: C, A132Drive: D,
     localStorage: { getItem: (k) => (alm.has(k) ? alm.get(k) : null), setItem: (k, v) => alm.set(k, String(v)), removeItem: (k) => alm.delete(k), get length() { return alm.size; }, key: (i) => [...alm.keys()][i] },
     deviceId: () => nombre, driveTokenValid: () => true, DRIVE_TOKEN_KEY: 'tok', asegurarTokenDrive: async () => 'T',
-    fetchConTiempo: (u, o) => drive.fetch(u, o), renderDashboard() {}, renderHistorial() {}, refrescarPanelRespaldo() {},
-    alert: (m) => avisos.push(String(m)), confirm: (m) => { confirmaciones.push(String(m)); return true; },
+    fetchConTiempo: (u, o) => drive.fetch(u, o), renderDashboard() {}, renderHistorial() {}, renderViajes() {}, refrescarPanelRespaldo() {},
+    alert: (m) => avisos.push(String(m)), confirm: (m) => { confirmaciones.push(String(m)); return cfg.confirmar; },
     RECIBOS_KEY: 'a132_recibos', RECIBOS_PEND_KEY: 'a132_recibos_pend',
   });
   vm.runInContext("let gastos = " + JSON.stringify(gastos) + ", viajes = " + JSON.stringify(viajes) + ";" +
-    "const RECIBOS_KEY='a132_recibos', RECIBOS_PEND_KEY='a132_recibos_pend', CENTRAL_FLAG='a132_central', CENTRAL_BASE_KEY='a132_central_base', CENTRAL_ESTADO_KEY='a132_central_estado', CENTRAL_ANTES_KEY='a132_antes_central'; let _centralEnCurso=false, _centralOtra=false, _centralT=null;\n" +
+    "const RECIBOS_KEY='a132_recibos', RECIBOS_PEND_KEY='a132_recibos_pend', CENTRAL_FLAG='a132_central', CENTRAL_BASE_KEY='a132_central_base', CENTRAL_ESTADO_KEY='a132_central_estado', CENTRAL_ANTES_KEY='a132_antes_central', CENTRAL_VB_KEY='a132_viajes_borrados', CENTRAL_TOPE_KEY='a132_central_borrado_ok'; let _centralEnCurso=false, _centralOtra=false, _centralT=null, _centralToc=null, _centralTope=false;\n" +
     NOMBRES.map(extraer).join('\n'), ctx);
   const R = (c) => vm.runInContext(c, ctx);
-  return { nombre, alm, avisos, confirmaciones, R, activar: () => R('centralActivar()'), sync: () => R('centralSincronizar()'), gastos: () => R('JSON.parse(JSON.stringify(gastos))'),
+  return { nombre, alm, avisos, confirmaciones, cfg, R, viajes: () => R('JSON.parse(JSON.stringify(viajes))'), activar: () => R('centralActivar()'), sync: () => R('centralSincronizar()'), gastos: () => R('JSON.parse(JSON.stringify(gastos))'),
     resumen: () => { const g = R('JSON.parse(JSON.stringify(gastos))'); return { gastos: g.length, suma: Math.round(g.reduce((s, x) => s + x.monto, 0) * 100) / 100 }; },
     editar: (id, campos) => R('(' + JSON.stringify(campos) + ',gastos.find(g=>String(g.id)===' + JSON.stringify(String(id)) + ') && Object.assign(gastos.find(g=>String(g.id)===' + JSON.stringify(String(id)) + '),' + JSON.stringify(campos) + '))'),
     anadir: (g) => R('gastos.push(' + JSON.stringify(g) + ')'), quitar: (id) => R('gastos = gastos.filter(g => String(g.id) !== ' + JSON.stringify(String(id)) + ')'),
@@ -188,6 +188,114 @@ const NCEL = cel.gastos.length, SUMA = Math.round(cel.gastos.reduce((s, g) => s 
   x1.quitar(2); x2.editar(2, { descripcion: 'editado en x2' });
   await x2.sync(); await x1.sync(); await x2.sync();
   test('borrado vs edición simultáneos: se conserva la edición y queda registrado', dBE.estado().gastos['2']._del !== true && dBE.estado().conflictos.some((c) => String(c.id) === '2' && c.tipo === 'borrado_vs_edicion'), dBE.estado().conflictos);
+
+  // ═══ Revisión independiente #2: I-A, I-B, I-C, M-1, M-2, M-4, M-5 ═══
+  const MAL = 'a132_gastos_corrupto_1';
+  // I-A: la copia ilegible no bloquea para siempre
+  {
+    const dr = driveSimulado(); const a = dispositivo('ia', dr, { gastos: base1 }); await a.activar();
+    a.alm.set(MAL, 'xx'); a.alm.set('a132_gastos_corrupto_2', 'yy'); a.anadir(mk(61, 'Tras la copia ilegible', '2026-04-01', 6));
+    await a.sync(); const rev0 = dr.estado().rev;
+    test('I-A: con una copia ilegible la sincronización se detiene', /ilegible/.test(a.R('centralTexto()')) && !dr.estado().gastos['61'], a.R('centralTexto()'));
+    test('I-A: el botón «Ya revisé la copia ilegible» aparece solo con la fuente activa y la clave presente', /Ya revisé la copia ilegible/.test(a.R('centralBotonesExtra()')));
+    a.cfg.confirmar = false; a.R('centralCorrupcionRevisada()');
+    test('I-A: si no confirmas, no se renombra nada', a.alm.has(MAL) && a.alm.has('a132_gastos_corrupto_2'));
+    a.cfg.confirmar = true; a.R('centralCorrupcionRevisada()');
+    const claves = [...a.alm.keys()];
+    test('I-A: tras confirmar se RENOMBRAN (no se borran) y el valor se conserva', !a.alm.has(MAL) && claves.filter((k) => /^a132_gastos_corrupto_revisado_\d+/.test(k)).length === 2 && claves.filter((k) => /revisado/.test(k)).map((k) => a.alm.get(k)).sort().join() === 'xx,yy', claves);
+    test('I-A: sin copias pendientes el botón desaparece', a.R('centralBotonesExtra()') === '' && a.R('centralHayCorrupcion()') === false);
+    await a.sync();
+    test('I-A: y la sincronización continúa y sube el gasto pendiente', !!dr.estado().gastos['61'] && dr.estado().rev > rev0, dr.estado().rev);
+    const dr2 = driveSimulado(); const b = dispositivo('ia2', dr2, { gastos: base1 }); b.alm.set(MAL, 'xx'); await b.activar();
+    test('I-A: al activar con una copia ilegible presente se avisa antes', /copia ilegible/.test(b.confirmaciones[0] || '') && /Ya revisé la copia ilegible/.test(b.confirmaciones[0] || ''), b.confirmaciones[0]);
+  }
+
+  // I-B: un viaje borrado no resucita
+  {
+    const dr = driveSimulado(); const v1 = { id: 'V1', destino: 'Caguas' }, v2 = { id: 'V2', destino: 'Ponce' };
+    const a = dispositivo('va', dr, { gastos: base1, viajes: [v1, v2] }); const b = dispositivo('vb', dr, { gastos: [], viajes: [] });
+    await a.activar(); await b.activar();
+    test('I-B: ambos dispositivos parten con los 2 viajes', b.viajes().length === 2, b.viajes());
+    a.R("eliminarViaje('V1')"); await a.sync(); await b.sync();
+    test('I-B: el viaje borrado en un dispositivo desaparece del otro', a.viajes().map((v) => v.id).join() === 'V2' && b.viajes().map((v) => v.id).join() === 'V2', { a: a.viajes(), b: b.viajes() });
+    test('I-B: el central guarda la lista viajesBorrados y ya no contiene el viaje', dr.estado().viajesBorrados.includes('V1') && !dr.estado().viajes.some((v) => v.id === 'V1'), dr.estado().viajes);
+    await a.sync(); await b.sync(); await a.sync();
+    test('I-B: tras varias sincronizaciones el viaje NO resucita en ninguno', !a.viajes().some((v) => v.id === 'V1') && !b.viajes().some((v) => v.id === 'V1') && !dr.estado().viajes.some((v) => v.id === 'V1'));
+    const c = dispositivo('vc', dr, { gastos: base1, viajes: [v1] }); await c.activar();
+    test('I-B: un perfil local antiguo que aún tiene el viaje borrado no lo resucita al activar', !c.viajes().some((v) => v.id === 'V1') && !dr.estado().viajes.some((v) => v.id === 'V1'), c.viajes());
+    test('I-B: la lista pendiente local se vacía cuando el central ya la tiene', JSON.parse(a.alm.get('a132_viajes_borrados') || '[]').length === 0);
+  }
+
+  // I-C: revertir guarda la vista actual, se niega si hay sincronización en curso y no promete lo que no es cierto
+  {
+    const dr = driveSimulado(); const a = dispositivo('rc', dr, { gastos: base1 }); await a.activar();
+    a.anadir(mk(88, 'Sin sincronizar', '2026-05-01', 8));
+    a.R('_centralEnCurso = true'); const gAntes = a.gastos().length; a.R('centralRevertir()');
+    test('I-C: se niega a revertir mientras hay una sincronización en curso', a.flag() === '1' && a.gastos().length === gAntes && a.avisos.some((x) => /sincronización en curso/.test(x)), a.avisos);
+    a.R('_centralEnCurso = false'); a.confirmaciones.length = 0; a.R('centralRevertir()');
+    const rec = JSON.parse(a.alm.get('a132_antes_central_reciente') || 'null');
+    test('I-C: antes de revertir guarda la vista ACTUAL (con lo no sincronizado) en a132_antes_central_reciente', rec && rec.gastos.some((g) => g.id === 88), rec && rec.gastos.length);
+    test('I-C: el texto de confirmación no afirma que lo no sincronizado se conserva en el central', /NO está en el central/.test(a.confirmaciones[0] || '') && !/Los cambios hechos después de activar NO se pierden/.test(a.confirmaciones[0] || '') && /a132_antes_central_reciente/.test(a.confirmaciones[0] || ''), a.confirmaciones[0]);
+    test('I-C: revierte a la copia previa y apaga la bandera', a.resumen().gastos === base1.length && a.flag() === undefined);
+    const dr2 = driveSimulado(); const b = dispositivo('rc2', dr2, { gastos: base1 }); await b.activar(); await b.activar();
+    const antesReciente = b.alm.get('a132_antes_central_reciente'); b.R('centralRevertir()');
+    test('I-C: la copia «reciente» anterior se conserva con otro nombre (no se pisa evidencia)', [...b.alm.keys()].some((k) => /^a132_antes_central_reciente_\d+$/.test(k) && b.alm.get(k) === antesReciente));
+  }
+
+  // M-1: editar y luego borrar el mismo gasto durante la subida → queda borrado; la base solo avanza en lo empujado
+  {
+    const dr = driveSimulado(); const a = dispositivo('m1a', dr, { gastos: base1 }); const o = dispositivo('m1b', dr, { gastos: [] }); await a.activar(); await o.activar();
+    a.R('gastos.find(g=>g.id===2).monto=21');
+    dr.antesDeSubir = async () => { a.quitar(2); };
+    await a.sync(); await new Promise((res) => setTimeout(res, 900));
+    test('M-1: editar y luego borrar el mismo gasto durante la subida → queda borrado en el central y en el dispositivo', dr.estado().gastos['2']._del === true && !a.gastos().some((g) => g.id === 2), dr.estado().gastos['2']);
+    test('M-1: no se registró un falso conflicto «borrado_vs_edicion»', !dr.estado().conflictos.some((c) => c.tipo === 'borrado_vs_edicion'), dr.estado().conflictos);
+    await o.sync(); o.anadir(mk(300, 'Ajeno', '2026-06-01', 3)); await o.sync();
+    a.R('gastos.find(g=>g.id===1).monto=11');
+    dr.antesDeSubir = async () => { a.R('gastos.find(g=>g.id===1).monto=111'); };
+    await a.sync(); await new Promise((res) => setTimeout(res, 900)); await a.sync();
+    test('M-1: un gasto nuevo de otro dispositivo no se borra por error al avanzar la base', !!dr.estado().gastos['300'] && dr.estado().gastos['300']._del !== true && a.gastos().some((g) => g.id === 300) && dr.estado().gastos['1'].monto === 111, Object.keys(dr.estado().gastos));
+  }
+
+  // M-2: tope de borrados con salida clara
+  {
+    const dr = driveSimulado(); const muchos = Array.from({ length: 40 }, (_, i) => mk(1000 + i, 'G' + i, '2026-01-' + String(i % 28 + 1).padStart(2, '0'), i + 1));
+    const a = dispositivo('tp', dr, { gastos: muchos }); await a.activar();
+    a.R('gastos = gastos.slice(0, 20)'); await a.sync();
+    test('M-2: el tope rechaza el borrado masivo y el mensaje explica las dos salidas', /Confirmar borrado masivo/.test(a.R('centralTexto()')) && /Activar fuente central/.test(a.R('centralTexto()')) && C.resumen(dr.estado()).gastos === 40, a.R('centralTexto()'));
+    test('M-2: el botón «Confirmar borrado masivo» aparece solo tras ese rechazo', /Confirmar borrado masivo/.test(a.R('centralBotonesExtra()')));
+    a.cfg.confirmar = false; await a.R('centralConfirmarBorradoMasivo()');
+    test('M-2: si no confirmas, nada se borra ni se levanta el tope', C.resumen(dr.estado()).gastos === 40 && !a.alm.has('a132_central_borrado_ok'));
+    a.cfg.confirmar = true; await a.R('centralConfirmarBorradoMasivo()');
+    test('M-2: tras confirmar se borran 20 (lápidas, recuperables) y el tope se levanta UNA sola vez', C.resumen(dr.estado()).gastos === 20 && C.resumen(dr.estado()).lapidas === 20 && !a.alm.has('a132_central_borrado_ok') && !/Confirmar borrado masivo/.test(a.R('centralBotonesExtra()')), C.resumen(dr.estado()));
+    a.R('gastos = gastos.slice(0, 5)'); await a.sync();
+    test('M-2: el tope vuelve a aplicar en la siguiente sincronización (no quedó levantado)', C.resumen(dr.estado()).gastos === 20 && /rechazado/.test(a.R('centralTexto()')), a.R('centralTexto()'));
+    await a.activar();
+    test('M-2: reactivar adopta lo que hay en el central', a.resumen().gastos === 20);
+  }
+
+  // M-4: guarda de semillas — lista vacía y ≥80 %
+  {
+    const sem = (n) => Array.from({ length: n }, (_, i) => mk(700001 + i, 'S' + i, '2026-04-15', 10 + i));
+    const d0 = driveSimulado(); const vacio = dispositivo('vac', d0, { gastos: [] }); await vacio.activar();
+    test('M-4: un dispositivo con la lista VACÍA no puede crear el central', d0.archivos.size === 0 && vacio.flag() === undefined && vacio.avisos.some((x) => /no tiene gastos/.test(x)), vacio.avisos);
+    const d1 = driveSimulado(); const casi = dispositivo('casi', d1, { gastos: [...sem(8), mk(5, 'Real1', '2026-01-01', 1), mk(6, 'Real2', '2026-01-02', 2)] }); await casi.activar();
+    test('M-4: con ≥80 % de gastos sembrados 7000xx tampoco puede crear el central', d1.archivos.size === 0 && casi.flag() === undefined && casi.avisos.some((x) => /recibos sembrados/.test(x)), casi.avisos);
+    const d2 = driveSimulado(); const ok = dispositivo('ok', d2, { gastos: [...sem(7), mk(5, 'Real1', '2026-01-01', 1), mk(6, 'Real2', '2026-01-02', 2), mk(7, 'Real3', '2026-01-03', 3)] }); await ok.activar();
+    test('M-4: con 70 % de sembrados (datos reales mezclados) sí se puede crear', ok.flag() === '1' && d2.archivosCentrales() === 1, ok.avisos);
+  }
+
+  // M-5: escape de centralTexto, arranque con bandera sin sembrar gastos
+  {
+    const dr = driveSimulado(); const a = dispositivo('esc', dr, { gastos: base1 }); await a.activar();
+    a.R("centralMarcar('error', '<img src=x onerror=alert(1)>')");
+    const t = a.R('centralTexto()');
+    test('M-5: centralTexto escapa el HTML del mensaje de error', !/<img/.test(t) && /&lt;img/.test(t), t);
+    const dr2 = driveSimulado(); const o = dispositivo('o', dr2, { gastos: base1 }); await o.activar(); const rev2 = dr2.estado().rev;
+    const arr = dispositivo('arr', dr2, { gastos: [] }); arr.alm.set('a132_central', '1');
+    await arr.sync();
+    test('M-5: arranque con bandera pero sin gastos ni base → no escribe en el central y reconstruye desde él con copia previa', dr2.estado().rev === rev2 && C.resumen(dr2.estado()).gastos === base1.length && arr.resumen().gastos === base1.length && !!arr.alm.get('a132_antes_central_reciente'), { rev: dr2.estado().rev, rev2, g: arr.resumen() });
+  }
 
   console.log(`\n${pass} pasaron, ${fail} fallaron`);
   process.exit(fail ? 1 : 0);

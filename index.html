@@ -3234,7 +3234,7 @@ function renderDocs(){
       <div style="display:flex;gap:8px;flex-wrap:wrap">
         <button class="btn btn-sm btn-gold" onclick="restaurarDesdeDrive()">☁️ Traer datos desde Google Drive</button>
         <button class="btn btn-sm btn-outline" onclick="reintentarOriginalesManual()">🔁 Reintentar subida de recibos</button>
-        ${((typeof location!=='undefined'&&/[?&]central=1/.test(location.search))||(typeof modoCentral==='function'&&modoCentral()))?`<button class="btn btn-sm btn-gold" onclick="centralActivar()">🗂️ Activar fuente central</button><button class="btn btn-sm btn-outline" onclick="centralSincronizar()">🔄 Sincronizar ahora</button><button class="btn btn-sm btn-ghost" onclick="centralRevertir()">↩️ Volver a la copia previa</button>`:''}
+        ${((typeof location!=='undefined'&&/[?&]central=1/.test(location.search))||(typeof modoCentral==='function'&&modoCentral()))?`<button class="btn btn-sm btn-gold" onclick="centralActivar()">🗂️ Activar fuente central</button><button class="btn btn-sm btn-outline" onclick="centralSincronizar()">🔄 Sincronizar ahora</button><button class="btn btn-sm btn-ghost" onclick="centralRevertir()">↩️ Volver a la copia previa</button>`:''}${typeof centralBotonesExtra==='function'?centralBotonesExtra():''}
         <button class="btn btn-sm btn-outline" onclick="exportarBackup()">⬇️ Exportar respaldo (archivo)</button>
         <button class="btn btn-sm btn-outline" onclick="importarBackup()">⬆️ Importar respaldo (archivo)</button>
       </div>
@@ -3596,6 +3596,7 @@ function eliminarViaje(id){
   if(!confirm('¿Eliminar este viaje?'))return;
   viajes = viajes.filter(v=>v.id!==id);
   saveViajes();
+  if(typeof modoCentral==='function' && modoCentral()) centralRegistrarViajeBorrado(id);
   renderViajes();
 }
 
@@ -4284,22 +4285,58 @@ renderDocs();
 // solo se enciende en un dispositivo con el botón «Activar fuente central» (visible con ?central=1), tras confirmar.
 // Centraliza: gastos (con versión y lápidas), viajes (unión por id) y referencias a recibos originales. El resto de
 // secciones sigue como hoy (copia por dispositivo + respaldo v4, que continúa funcionando como red de seguridad).
-const CENTRAL_FLAG='a132_central', CENTRAL_BASE_KEY='a132_central_base', CENTRAL_ESTADO_KEY='a132_central_estado', CENTRAL_ANTES_KEY='a132_antes_central';
-let _centralEnCurso=false, _centralOtra=false, _centralT=null;
+const CENTRAL_FLAG='a132_central', CENTRAL_BASE_KEY='a132_central_base', CENTRAL_ESTADO_KEY='a132_central_estado', CENTRAL_ANTES_KEY='a132_antes_central', CENTRAL_VB_KEY='a132_viajes_borrados', CENTRAL_TOPE_KEY='a132_central_borrado_ok';
+let _centralEnCurso=false, _centralOtra=false, _centralT=null, _centralToc=null, _centralTope=false;
 function modoCentral(){
   try{ return localStorage.getItem(CENTRAL_FLAG)==='1' && typeof A132Central!=='undefined' && typeof A132Drive!=='undefined'; }catch(e){ return false; }
 }
 function centralFoto(){ return JSON.stringify([gastos,viajes,leerRecibos()]); }
-function centralHayCorrupcion(){
-  try{ for(let i=0;i<localStorage.length;i++){ const k=localStorage.key(i); if(k&&k.indexOf('a132_gastos_corrupto_')===0) return true; } }catch(e){}
-  return false;
+function centralClavesCorrupcion(){   // copias ilegibles aún sin revisar (las ya revisadas se renombran a ..._revisado_<ts> y no bloquean)
+  const out=[];
+  try{ for(let i=0;i<localStorage.length;i++){ const k=localStorage.key(i); if(k&&k.indexOf('a132_gastos_corrupto_')===0&&k.indexOf('a132_gastos_corrupto_revisado_')!==0) out.push(k); } }catch(e){}
+  return out;
 }
+function centralHayCorrupcion(){ return centralClavesCorrupcion().length>0; }
+// «Ya revisé la copia ilegible»: RENOMBRA (nunca borra) cada copia para que la sincronización pueda continuar.
+function centralCorrupcionRevisada(){
+  const ks=centralClavesCorrupcion();
+  if(!ks.length){ alert('No hay copias ilegibles pendientes de revisar.'); return; }
+  if(!confirm('🧾 Copia ilegible de los gastos\n\nEste dispositivo guardó '+ks.length+' copia(s) ilegible(s) (a132_gastos_corrupto_*). Si ya la revisaste y los gastos que ves ahora son correctos, la sincronización puede continuar. La copia NO se borra: solo se renombra a «a132_gastos_corrupto_revisado_…» para conservarla como evidencia.\n\n¿Ya la revisaste y quieres continuar?')) return;
+  const ts=Date.now();
+  try{
+    ks.forEach((k,i)=>{ const v=localStorage.getItem(k); localStorage.setItem('a132_gastos_corrupto_revisado_'+ts+(i?'_'+i:''),v); localStorage.removeItem(k); });
+  }catch(e){ alert('⚠️ No se pudo renombrar todas las copias (¿almacenamiento lleno?). Se conservaron; la sincronización sigue detenida.'); try{ refrescarPanelRespaldo(); }catch(e2){} return; }
+  try{ refrescarPanelRespaldo(); }catch(e){}
+  centralProgramar();
+}
+// Botones extra del panel de respaldo (según el estado de la fuente central)
+function centralBotonesExtra(){
+  if(!modoCentral()) return '';
+  let s=null; try{ s=JSON.parse(localStorage.getItem(CENTRAL_ESTADO_KEY)||'null'); }catch(e){}
+  let h='';
+  if(centralHayCorrupcion()) h+='<button class="btn btn-sm btn-outline" onclick="centralCorrupcionRevisada()">🧾 Ya revisé la copia ilegible</button>';
+  if(s&&s.tope) h+='<button class="btn btn-sm btn-outline" onclick="centralConfirmarBorradoMasivo()">🗑️ Confirmar borrado masivo</button>';
+  return h;
+}
+// Levanta el tope de borrados UNA sola vez (la siguiente sincronización); pide confirmación explícita.
+async function centralConfirmarBorradoMasivo(){
+  if(_centralEnCurso){ alert('Hay una sincronización en curso; espera a que termine y vuelve a intentarlo.'); return; }
+  if(!confirm('🗑️ Confirmar borrado masivo\n\nLa próxima sincronización marcará como borrados en el central los gastos que ya no están en este dispositivo (quedan como lápidas recuperables, no se eliminan físicamente). Hazlo solo si de verdad borraste esos gastos aquí. Si no estás seguro, cancela y pulsa «Activar fuente central» para adoptar lo que hay en el central.\n\n¿Confirmar este borrado masivo (solo esta vez)?')) return;
+  try{ localStorage.setItem(CENTRAL_TOPE_KEY,'1'); }catch(e){ alert('No se pudo guardar la confirmación.'); return; }
+  await centralSincronizar();
+}
+// Viajes: un viaje borrado queda registrado por id (lápida) para que no resucite desde otro dispositivo.
+function centralRegistrarViajeBorrado(id){
+  try{ const l=JSON.parse(localStorage.getItem(CENTRAL_VB_KEY)||'[]'); const s=String(id); if(l.indexOf(s)<0) l.push(s); localStorage.setItem(CENTRAL_VB_KEY,JSON.stringify(l)); }catch(e){}
+  centralProgramar();
+}
+function centralViajesBorradosPend(){ try{ const l=JSON.parse(localStorage.getItem(CENTRAL_VB_KEY)||'[]'); return Array.isArray(l)?l.map(String):[]; }catch(e){ return []; } }
 function centralLeerBase(){ try{ return JSON.parse(localStorage.getItem(CENTRAL_BASE_KEY)||'null'); }catch(e){ return null; } }
 function centralLocal(){
   return { version:4, fecha:new Date().toISOString(), gastos:gastos, viajes:viajes, recibos:leerRecibos() };
 }
 function centralMarcar(estado, mensaje, extra){
-  try{ localStorage.setItem(CENTRAL_ESTADO_KEY, JSON.stringify(Object.assign({estado, mensaje:String(mensaje||'').slice(0,200), fecha:new Date().toISOString()}, extra||{}))); }catch(e){}
+  try{ localStorage.setItem(CENTRAL_ESTADO_KEY, JSON.stringify(Object.assign({estado, mensaje:String(mensaje||'').slice(0,500), fecha:new Date().toISOString()}, extra||{}))); }catch(e){}
   try{ refrescarPanelRespaldo(); }catch(e){}
 }
 // ¿Hay cambios locales que aún no están en el central? (comparado con la última base sincronizada)
@@ -4311,12 +4348,13 @@ function centralCambiosPendientes(){
   for(const [id,b] of Object.entries(base.gastos)) if(!b._del && !ids.has(id)) return true;
   const rl=leerRecibos(); for(const k of Object.keys(rl)) if(!(base.recibos&&base.recibos[k])) return true;
   const vb=new Set((base.viajes||[]).map(v=>String(v.id))); if(viajes.some(v=>!vb.has(String(v.id)))) return true;
+  const bb=new Set((base.viajesBorrados||[]).map(String)); if(centralViajesBorradosPend().some(i=>!bb.has(i))) return true;
   return false;
 }
 // Aplica los cambios locales (respecto de la base) sobre el estado central leído. Pura respecto de `estado`.
 function centralMutador(estado){
   const C=A132Central, base=centralLeerBase(), yo=deviceId(), ahora=new Date().toISOString();
-  const locales=new Set();
+  const locales=new Set(); const toc={gastos:new Set(),viajes:[],recibos:[],viajesBorrados:[]}; _centralToc=toc;
   for(const g of gastos){
     const id=String(g.id); locales.add(id);
     const b=base&&base.gastos[id], cur=estado.gastos[id];
@@ -4324,7 +4362,7 @@ function centralMutador(estado){
     if(!cambiadoLocal) continue;
     if(cur&&!cur._del&&C.igualContenido(cur,g)) continue;                       // ya está igual en el central
     if(cur&&!cur._del&&b&&!C.igualContenido(cur,b)) estado.conflictos.push({tipo:'edicion_concurrente',id,ganador:yo,perdedor:C.strip(cur),fecha:ahora});   // otro dispositivo también lo editó
-    C.guardarGasto(estado,C.strip(g),yo,ahora);
+    C.guardarGasto(estado,C.strip(g),yo,ahora); toc.gastos.add(id);
   }
   let borrados=0;
   if(base) for(const [id,b] of Object.entries(base.gastos)){
@@ -4332,27 +4370,46 @@ function centralMutador(estado){
     const cur=estado.gastos[id];
     if(!cur||cur._del) continue;
     if(!C.igualContenido(cur,b)){ estado.conflictos.push({tipo:'borrado_vs_edicion',id,conservado:C.strip(cur),fecha:ahora}); continue; }   // otro dispositivo lo editó: no se borra
-    C.borrarGasto(estado,id,yo,ahora); borrados++;
+    C.borrarGasto(estado,id,yo,ahora); borrados++; toc.gastos.add(id);
   }
-  if(base){ const vig=Object.values(base.gastos).filter(g=>!g._del).length; if(borrados>Math.max(3,Math.ceil(vig*0.1))) throw new Error('rechazado: esta sincronización borraría '+borrados+' de '+vig+' gastos de golpe; revisa este dispositivo (¿datos dañados o vacíos?) antes de continuar. No se envió nada.'); }
+  if(base&&!_centralTope){ const vig=Object.values(base.gastos).filter(g=>!g._del).length; if(borrados>Math.max(3,Math.ceil(vig*0.1))){ const er=new Error('rechazado: esta sincronización borraría '+borrados+' de '+vig+' gastos de golpe y no se envió nada. Si de verdad los borraste aquí, pulsa «Confirmar borrado masivo» (queda como lápida recuperable). Si no, pulsa «Activar fuente central» para adoptar lo que hay en el central (los gastos que ves de menos reaparecen) y revisa este dispositivo (¿datos dañados o vacíos?).'); er.tope=true; throw er; } }
+  const vbs=new Set((estado.viajesBorrados||[]).map(String)); centralViajesBorradosPend().forEach(i=>{ vbs.add(i); toc.viajesBorrados.push(i); });
+  estado.viajesBorrados=[...vbs];
   const ids=new Set((estado.viajes||[]).map(v=>String(v.id)));
-  estado.viajes=(estado.viajes||[]).concat(viajes.filter(v=>v&&!ids.has(String(v.id))));
-  estado.recibos=Object.assign({},estado.recibos||{},A132Central.limpiarRecibos(leerRecibos()));
+  estado.viajes=(estado.viajes||[]).filter(v=>!vbs.has(String(v.id))).concat(viajes.filter(v=>v&&!ids.has(String(v.id))&&!vbs.has(String(v.id))));
+  toc.viajes=viajes.filter(v=>v&&!vbs.has(String(v.id))).map(v=>String(v.id));
+  const rl=A132Central.limpiarRecibos(leerRecibos()); toc.recibos=Object.keys(rl);
+  estado.recibos=Object.assign({},estado.recibos||{},rl);
   return estado;
 }
 // Adopta el estado central como vista local (los registros se guardan SIN campos internos _v/_t/_o).
 function centralAdoptar(estado){
   const C=A132Central;
   gastos=C.vigentes(estado).map(C.strip);
+  const vbs=new Set((estado.viajesBorrados||[]).map(String));
   const ids=new Set((estado.viajes||[]).map(v=>String(v.id)));
-  viajes=(estado.viajes||[]).concat(viajes.filter(v=>v&&!ids.has(String(v.id))));
+  viajes=(estado.viajes||[]).filter(v=>!vbs.has(String(v.id))).concat(viajes.filter(v=>v&&!ids.has(String(v.id))&&!vbs.has(String(v.id))));
   if(!guardarRecibos(C.limpiarRecibos(estado.recibos))) throw new Error('no se pudieron guardar las referencias de recibos en este dispositivo (almacenamiento lleno)');
   try{
     localStorage.setItem('a132_gastos',JSON.stringify(gastos));
     localStorage.setItem('a132_viajes',JSON.stringify(viajes));
     localStorage.setItem(CENTRAL_BASE_KEY,JSON.stringify(estado));
+    const pv=centralViajesBorradosPend().filter(i=>!vbs.has(i)); localStorage.setItem(CENTRAL_VB_KEY,JSON.stringify(pv));
   }catch(e){ throw new Error('no se pudo guardar la copia local del estado central (almacenamiento lleno)'); }
   try{ renderDashboard(); }catch(e){} try{ renderHistorial(); }catch(e){}
+}
+// M-1: tras un envío correcto cuya vista NO se adopta (el usuario editó durante la subida), la base se actualiza SOLO en lo que
+// se empujó; lo demás del central (altas/ediciones de otros dispositivos) sigue sin adoptar y por eso nunca se confunde con un borrado local.
+function centralBaseTrasEmpuje(estado,toc){
+  const C=A132Central, b=C.clon(centralLeerBase()||C.nuevoEstado());
+  for(const id of toc.gastos) if(estado.gastos[id]) b.gastos[id]=C.clon(estado.gastos[id]);
+  const vids=new Set((b.viajes||[]).map(v=>String(v.id))); b.viajes=b.viajes||[];
+  for(const v of (estado.viajes||[])) if(toc.viajes.indexOf(String(v.id))>=0&&!vids.has(String(v.id))) b.viajes.push(C.clon(v));
+  b.viajesBorrados=[...new Set((b.viajesBorrados||[]).map(String).concat(toc.viajesBorrados))];
+  b.viajes=b.viajes.filter(v=>b.viajesBorrados.indexOf(String(v.id))<0);
+  b.recibos=Object.assign({},b.recibos||{}); for(const k of toc.recibos) if(estado.recibos&&estado.recibos[k]) b.recibos[k]=estado.recibos[k];
+  b.rev=estado.rev;
+  localStorage.setItem(CENTRAL_BASE_KEY,JSON.stringify(b));
 }
 function centralAlmacen(token){
   return A132Drive.crearAlmacenDrive({ fetchFn:(u,o)=>fetchConTiempo(u,o,60000), token, fusionar:A132Central.fusionar });
@@ -4370,8 +4427,9 @@ async function centralSincronizar(){
     const token=await centralToken(false);
     if(!token){ centralMarcar('pendiente','Google Drive no conectado: los cambios quedan en este dispositivo y se envían al conectar'); return; }
     if(centralHayCorrupcion()){ centralMarcar('error','Este dispositivo guardó una copia ilegible de los gastos (a132_gastos_corrupto_*): la sincronización se detiene hasta revisarlo, para no propagar datos dañados'); return; }
-    const alm=centralAlmacen(token); let estado;
+    const alm=centralAlmacen(token); let estado, empujo=false;
     const foto=centralFoto();
+    try{ _centralTope=localStorage.getItem(CENTRAL_TOPE_KEY)==='1'; }catch(e){ _centralTope=false; }
     if(!centralLeerBase()){   // bandera puesta pero sin base: no se escribe nada (podría resucitar borrados o pisar ediciones); se reconstruye desde el central
       const l=await alm.leer();
       if(!l.estado){ centralMarcar('error','el archivo central no existe en Drive'); return; }
@@ -4381,19 +4439,21 @@ async function centralSincronizar(){
       centralMarcar('ok','base reconstruida desde el central (copia local previa guardada)',{rev:l.estado.rev,gastos:vb.gastos,suma:vb.suma});
       return;
     }
-    if(centralCambiosPendientes()){ estado=(await A132Central.actualizar(alm,centralMutador)).estado; }
+    if(centralCambiosPendientes()){ estado=(await A132Central.actualizar(alm,centralMutador)).estado; empujo=true; }
     else{ const l=await alm.leer(); if(!l.estado){ centralMarcar('error','el archivo central no existe en Drive'); return; } estado=l.estado; }
     const v=A132Central.verificarCentral(estado);
     if(!v.ok) throw new Error('el estado central no es válido: '+v.motivo);
     if(centralFoto()!==foto){   // el usuario cambió algo mientras se sincronizaba: no se reemplaza su vista; se reenvía en la siguiente vuelta
+      if(empujo&&_centralToc){ try{ centralBaseTrasEmpuje(estado,_centralToc); }catch(e){} }   // lo ya enviado queda como base (si no, un borrado hecho durante la subida podría revertirse)
       centralMarcar('pendiente','hubo cambios mientras se sincronizaba; se envían de nuevo'); _centralOtra=true; return;
     }
     centralAdoptar(estado);
     centralMarcar('ok','sincronizado',{rev:estado.rev,gastos:v.gastos,suma:v.suma,conflictos:(estado.conflictos||[]).length});
   }catch(e){
-    centralMarcar('error',e&&e.message?e.message:e);
+    centralMarcar('error',e&&e.message?e.message:e,e&&e.tope?{tope:true}:undefined);
   }finally{
-    _centralEnCurso=false;
+    _centralEnCurso=false; _centralTope=false; _centralToc=null;
+    try{ localStorage.removeItem(CENTRAL_TOPE_KEY); }catch(e){}
     if(_centralOtra){ _centralOtra=false; setTimeout(centralSincronizar,300); }
   }
 }
@@ -4415,7 +4475,9 @@ async function centralActivar(){
     const resL=C.resumen({gastos:Object.fromEntries(gastos.map(g=>[String(g.id),g]))});
     let mutador, msg;
     if(!l.estado){
-      if(gastos.length>0 && gastos.every(g=>Number(g.id)>=700001 && Number(g.id)<=700019)){ alert('Este dispositivo solo tiene los recibos sembrados por la app (ids 7000xx), no tus datos reales. Activa la fuente central primero en el dispositivo que tiene los gastos completos (el celular). No se modificó nada.'); return; }
+      if(gastos.length===0){ alert('Este dispositivo no tiene gastos, así que no puede crear la fuente central. Actívala primero en el dispositivo que tiene los gastos completos (el celular). No se modificó nada.'); return; }
+      const nSem=gastos.filter(g=>Number(g.id)>=700001 && Number(g.id)<=700019).length;
+      if(nSem/gastos.length>=0.8){ alert('Este dispositivo solo tiene los recibos sembrados por la app (ids 7000xx), no tus datos reales. Activa la fuente central primero en el dispositivo que tiene los gastos completos (el celular). No se modificó nada.'); return; }
       mutador=()=>C.migrarAV5(local,{origen:deviceId()});
       msg='Se creará el archivo NUEVO «'+A132Drive.NOMBRE_CENTRAL+'» con los '+resL.gastos+' gastos de ESTE dispositivo ($'+resL.suma.toFixed(2)+'). Tu respaldo actual no se toca. Hazlo primero en el dispositivo que tiene los datos completos.';
     } else {
@@ -4423,6 +4485,7 @@ async function centralActivar(){
       mutador=(e)=>C.incorporarPerfilLocal(e,local,{origen:deviceId()}).estado;
       msg='Ya existe la fuente central ('+rc.gastos+' gastos, $'+rc.suma.toFixed(2)+'). Este dispositivo tiene '+resL.gastos+': '+r.informe.identicos.length+' idénticos, '+r.informe.duplicadosOtroId.length+' ya existen con otro id (no se añaden), '+r.informe.anadidos.length+' nuevos y '+r.informe.conflictosMismoId.length+' con el mismo id pero otro contenido o importe (se conserva el central y la diferencia queda registrada para revisión). Nada se borra: se guarda una copia local previa.';
     }
+    if(centralHayCorrupcion()) msg+='\n\n⚠️ Este dispositivo tiene una copia ilegible de los gastos (a132_gastos_corrupto_*): con la fuente central activa, la sincronización se detendrá hasta que la revises y pulses «Ya revisé la copia ilegible».';
     if(!confirm('🗂️ Activar fuente central única\n\n'+msg+'\n\n¿Continuar?')) return;
     const kAntes=localStorage.getItem(CENTRAL_ANTES_KEY)?CENTRAL_ANTES_KEY+'_reciente':CENTRAL_ANTES_KEY;   // la primera copia (previa a la primera activación) nunca se pisa
     try{ localStorage.setItem(kAntes,JSON.stringify({fecha:new Date().toISOString(),dispositivo:deviceId(),gastos,viajes,recibos:leerRecibos()})); }catch(e){ alert('No hay espacio para la copia local previa; no se activa.'); return; }
@@ -4437,9 +4500,15 @@ async function centralActivar(){
 }
 // Reversión local: vuelve a la copia previa a la activación. No toca Drive; los cambios hechos después siguen en el central.
 function centralRevertir(){
+  if(_centralEnCurso){ alert('Hay una sincronización en curso; espera a que termine y vuelve a intentarlo.'); return; }
   let c=null; try{ c=JSON.parse(localStorage.getItem(CENTRAL_ANTES_KEY)||'null'); }catch(e){}
   if(!c||!Array.isArray(c.gastos)){ alert('No hay una copia previa a la activación en este dispositivo.'); return; }
-  if(!confirm('↩️ Volver a la copia previa a la fuente central\n\nEste dispositivo vuelve a sus '+c.gastos.length+' gastos de '+String(c.fecha).slice(0,16).replace('T',' ')+'. Los cambios hechos después de activar NO se pierden: siguen en el archivo central de Drive (que no se toca). La fuente central se apaga aquí.\n\n¿Continuar?')) return;
+  if(!confirm('↩️ Volver a la copia previa a la fuente central\n\nEste dispositivo vuelve a sus '+c.gastos.length+' gastos de '+String(c.fecha).slice(0,16).replace('T',' ')+'. Lo que ya se había sincronizado sigue en el archivo central de Drive (que no se toca). Lo que hiciste aquí y aún NO se había sincronizado NO está en el central: se guarda solo en este dispositivo, en la copia «a132_antes_central_reciente» (tus '+gastos.length+' gastos actuales). La fuente central se apaga aquí.\n\n¿Continuar?')) return;
+  try{   // se guarda la vista ACTUAL antes de reemplazarla; la «reciente» anterior (si había) se conserva con otro nombre
+    const kr=CENTRAL_ANTES_KEY+'_reciente', prev=localStorage.getItem(kr);
+    if(prev) localStorage.setItem(kr+'_'+Date.now(),prev);
+    localStorage.setItem(kr,JSON.stringify({fecha:new Date().toISOString(),dispositivo:deviceId(),gastos,viajes,recibos:leerRecibos()}));
+  }catch(e){ alert('No hay espacio para guardar la vista actual; no se revirtió.'); return; }
   gastos=c.gastos; viajes=c.viajes||[];
   guardarRecibos(c.recibos||{});
   try{ localStorage.setItem('a132_gastos',JSON.stringify(gastos)); localStorage.setItem('a132_viajes',JSON.stringify(viajes)); }catch(e){ alert('No se pudo guardar la copia local; no se revirtió.'); return; }

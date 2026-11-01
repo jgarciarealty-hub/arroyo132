@@ -60,7 +60,7 @@
       if (!meta) return { estado: null, token: 'ausente' };
       const texto = await contenido('/drive/v3/files/' + meta.id + '?alt=media', 'lectura del archivo central');
       // Un archivo creado pero nunca escrito (falló la primera subida): vacío y con una sola revisión → se reutiliza, no bloquea.
-      if ((texto == null || String(texto).trim() === '') && (await revisiones(meta.id)).length <= 1) return { estado: null, token: 'vacio:' + meta.id + ':' + meta.headRevisionId };
+      if ((texto == null || String(texto).trim() === '') && (await revisiones(meta.id)).length <= 1) return { estado: null, token: 'vacio:' + JSON.stringify([meta.id, meta.headRevisionId]) };
       const estado = parsear(texto, 'el archivo central');
       return { estado, token: meta.headRevisionId };
     }
@@ -68,7 +68,7 @@
     async function escribir(estado, tokenEsperado) {
       let fileId, esperado = tokenEsperado;
       if (typeof tokenEsperado === 'string' && tokenEsperado.startsWith('vacio:')) {
-        const [, idv, revv] = tokenEsperado.split(':');
+        let idv, revv; try { [idv, revv] = JSON.parse(tokenEsperado.slice(6)); } catch (e) { return { ok: false }; }   // el id puede llevar «:»
         const meta = await buscar();
         if (!meta || meta.id !== idv || meta.headRevisionId !== revv) return { ok: false };
         fileId = idv; esperado = 'ausente';
