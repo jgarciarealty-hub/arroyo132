@@ -1969,6 +1969,7 @@ function guardarGasto(btn){
     monto_total:esAbono?montoTotal:0
   });
   if(_fotoSmall) fotos[nuevoId]=_fotoSmall;
+  if(_archivoOriginal) origGuardar(nuevoId,_archivoOriginal);   // original legible, solo en este dispositivo
   save();resetRegistrar();
   alert('✅ Gasto guardado. ¡Que Dios bendiga cada inversión!');
 }
@@ -1998,6 +1999,7 @@ function resetRegistrar(){
   if(btnG){ btnG.disabled=false; btnG.textContent='💾 Guardar Gasto'; }
   _fotoDataUrl=null;
   _fotoSmall=null;
+  _archivoOriginal=null;
   document.getElementById('aiBox').classList.remove('show');
   document.getElementById('aiStatus').textContent='Analizando...';
   document.getElementById('aiBox').querySelector('.spinner').style.display='';
@@ -2035,6 +2037,7 @@ async function handleUpload(e, source){
     e.target.value='';
     return;
   }
+  _archivoOriginal=file;
   const aiBox=document.getElementById('aiBox'),aiStatus=document.getElementById('aiStatus');
   aiBox.classList.add('show');
   aiStatus.textContent='Leyendo imagen...';
@@ -2154,11 +2157,13 @@ Si no encuentras algún dato, usa "" para texto y 0 para monto. Hoy: ${new Date(
     }
     const data=await res.json();
     const text=data.content?.map(c=>c.text||'').join('')||'';
-    let ext={};
-    try{ext=JSON.parse(text.trim());}catch{const m=text.match(/\{[\s\S]*?\}/);if(m)try{ext=JSON.parse(m[0]);}catch{}}
-    guardarEnCacheIA(huella, ext);      // para no volver a pagar si se reintenta el mismo recibo
+    const lectura=interpretarExtraccion(text);
+    const ext=lectura.campos;
+    // Solo se cachea una lectura utilizable: una respuesta vacía o ilegible no debe "reutilizarse"
+    // después como si fuera un resultado bueno.
+    if(lectura.estado!=='vacia') guardarEnCacheIA(huella, ext);
     precrellenarConIA(ext);
-    aiStatus.textContent='✅ Datos extraídos — revisa y confirma';
+    aiStatus.textContent=textoEstadoExtraccion(lectura);
     aiBox.querySelector('.spinner').style.display='none';
     // mostrar formulario de confirmación
     const form=document.getElementById('reg-form');
@@ -2172,6 +2177,64 @@ Si no encuentras algún dato, usa "" para texto y 0 para monto. Hoy: ${new Date(
     document.getElementById('f-fecha').value=new Date().toISOString().split('T')[0];
     console.error(err);
   }
+}
+
+// ── Recibo original (2026-11-01) ───────────────────────────────────────────────────────
+// Antes solo se guardaba una miniatura de 320 px (ilegible) y los PDF no se guardaban. Ahora el
+// archivo ORIGINAL (foto o PDF) se guarda en IndexedDB de este dispositivo, ligado al id del gasto.
+// No va en localStorage (cuota de ~5 MB) y NO viaja en el respaldo de Drive: queda solo en este
+// dispositivo. Si IndexedDB no existe o falla, el gasto se guarda igual con su miniatura.
+let _archivoOriginal=null;
+const ORIG_DB='a132_originales', ORIG_STORE='recibos';
+function origAbrir(){
+  return new Promise((res,rej)=>{
+    if(typeof indexedDB==='undefined'){ rej(new Error('sin IndexedDB')); return; }
+    const rq=indexedDB.open(ORIG_DB,1);
+    rq.onupgradeneeded=()=>{ rq.result.createObjectStore(ORIG_STORE); };
+    rq.onsuccess=()=>res(rq.result);
+    rq.onerror=()=>rej(rq.error||new Error('no se pudo abrir'));
+  });
+}
+async function origGuardar(id,archivo){
+  if(!archivo) return false;
+  try{
+    const db=await origAbrir();
+    await new Promise((res,rej)=>{
+      const tx=db.transaction(ORIG_STORE,'readwrite');
+      tx.objectStore(ORIG_STORE).put({blob:archivo,tipo:archivo.type||'',nombre:archivo.name||'',bytes:archivo.size||0,fecha:new Date().toISOString()},String(id));
+      tx.oncomplete=()=>res(); tx.onerror=()=>rej(tx.error); tx.onabort=()=>rej(tx.error||new Error('abortada'));
+    });
+    db.close(); return true;
+  }catch(e){ console.warn('No se pudo guardar el recibo original', e&&e.message); return false; }
+}
+async function origLeer(id){
+  try{
+    const db=await origAbrir();
+    const r=await new Promise((res,rej)=>{
+      const rq=db.transaction(ORIG_STORE,'readonly').objectStore(ORIG_STORE).get(String(id));
+      rq.onsuccess=()=>res(rq.result||null); rq.onerror=()=>rej(rq.error);
+    });
+    db.close(); return r;
+  }catch(e){ return null; }
+}
+async function origBorrar(id){
+  try{
+    const db=await origAbrir();
+    await new Promise((res)=>{ const tx=db.transaction(ORIG_STORE,'readwrite'); tx.objectStore(ORIG_STORE).delete(String(id)); tx.oncomplete=res; tx.onerror=res; tx.onabort=res; });
+    db.close();
+  }catch(e){}
+}
+async function verReciboOriginal(id){
+  const cont=document.getElementById('orig-recibo-'+id); if(!cont) return;
+  cont.textContent='Cargando…';
+  const r=await origLeer(id);
+  if(!r||!r.blob){
+    cont.innerHTML='<div style="padding:12px;font-size:12px;color:var(--gray);background:rgba(255,255,255,0.03);border-radius:8px;border:1px dashed rgba(201,168,76,0.2)">⚠️ El recibo original no está guardado en este dispositivo (solo existe la miniatura, si la hay). Se guarda desde ahora para los recibos nuevos.</div>';
+    return;
+  }
+  const url=URL.createObjectURL(r.blob);
+  if((r.tipo||'').startsWith('image/')) cont.innerHTML='<img src="'+url+'" style="width:100%;border-radius:8px;border:1px solid rgba(201,168,76,0.2)" alt="Recibo original">';
+  else cont.innerHTML='<a class="btn btn-sm" href="'+url+'" target="_blank" rel="noopener">📄 Abrir recibo original ('+(r.tipo||'archivo')+', '+Math.round((r.bytes||0)/1024)+' KB)</a>';
 }
 
 function toBase64(file){return new Promise((r,j)=>{const rd=new FileReader();rd.onload=()=>r(rd.result.split(',')[1]);rd.onerror=j;rd.readAsDataURL(file);});}
@@ -2226,6 +2289,40 @@ async function reducirParaIA(base64, tipoMime){
     cv.getContext('2d').drawImage(img,0,0,cv.width,cv.height);
     return {base64: cv.toDataURL('image/jpeg',0.85).split(',')[1], mediaType:'image/jpeg'};
   }catch(e){ return {base64:base64, mediaType:tipo}; }
+}
+
+// Interpreta la respuesta de texto de la IA y dice con honestidad qué se leyó (2026-11-01).
+// estado: 'completa' (fecha, monto y comercio válidos) | 'parcial' (algo útil, falta algo) | 'vacia' (nada útil).
+// Antes la app mostraba "Datos extraídos" aunque la respuesta viniera vacía o ilegible.
+function interpretarExtraccion(texto){
+  let obj=null;
+  const t=String(texto||'').trim();
+  if(t){
+    try{ obj=JSON.parse(t); }catch(e){
+      const a=t.indexOf('{'), b=t.lastIndexOf('}');
+      if(a>=0 && b>a){ try{ obj=JSON.parse(t.slice(a,b+1)); }catch(e2){} }
+    }
+  }
+  if(!obj || typeof obj!=='object' || Array.isArray(obj)) obj={};
+  const campos={};
+  const f=String(obj.fecha==null?'':obj.fecha).trim();
+  if(/^\d{4}-\d{2}-\d{2}$/.test(f) && !isNaN(Date.parse(f+'T00:00:00Z'))) campos.fecha=f;
+  const m=parseFloat(String(obj.monto==null?'':obj.monto).replace(/[$,\s]/g,''));
+  if(isFinite(m) && m>0) campos.monto=Math.round(m*100)/100;
+  const c=String(obj.contratista==null?'':obj.contratista).trim();
+  if(c) campos.contratista=c;
+  const cat=String(obj.categoria==null?'':obj.categoria).trim();
+  if(cat) campos.categoria=cat;
+  const d=String(obj.descripcion==null?'':obj.descripcion).trim();
+  if(d) campos.descripcion=d;
+  const faltan=['fecha','monto','contratista'].filter(k=>campos[k]===undefined);
+  const estado = faltan.length===0 ? 'completa' : (faltan.length===3 ? 'vacia' : 'parcial');
+  return {estado, campos, faltan};
+}
+function textoEstadoExtraccion(l){
+  if(l.estado==='completa') return '✅ Datos extraídos — revisa y confirma';
+  if(l.estado==='parcial') return '⚠️ Lectura incompleta (falta: '+l.faltan.join(', ')+') — completa los datos a mano y revisa lo leído';
+  return '⚠️ No se pudo leer el recibo — ingresa los datos manualmente';
 }
 
 // Rellena el formulario con lo que leyó la IA. NO guarda nada: la persona revisa y confirma.
@@ -2316,6 +2413,7 @@ function showGastoDetail(id){
     <div class="roi-row hl"><span class="roi-label"><b>Monto</b></span><span class="roi-val gold">${fmt(g.monto)}</span></div>
     ${g.descripcion?`<div style="margin-top:12px;font-size:12px;color:var(--gray);line-height:1.6">${g.descripcion}</div>`:''}
     ${fotos[g.id]?`<div style="margin-top:14px"><div style="font-size:10px;color:var(--gold);text-transform:uppercase;letter-spacing:1px;margin-bottom:6px">📷 Foto del Recibo</div><img src="${fotos[g.id]}" style="width:100%;border-radius:8px;border:1px solid rgba(201,168,76,0.2)" loading="lazy" onerror="this.outerHTML='<div style=&quot;padding:16px;text-align:center;color:var(--gray);font-size:12px;background:rgba(255,255,255,0.03);border-radius:8px;border:1px dashed rgba(201,168,76,0.2)&quot;>⚠️ Foto no disponible en este dispositivo</div>'"></div>`:''}
+    <div style="margin-top:14px"><div id="orig-recibo-${g.id}"><button class="btn btn-sm btn-ghost" onclick="verReciboOriginal(${g.id})">🧾 Ver recibo original</button></div></div>
     <div class="form-actions" style="margin-top:16px">
       <button class="btn btn-sm" onclick="editarGasto(${g.id})">✏️ Editar</button>
       <button class="btn btn-sm btn-danger" onclick="eliminarGasto(${g.id})">🗑️ Eliminar</button>
@@ -2327,6 +2425,7 @@ function eliminarGasto(id){
   if(!confirm('¿Eliminar este gasto?'))return;
   gastos=gastos.filter(g=>g.id!==id);
   delete fotos[id];
+  origBorrar(id);
   save();closeModal();renderHistorial();renderDashboard();
 }
 
@@ -2885,6 +2984,11 @@ function estadoRespaldoTexto(){
   partes.push(driveTokenValid()?'Google Drive: conectado 🟢':'Google Drive: no conectado ☁️');
   partes.push(ultimo?('Último respaldo correcto: '+String(ultimo).slice(0,16).replace('T',' ')):'Último respaldo correcto: ninguno en este dispositivo');
   if(pend) partes.push('⚠️ HAY CAMBIOS SIN RESPALDAR');
+  // Dónde viven los datos y qué se comprobó (2026-11-01). Solo se afirma lo verificado por relectura.
+  let monto=0; try{ monto=gastos.reduce((s,g)=>s+(Number(g.monto)||0),0); }catch(e){}
+  partes.push('Datos en este dispositivo: '+gastos.length+' gastos ($'+monto.toFixed(2)+'), '+Object.keys(fotos||{}).length+' miniaturas; recibos originales: solo en este dispositivo, no en Drive');
+  let v=null; try{ v=JSON.parse(localStorage.getItem(DRIVE_VERIF_KEY)||'null'); }catch(e){}
+  partes.push(v&&v.fecha ? ('Drive verificado por relectura: '+v.gastos+' gastos ($'+Number(v.monto).toFixed(2)+') el '+String(v.fecha).slice(0,16).replace('T',' ')+' en '+v.archivo) : 'Drive: sin verificación por relectura todavía');
   return partes.join(' · ');
 }
 
@@ -3550,6 +3654,24 @@ async function driveDescargar(nombre, token, claveId){
   try{ return await res.json(); }catch(e){ return null; }   // archivo corrupto: no rompe nada
 }
 
+const DRIVE_VERIF_KEY='a132_drive_verificado';
+async function driveLeerPorId(fileId, token){
+  const res = await fetch('https://www.googleapis.com/drive/v3/files/'+fileId+'?alt=media', { headers:{ Authorization:'Bearer '+token } });
+  if(!res.ok) throw new Error('relectura de Drive: HTTP '+res.status);
+  try{ return await res.json(); }catch(e){ throw new Error('relectura de Drive: contenido ilegible'); }
+}
+// Compara lo que se quiso escribir con lo que Drive devuelve. Devuelve conteo y suma verificados.
+function verificarEscrituraBackup(esperado, leido){
+  if(!leido || !Array.isArray(leido.gastos)) return {ok:false, motivo:'Drive no devolvió la lista de gastos'};
+  const esp = Array.isArray(esperado && esperado.gastos) ? esperado.gastos : [];
+  const ids = new Set(leido.gastos.map(g=>String(g && g.id)));
+  const falta = esp.filter(g=>!ids.has(String(g.id))).length;
+  if(falta) return {ok:false, motivo:'faltan '+falta+' de '+esp.length+' gastos en Drive'};
+  if(leido.gastos.length < esp.length) return {ok:false, motivo:'Drive tiene '+leido.gastos.length+' gastos y se esperaban '+esp.length};
+  const monto = Math.round(leido.gastos.reduce((s,g)=>s+(Number(g.monto)||0),0)*100)/100;
+  return {ok:true, gastos:leido.gastos.length, monto};
+}
+
 // Evita que dos guardados seguidos lancen dos respaldos a la vez (y que se pisen entre sí).
 let _respaldoEnCurso=false, _otroRespaldoPendiente=false;
 
@@ -3596,7 +3718,20 @@ async function backupToDrive(mostrarFeedback=false){
       fusion.divergentes.forEach(k=>{ if(remoto && remoto[k]!==undefined) alt[k] = { fecha:new Date().toISOString(), porDispositivo:deviceId(), valor:remoto[k] }; });
       if(Object.keys(alt).length) combinado.alternativas = alt;
     }catch(e){ /* informativo: nunca debe impedir el respaldo */ }
-    await driveSubir(DRIVE_FILE_NAME, JSON.stringify(combinado), token, DRIVE_FILE_KEY);
+    // Guarda de no-regresión (2026-11-01): el archivo combinado nunca puede tener MENOS gastos
+    // que los que ya había en Drive ni que los de este dispositivo. Si pasara, no se sube nada.
+    const idsCombinado = new Set((combinado.gastos||[]).map(g=>String(g.id)));
+    const faltantes = []
+      .concat((remoto && Array.isArray(remoto.gastos)) ? remoto.gastos : [], gastos)
+      .filter(g=>g && !idsCombinado.has(String(g.id)));
+    if(faltantes.length) throw new Error('el combinado perdería '+faltantes.length+' gasto(s); no se sube');
+    const idArchivo = await driveSubir(DRIVE_FILE_NAME, JSON.stringify(combinado), token, DRIVE_FILE_KEY);
+    // Verificación por lectura: un HTTP 200 no prueba que el contenido quedó bien. Se vuelve a
+    // leer el archivo de Drive y se comprueba que tiene todos los gastos antes de declarar éxito.
+    const relectura = await driveLeerPorId(idArchivo, token);
+    const verif = verificarEscrituraBackup(combinado, relectura);
+    if(!verif.ok) throw new Error('verificación de Drive falló: '+verif.motivo);
+    try{ localStorage.setItem(DRIVE_VERIF_KEY, JSON.stringify({ fecha:new Date().toISOString(), gastos:verif.gastos, monto:verif.monto, archivo:DRIVE_FILE_NAME })); }catch(e){}
 
     // (3) Índice de dispositivos: deja ver desde cualquier equipo quién ha respaldado y cuándo.
     try{
