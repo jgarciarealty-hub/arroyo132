@@ -586,6 +586,9 @@ textarea{resize:vertical;min-height:60px;}
           <img id="fotoPreview" style="display:none;width:100%;max-height:180px;object-fit:contain;border-radius:8px;margin-top:8px;border:1px solid rgba(201,168,76,0.2)">
         </div>
 
+        <!-- Coincidencia con un gasto ya registrado (se llena por JS; vacío = oculto) -->
+        <div id="coincidencia-box" style="display:none;margin-bottom:16px;padding:12px;border-radius:10px;border:1px solid rgba(201,168,76,0.35);background:rgba(201,168,76,0.06)"></div>
+
         <!-- Entrada manual rápida (colapsada por default) -->
         <div style="text-align:center;margin-bottom:12px">
           <button class="btn btn-ghost btn-sm" onclick="toggleManual()" id="btnManual">✏️ Ingresar sin foto</button>
@@ -2006,6 +2009,7 @@ function resetRegistrar(){
   _fotoDataUrl=null;
   _fotoSmall=null;
   _archivoOriginal=null;
+  { const cb=document.getElementById('coincidencia-box'); if(cb){ cb.textContent=''; cb.style.display='none'; } }
   document.getElementById('aiBox').classList.remove('show');
   document.getElementById('aiStatus').textContent='Analizando...';
   document.getElementById('aiBox').querySelector('.spinner').style.display='';
@@ -2128,6 +2132,7 @@ async function handleUpload(e, source){
       document.getElementById('reg-form').style.display='block';
       const pwC=document.getElementById('reg-preview-wrap'),piC=document.getElementById('reg-preview-img');
       pwC.style.display='block';piC.src=_fotoDataUrl||'';
+      mostrarCoincidencia(buscarGastoCoincidente(cacheIA,gastos));
       return;
     }
 
@@ -2188,6 +2193,7 @@ async function handleUpload(e, source){
     form.style.display='block';
     const pw=document.getElementById('reg-preview-wrap'),pi=document.getElementById('reg-preview-img');
     pw.style.display='block';pi.src=_fotoDataUrl||'';
+    if(lectura.estado!=='vacia') mostrarCoincidencia(buscarGastoCoincidente(ext,gastos));   // ¿ya existe este gasto? decide la persona
   }catch(err){
     aiStatus.textContent='⚠️ No pude leer — ingresa los datos manualmente.';
     aiBox.querySelector('.spinner').style.display='none';
@@ -2262,7 +2268,9 @@ async function origBorrar(id){
 //     (pendiente / error); la copia temporal se borra únicamente DESPUÉS de verificar.
 const RECIBOS_KEY='a132_recibos', RECIBOS_PEND_KEY='a132_recibos_pend', RECIBOS_CARPETA_KEY='a132_recibos_carpeta';
 const RECIBOS_CARPETA_NOMBRE='Arroyo 132 — Recibos originales';
-function limpiarRecibos(o){ const s={}; if(o && typeof o==='object' && !Array.isArray(o)) Object.keys(o).forEach(k=>{ const v=o[k]; if(v && typeof v==='object' && ((typeof v.driveId==='string' && typeof v.sha256==='string') || (v.origen==='externo' && Array.isArray(v.docs)))) s[k]=v; }); return s; }
+function docRefValido(v){ return !!(v && typeof v==='object' && ((typeof v.driveId==='string' && typeof v.sha256==='string') || (v.origen==='externo' && Array.isArray(v.docs)))); }
+// Una referencia puede llevar `adicionales[]` (documentos extra) y `reemplazados[]` (histórico de principales anteriores): se conservan siempre; lo que no sea una referencia válida se descarta.
+function limpiarRecibos(o){ const s={}; if(o && typeof o==='object' && !Array.isArray(o)) Object.keys(o).forEach(k=>{ const v=o[k]; if(docRefValido(v)){ if(v.adicionales===undefined && v.reemplazados===undefined){ s[k]=v; return; } const c=Object.assign({},v); ['adicionales','reemplazados'].forEach(f=>{ if(c[f]!==undefined){ if(Array.isArray(c[f])) c[f]=c[f].filter(docRefValido); else delete c[f]; } }); s[k]=c; } }); return s; }
 function leerRecibos(){ try{ const o=JSON.parse(localStorage.getItem(RECIBOS_KEY)||'{}'); return (o&&typeof o==='object')?o:{}; }catch(e){ return {}; } }
 function leerRecibosPend(){ try{ const o=JSON.parse(localStorage.getItem(RECIBOS_PEND_KEY)||'{}'); return (o&&typeof o==='object')?o:{}; }catch(e){ return {}; } }
 function escribirVerificado(k,o){ try{ const s=JSON.stringify(o); localStorage.setItem(k,s); return localStorage.getItem(k)===s; }catch(e){ return false; } }
@@ -2270,6 +2278,39 @@ function guardarRecibos(o){ return escribirVerificado(RECIBOS_KEY,o); }
 function guardarRecibosPend(o){ return escribirVerificado(RECIBOS_PEND_KEY,o); }
 // Lectura-modificación-escritura por id: una escritura nunca pisa las entradas de otros gastos (B-1).
 function actualizarPend(id, valor){ const p=leerRecibosPend(); if(valor===null) delete p[id]; else p[id]=valor; return guardarRecibosPend(p); }
+// ── Varios documentos por gasto (2026-11-01) ───────────────────────────────────────────
+// Forma de la referencia: la principal conserva su forma de siempre ({driveId,sha256,...} o {origen:'externo',docs}) y puede
+// llevar `adicionales[]` (documentos extra) y `reemplazados[]` (principales anteriores). NADA se borra, ni de Drive ni de la referencia.
+function listarDocumentos(ref){
+  const sal=[]; if(!ref || typeof ref!=='object') return sal;
+  if(ref.origen==='externo') (Array.isArray(ref.docs)?ref.docs:[]).forEach(d=>{ if(d) sal.push({rol:'principal', externo:true, doc:d}); });
+  else if(typeof ref.driveId==='string') sal.push({rol:'principal', externo:false, doc:ref});
+  (Array.isArray(ref.adicionales)?ref.adicionales:[]).forEach(d=>{ if(d) sal.push({rol:'adicional', externo:d.origen==='externo', doc:d}); });
+  (Array.isArray(ref.reemplazados)?ref.reemplazados:[]).forEach(d=>{ if(d) sal.push({rol:'anterior', externo:d.origen==='externo', doc:d}); });
+  return sal;
+}
+function sinHistorico(ref){ const c=Object.assign({},ref); delete c.adicionales; delete c.reemplazados; return c; }
+// Combina la referencia nueva con la que ya hay. modo: 'nuevo' (no hay nada) | 'anadir' | 'actualizar'. Pura: nunca descarta un documento.
+function aplicarReferencia(actual, nueva, modo){
+  if(!actual || typeof actual!=='object') return nueva;
+  if(listarDocumentos(actual).some(x=>x.doc.driveId===nueva.driveId && x.doc.sha256===nueva.sha256)) return actual;   // ya estaba
+  if(modo==='actualizar'){
+    const sal=Object.assign({},nueva);
+    sal.adicionales=(Array.isArray(actual.adicionales)?actual.adicionales:[]).slice();
+    sal.reemplazados=(Array.isArray(actual.reemplazados)?actual.reemplazados:[]).concat([sinHistorico(actual)]);
+    return sal;
+  }
+  const sal=Object.assign({},actual);
+  sal.adicionales=(Array.isArray(actual.adicionales)?actual.adicionales:[]).concat([nueva]);
+  return sal;
+}
+// Clave de cola de un gasto: `id` (la primera) o `id~suf` (documentos añadidos/actualizados después).
+function gastoDeClave(k){ return String(k).split('~')[0]; }
+function clavesPendDeGasto(id){ return Object.keys(leerRecibosPend()).filter(k=>gastoDeClave(k)===String(id)); }
+function documentosDeGasto(id){
+  const docs=listarDocumentos(leerRecibos()[id]), pendientes=clavesPendDeGasto(id);
+  return {tiene:docs.length>0 || pendientes.length>0, docs, pendientes};
+}
 function escHtml(s){ return String(s==null?'':s).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c])); }
 // fetch con tiempo máximo: una subida colgada no puede bloquear la cola para siempre.
 async function fetchConTiempo(url, opts, ms){
@@ -2387,7 +2428,7 @@ async function procesarColaOriginales(){
     // Reconciliación: una copia temporal sin pendiente ni referencia (p. ej. falló la escritura de la cola) se vuelve a encolar.
     if(typeof origClaves==='function' && typeof gastos!=='undefined'){
       const ks=await origClaves();
-      if(ks) ks.forEach(k=>{ if(!leerRecibos()[k] && !leerRecibosPend()[k] && gastos.some(g=>String(g.id)===k)) actualizarPend(k,{estado:'pendiente', nombre:'', tipo:'', bytes:0, intentos:0, recuperado:true, fecha:new Date().toISOString()}); });
+      if(ks) ks.forEach(k=>{ const comp=k.includes('~'); if((comp || !leerRecibos()[k]) && !leerRecibosPend()[k] && gastos.some(g=>String(g.id)===gastoDeClave(k))) actualizarPend(k,Object.assign({estado:'pendiente', nombre:'', tipo:'', bytes:0, intentos:0, recuperado:true, fecha:new Date().toISOString()}, comp?{modo:'anadir'}:{})); });
     }
     const intentados=new Set();
     for(;;){
@@ -2405,9 +2446,11 @@ async function procesarColaOriginales(){
           const r=await origLeer(id);
           if(r===undefined) throw new Error('no se pudo leer la copia temporal (error de IndexedDB); se reintenta');
           if(!r||!r.blob){ const p=leerRecibosPend()[id]; if(p) actualizarPend(id,Object.assign({},p,{estado:'sin_copia',ultimoError:'la copia temporal ya no está en este dispositivo'})); continue; }
-          const ref=await driveSubirOriginal(id, r.blob, token);
-          const refs=leerRecibos(); refs[id]=ref;
-          if(!guardarRecibos(refs) || !(leerRecibos()[id] && leerRecibos()[id].sha256===ref.sha256)) throw new Error('el archivo quedó verificado en Drive pero no se pudo guardar la referencia en este dispositivo; la copia temporal se conserva');
+          const gid=gastoDeClave(id), modoP=(leerRecibosPend()[id]||{}).modo;
+          const ref=await driveSubirOriginal(gid, r.blob, token);
+          const refs=leerRecibos();
+          refs[gid]=aplicarReferencia(refs[gid], ref, refs[gid] ? (modoP==='actualizar'?'actualizar':'anadir') : 'nuevo');   // nunca pisa un documento que ya existe
+          if(!guardarRecibos(refs) || !listarDocumentos(leerRecibos()[gid]).some(x=>x.doc.driveId===ref.driveId && x.doc.sha256===ref.sha256)) throw new Error('el archivo quedó verificado en Drive pero no se pudo guardar la referencia en este dispositivo; la copia temporal se conserva');
           actualizarPend(id,null);
           await origBorrar(id);                       // recién ahora, con Drive verificado y la referencia guardada
           marcarRespaldoPendiente('recibo nuevo por respaldar');   // el mapa de referencias viaja en el respaldo
@@ -2433,15 +2476,26 @@ function refrescarPanelRespaldo(){
   const el=document.getElementById('respaldo-estado'); if(el) el.innerHTML=estadoRespaldoTexto();
 }
 // Registra un original nuevo: primero queda en el dispositivo (temporal) y visible como pendiente; luego sube.
-async function registrarOriginalNuevo(gastoId, archivo){
-  const ok=await origGuardar(gastoId, archivo);
+// opciones.modo 'anadir'|'actualizar' (gasto que YA tiene documento): se guarda con clave propia `id~suf`, así no pisa la copia temporal ni la referencia previas.
+async function registrarOriginalNuevo(gastoId, archivo, opciones){
+  const modo=opciones && (opciones.modo==='anadir'||opciones.modo==='actualizar') ? opciones.modo : null;
+  const clave=modo ? String(gastoId)+'~'+Date.now().toString(36)+Math.random().toString(36).slice(2,5) : gastoId;
+  const ok=await origGuardar(clave, archivo);
   if(!ok){ alert('⚠️ El gasto se guardó, pero el recibo original NO se pudo guardar (ni siquiera de forma temporal). Solo quedó la miniatura. Guarda la foto o el PDF por tu cuenta si lo necesitas; esta versión aún no permite adjuntarlo después.'); return; }
-  const encolado=actualizarPend(gastoId,{estado:'pendiente', nombre:String(archivo.name||'').slice(0,100), tipo:archivo.type||'', bytes:archivo.size||0, intentos:0, fecha:new Date().toISOString()});
+  const encolado=actualizarPend(clave,Object.assign({estado:'pendiente', nombre:String(archivo.name||'').slice(0,100), tipo:archivo.type||'', bytes:archivo.size||0, intentos:0, fecha:new Date().toISOString()}, modo?{modo}:{}));
   if(!encolado) alert('⚠️ El recibo original está guardado temporalmente en este dispositivo, pero no se pudo registrar su subida a Drive (almacenamiento lleno). Libera espacio y pulsa «Reintentar subida de recibos» en el panel de respaldo; no cierres la app sin hacerlo.');
   refrescarPanelRespaldo();
   procesarColaOriginales();
+  return true;
 }
 function textoEstadoOriginal(id){
+  const base=textoEstadoOriginalBase(id), ref=leerRecibos()[id];
+  const na=ref && Array.isArray(ref.adicionales)?ref.adicionales.length:0, nr=ref && Array.isArray(ref.reemplazados)?ref.reemplazados.length:0;
+  const npx=clavesPendDeGasto(id).filter(k=>k!==String(id)).length;
+  const extra=(na?' · '+na+' documento(s) adicional(es)':'')+(nr?' · '+nr+' anterior(es) conservado(s) como histórico':'')+(npx?' · ⏳ '+npx+' documento(s) más pendiente(s) de subir':'');
+  return base+extra;
+}
+function textoEstadoOriginalBase(id){
   const ref=leerRecibos()[id], p=leerRecibosPend()[id];
   if(ref && ref.origen==='externo') return '✅ Documento existente en tu Google Drive ('+(ref.docs||[]).length+' archivo(s)) — se abre por enlace';
   if(ref) return '✅ En Google Drive, carpeta «'+escHtml(RECIBOS_CARPETA_NOMBRE)+'», archivo '+escHtml(ref.nombre)+' (verificado '+escHtml(String(ref.fecha).slice(0,10))+(ref.reutilizado?', ya existía el mismo archivo':'')+')';
@@ -2462,6 +2516,7 @@ async function verReciboOriginal(id){
       cont.appendChild(a);
     });
     const n=document.createElement('div'); n.style.cssText='font-size:11px;color:var(--gray);margin-top:6px'; n.textContent='Documento anterior guardado en tu Drive (no lo subió esta app): se abre por enlace; la app no puede verificar su integridad.'; cont.appendChild(n);
+    pintarOtrosDocumentos(cont, ref);
     return;
   }
   let blob=null, tipo='', nota='';
@@ -2494,6 +2549,39 @@ async function verReciboOriginal(id){
   }
   const n=document.createElement('div'); n.style.cssText='font-size:11px;color:var(--gray);margin-top:6px'; n.textContent=nota; cont.appendChild(n);
   if(ref && typeof ref.enlace==='string' && /^https:\/\/(drive|docs)\.google\.com\//.test(ref.enlace)){ const l=document.createElement('a'); l.href=ref.enlace; l.target='_blank'; l.rel='noopener'; l.style.cssText='font-size:11px;display:block;margin-top:4px'; l.textContent='Abrir en Google Drive'; cont.appendChild(l); }
+  pintarOtrosDocumentos(cont, ref);
+}
+// Documentos adicionales y anteriores (histórico) de un gasto. Todo con textContent (sin HTML). Los propios se descargan de Drive y se verifican por SHA-256 al pulsar.
+function pintarOtrosDocumentos(cont, ref){
+  if(!ref) return;
+  const otros=listarDocumentos(ref).filter(x=>x.rol!=='principal');
+  if(!otros.length) return;
+  const t=document.createElement('div'); t.style.cssText='font-size:11px;color:var(--gold);margin-top:10px'; t.textContent='Otros documentos de este gasto ('+otros.length+')'; cont.appendChild(t);
+  otros.forEach(x=>{
+    const etiqueta=(x.rol==='anterior'?'Anterior (histórico)':'Adicional')+': '+String(x.doc.nombre||'documento').slice(0,60);
+    const fila=document.createElement('div'); fila.style.cssText='margin-top:6px';
+    const enlaces=x.externo ? (Array.isArray(x.doc.docs)?x.doc.docs:[]) : [];
+    if(x.externo){
+      enlaces.forEach(dc=>{ if(!dc || typeof dc.driveId!=='string' || !/^[A-Za-z0-9_-]{10,80}$/.test(dc.driveId)) return; const a=document.createElement('a'); a.className='btn btn-sm'; a.target='_blank'; a.rel='noopener'; a.href='https://drive.google.com/file/d/'+dc.driveId+'/view'; a.textContent='📄 '+etiqueta+' (Google Drive)'; a.style.cssText='display:block;margin-bottom:6px'; fila.appendChild(a); });
+    } else {
+      const b=document.createElement('button'); b.className='btn btn-sm btn-ghost'; b.textContent='📄 '+etiqueta;
+      b.onclick=async()=>{
+        b.disabled=true;
+        try{
+          let token=localStorage.getItem(DRIVE_TOKEN_KEY); if(!driveTokenValid()) token=await asegurarTokenDrive(true);
+          if(!token) throw new Error('conecta Google Drive (ícono ☁️) para abrirlo');
+          const r=await fetch('https://www.googleapis.com/drive/v3/files/'+x.doc.driveId+'?alt=media', {headers:{Authorization:'Bearer '+token}});
+          if(!r.ok) throw new Error('Drive respondió HTTP '+r.status);
+          const blob=await r.blob(); const h=await sha256Hex(new Uint8Array(await blob.arrayBuffer()));
+          const url=URL.createObjectURL(blob); setTimeout(()=>{ try{ URL.revokeObjectURL(url); }catch(e){} }, 10*60*1000);
+          const a=document.createElement('a'); a.className='btn btn-sm'; a.href=url; a.target='_blank'; a.rel='noopener'; a.textContent='Abrir ('+String(x.doc.tipo||blob.type||'archivo')+', '+Math.round((blob.size||0)/1024)+' KB) — '+(h===x.doc.sha256?'✅ integridad verificada':'⚠️ NO coincide con lo registrado');
+          fila.appendChild(a);
+        }catch(e){ const d=document.createElement('div'); d.style.cssText='font-size:12px;color:var(--gray)'; d.textContent='⚠️ No se pudo abrir: '+String(e.message||e); fila.appendChild(d); b.disabled=false; }
+      };
+      fila.appendChild(b);
+    }
+    cont.appendChild(fila);
+  });
 }
 
 function toBase64(file){return new Promise((r,j)=>{const rd=new FileReader();rd.onload=()=>r(rd.result.split(',')[1]);rd.onerror=j;rd.readAsDataURL(file);});}
@@ -2608,6 +2696,133 @@ function precrellenarConIA(ext){
   }
 }
 
+// ── Coincidencia con gastos ya registrados (2026-11-01) ───────────────────────────────────
+// Evita duplicar: tras leer el recibo se busca si ya existe ese gasto. Funciones PURAS (sin DOM) y explicables.
+const PROV_RUIDO=new Set(['inc','incorporated','corp','corporation','llc','co','company','sa','srl','ltd','cia','de','del','la','el','los','las','y','and','the']);
+function tokensProveedor(s){ return String(s==null?'':s).normalize('NFD').replace(/[̀-ͯ]/g,'').toLowerCase().replace(/[^a-z0-9]+/g,' ').trim().split(' ').filter(t=>t && !PROV_RUIDO.has(t)); }
+function distanciaLev(a,b){
+  const m=a.length, n=b.length; if(!m) return n; if(!n) return m;
+  let prev=[]; for(let j=0;j<=n;j++) prev[j]=j;
+  for(let i=1;i<=m;i++){ const cur=[i]; for(let j=1;j<=n;j++) cur[j]=Math.min(prev[j]+1, cur[j-1]+1, prev[j-1]+(a[i-1]===b[j-1]?0:1)); prev=cur; }
+  return prev[n];
+}
+function similitudProveedor(a,b){
+  if(/^\s*sin especificar\s*$/i.test(String(a||'')) || /^\s*sin especificar\s*$/i.test(String(b||''))) return 0;
+  const A=tokensProveedor(a), B=tokensProveedor(b);
+  if(!A.length || !B.length) return 0;
+  const ja=A.join(''), jb=B.join('');
+  if(ja===jb) return 1;
+  const sa=new Set(A), sb=new Set(B); let inter=0; sa.forEach(t=>{ if(sb.has(t)) inter++; });
+  const dice=2*inter/(sa.size+sb.size);
+  const lev=1-distanciaLev(ja,jb)/Math.max(ja.length,jb.length);
+  return Math.max(dice, lev>=0.85?lev:0);
+}
+function diasEntreFechas(a,b){
+  const x=Date.parse(String(a||'')+'T00:00:00Z'), y=Date.parse(String(b||'')+'T00:00:00Z');
+  if(isNaN(x)||isNaN(y)) return null;
+  return Math.round(Math.abs(x-y)/86400000);
+}
+const _cents=v=>Math.round(Number(v)*100);
+// campos = lectura validada de la IA ({fecha,monto,contratista,ivu?,categoria?,descripcion?}); lista = gastos. No modifica nada.
+// Niveles: ALTA (proveedor + fecha + importe), INCIERTA (2 de 3, o proveedor dudoso con fecha e importe), NINGUNA.
+// Si hay MÁS de un candidato ALTA (p. ej. peajes idénticos del mismo día) el resultado es INCIERTA/ambiguo: nunca se elige a ciegas.
+function buscarGastoCoincidente(campos, lista){
+  const c=campos||{}, cand=[];
+  (Array.isArray(lista)?lista:[]).forEach(g=>{
+    if(!g || typeof g!=='object' || !isFinite(Number(g.monto))) return;
+    const motivos=[];
+    const sim=c.contratista?similitudProveedor(c.contratista,g.contratista):0;
+    const pOk=sim>=0.8, pDud=!pOk && sim>=0.5;
+    if(pOk) motivos.push('proveedor «'+g.contratista+'» coincide'+(sim<1?' (casi idéntico)':''));
+    else if(pDud) motivos.push('proveedor parecido, dudoso: «'+g.contratista+'»');
+    const dias=c.fecha?diasEntreFechas(c.fecha,g.fecha):null;
+    const fFuerte=dias===0, fDebil=dias!==null && dias>0 && dias<=3;
+    if(fFuerte) motivos.push('misma fecha ('+g.fecha+')'); else if(fDebil) motivos.push('fecha a '+dias+' día(s) ('+g.fecha+')');
+    let imp='no';
+    if(c.monto!==undefined && c.monto!==null){
+      const m=_cents(c.monto), gm=_cents(g.monto), iv=c.ivu?_cents(c.ivu):null;
+      if(gm===m) imp='fuerte';
+      else if(iv!==null && (gm===m-iv || gm===m+iv)) imp='aceptable';
+    }
+    const iOk=imp!=='no';
+    if(imp==='fuerte') motivos.push('mismo importe ($'+Number(g.monto).toFixed(2)+')');
+    else if(imp==='aceptable') motivos.push('importe coincide con el subtotal/IVU leído ($'+Number(g.monto).toFixed(2)+')');
+    let apoyo=0;
+    if(c.categoria && g.categoria && String(c.categoria)===String(g.categoria)){ apoyo+=5; motivos.push('misma categoría'); }
+    if(c.descripcion && g.descripcion){ const A=new Set(tokensProveedor(c.descripcion)), B=tokensProveedor(g.descripcion); if(A.size && B.length && B.filter(t=>A.has(t)).length/Math.max(A.size,B.length)>=0.5){ apoyo+=5; motivos.push('descripción parecida'); } }
+    const fuertes=(pOk?1:0)+(fFuerte?1:0)+(iOk?1:0);
+    let nivel='NINGUNA';
+    if(pOk && fFuerte && iOk) nivel='ALTA';
+    else if(fuertes>=2 || (pDud && (fFuerte||fDebil) && iOk)) nivel='INCIERTA';
+    if(nivel==='NINGUNA') return;
+    const puntos=Math.round(40*sim)+(fFuerte?30:fDebil?15:0)+(imp==='fuerte'?30:imp==='aceptable'?22:0)+apoyo;
+    cand.push({gasto:g, nivel, puntos, motivos, proveedor:pOk?'ok':(pDud?'dudoso':'no'), fecha:fFuerte?'igual':(fDebil?'cercana':'no'), importe:imp});
+  });
+  const orden=(a,b)=>b.puntos-a.puntos || String(a.gasto.id).localeCompare(String(b.gasto.id));
+  const altas=cand.filter(x=>x.nivel==='ALTA').sort(orden);
+  if(altas.length===1) return {nivel:'ALTA', ambiguo:false, candidatos:altas};
+  if(altas.length>1) return {nivel:'INCIERTA', ambiguo:true, candidatos:altas.slice(0,3)};
+  const inc=cand.sort(orden);
+  if(inc.length) return {nivel:'INCIERTA', ambiguo:false, candidatos:inc.slice(0,3)};
+  return {nivel:'NINGUNA', ambiguo:false, candidatos:[]};
+}
+// Asociar = subir el original completo a un gasto que ya existe. NO modifica ningún campo del gasto ni crea otro gasto.
+// modo: 'nuevo' (el gasto no tiene documento) | 'anadir' | 'actualizar'. Devuelve {ok, motivo}.
+async function asociarOriginalAGasto(gastoId, archivo, modo){
+  if(!archivo) return {ok:false, motivo:'no hay archivo'};
+  if(!gastos.some(g=>String(g.id)===String(gastoId))) return {ok:false, motivo:'el gasto ya no existe'};
+  const tiene=documentosDeGasto(gastoId).tiene;
+  const m=tiene ? (modo==='actualizar'?'actualizar':(modo==='anadir'?'anadir':null)) : 'nuevo';
+  if(!m) return {ok:false, motivo:'este gasto ya tiene documento: elige conservar, añadir o actualizar'};
+  const ok=await registrarOriginalNuevo(gastoId, archivo, m==='nuevo'?null:{modo:m});
+  return ok ? {ok:true, modo:m} : {ok:false, motivo:'no se pudo guardar la copia temporal del original'};
+}
+function _btnCoinc(texto, fn, ghost){ const b=document.createElement('button'); b.className='btn btn-sm'+(ghost?' btn-ghost':''); b.style.cssText='margin:4px 6px 0 0'; b.textContent=texto; b.onclick=fn; return b; }
+function _lineaGasto(g){ return (g.contratista||'Sin especificar')+' · '+g.fecha+' · $'+Number(g.monto).toFixed(2); }
+function cerrarCoincidencia(){ const box=document.getElementById('coincidencia-box'); if(box){ box.textContent=''; box.style.display='none'; } }
+// Muestra la coincidencia y oculta el formulario de gasto nuevo hasta que la persona decida. Devuelve true si mostró algo.
+function mostrarCoincidencia(res){
+  const box=document.getElementById('coincidencia-box'); if(!box || !res || res.nivel==='NINGUNA') return false;
+  box.textContent=''; box.style.display='block';
+  const form=document.getElementById('reg-form'); if(form) form.style.display='none';
+  const titulo=document.createElement('div'); titulo.style.cssText='font-size:13px;color:var(--light);margin-bottom:8px';
+  const esDistinto=()=>{ cerrarCoincidencia(); const f=document.getElementById('reg-form'); if(f) f.style.display='block'; };   // sigue el flujo de gasto nuevo
+  const elegir=(g)=>{
+    const est=documentosDeGasto(g.id);
+    if(!est.tiene){ return terminarAsociacion(g.id,'nuevo'); }
+    box.textContent='';
+    const t=document.createElement('div'); t.style.cssText='font-size:13px;color:var(--light);margin-bottom:8px';
+    t.textContent='El gasto «'+_lineaGasto(g)+'» ya tiene documento ('+(est.docs.length+est.pendientes.length)+'). ¿Qué hacemos con este recibo nuevo?'; box.appendChild(t);
+    box.appendChild(_btnCoinc('Conservar el actual (no subir nada)', ()=>{ cerrarCoincidencia(); resetRegistrar(); alert('No se subió nada: el gasto conserva su documento actual.'); }));
+    box.appendChild(_btnCoinc('Añadir otro documento', ()=>terminarAsociacion(g.id,'anadir'), true));
+    box.appendChild(_btnCoinc('Actualizar (el nuevo pasa a ser el principal; el anterior se conserva como histórico)', ()=>terminarAsociacion(g.id,'actualizar'), true));
+  };
+  if(res.nivel==='ALTA'){
+    const g=res.candidatos[0].gasto;
+    titulo.textContent='Este recibo parece ser el gasto «'+_lineaGasto(g)+'». ¿Lo asociamos en vez de crear un gasto nuevo?'; box.appendChild(titulo);
+    const mt=document.createElement('div'); mt.style.cssText='font-size:11px;color:var(--gray)'; mt.textContent='Motivos: '+res.candidatos[0].motivos.join('; '); box.appendChild(mt);
+    box.appendChild(_btnCoinc('Asociar el recibo a ese gasto', ()=>elegir(g)));
+    box.appendChild(_btnCoinc('Es un gasto distinto', esDistinto, true));
+  } else {
+    titulo.textContent=(res.ambiguo?'Hay varios gastos que podrían ser este recibo.':'Puede que este recibo ya esté registrado, pero no estoy seguro.')+' Confirma explícitamente cuál (o ninguno):'; box.appendChild(titulo);
+    res.candidatos.forEach(c=>{
+      const fila=document.createElement('div'); fila.style.cssText='margin:8px 0;padding:8px;border:1px dashed rgba(201,168,76,0.3);border-radius:8px';
+      const l=document.createElement('div'); l.style.cssText='font-size:12px;color:var(--light)'; l.textContent=_lineaGasto(c.gasto); fila.appendChild(l);
+      const m=document.createElement('div'); m.style.cssText='font-size:11px;color:var(--gray)'; m.textContent='Por qué: '+c.motivos.join('; '); fila.appendChild(m);
+      fila.appendChild(_btnCoinc('Es este gasto: asociar el recibo', ()=>elegir(c.gasto)));
+      box.appendChild(fila);
+    });
+    box.appendChild(_btnCoinc('Es un gasto distinto', esDistinto, true));
+  }
+  return true;
+}
+async function terminarAsociacion(gastoId, modo){
+  const r=await asociarOriginalAGasto(gastoId, _archivoOriginal, modo);
+  if(!r.ok){ alert('⚠️ No se asoció el recibo: '+r.motivo); return; }
+  cerrarCoincidencia(); resetRegistrar();   // NO se guarda ningún gasto nuevo; el gasto existente queda intacto
+  alert('✅ El recibo original se asoció al gasto existente. No se creó un gasto nuevo ni se cambió ningún dato del gasto; la subida a Drive se verifica en segundo plano.');
+}
+
 
 // ============ HISTORIAL ============
 function renderHistorial(){
@@ -2692,10 +2907,10 @@ function showGastoDetail(id){
 }
 function eliminarGasto(id){
   if(!confirm('¿Eliminar este gasto?'))return;
-  if(leerRecibosPend()[id] && leerRecibosPend()[id].estado!=='sin_copia' && !confirm('⚠️ El recibo original de este gasto AÚN NO se ha subido a Drive; si lo eliminas se pierde. ¿Eliminar de todas formas?'))return;
+  if(clavesPendDeGasto(id).some(k=>{ const q=leerRecibosPend()[k]; return q && q.estado!=='sin_copia'; }) && !confirm('⚠️ El recibo original de este gasto AÚN NO se ha subido a Drive; si lo eliminas se pierde. ¿Eliminar de todas formas?'))return;
   gastos=gastos.filter(g=>g.id!==id);
   delete fotos[id];
-  origBorrar(id); { const p=leerRecibosPend(); if(p[id]){ delete p[id]; guardarRecibosPend(p); } }   // Drive no se toca
+  { const p=leerRecibosPend(), ks=clavesPendDeGasto(id); ks.forEach(k=>origBorrar(k)); origBorrar(id); ks.forEach(k=>{ delete p[k]; }); if(ks.length) guardarRecibosPend(p); }   // Drive no se toca
   save();closeModal();renderHistorial();renderDashboard();
 }
 

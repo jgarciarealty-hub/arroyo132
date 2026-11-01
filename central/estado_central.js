@@ -79,11 +79,19 @@
     return { estado: sal, informe };
   }
 
+  function docRefValido(v) {
+    return !!(v && typeof v === 'object' && ((typeof v.driveId === 'string' && typeof v.sha256 === 'string') || (v.origen === 'externo' && Array.isArray(v.docs))));
+  }
+  // Una referencia puede llevar `adicionales[]` y `reemplazados[]` (histórico): se conservan; lo inválido se descarta.
   function limpiarRecibos(o) {
     const s = {};
     if (o && typeof o === 'object' && !Array.isArray(o)) Object.keys(o).forEach((k) => {
       const v = o[k];
-      if (v && typeof v === 'object' && ((typeof v.driveId === 'string' && typeof v.sha256 === 'string') || (v.origen === 'externo' && Array.isArray(v.docs)))) s[k] = v;
+      if (!docRefValido(v)) return;
+      if (v.adicionales === undefined && v.reemplazados === undefined) { s[k] = v; return; }
+      const c = Object.assign({}, v);
+      ['adicionales', 'reemplazados'].forEach((f) => { if (c[f] !== undefined) { if (Array.isArray(c[f])) c[f] = c[f].filter(docRefValido); else delete c[f]; } });
+      s[k] = c;
     });
     return s;
   }
