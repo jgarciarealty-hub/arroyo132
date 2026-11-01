@@ -2228,7 +2228,7 @@ async function origLeer(id){
       rq.onsuccess=()=>res(rq.result||null); rq.onerror=()=>rej(rq.error);
     });
     db.close(); return r;
-  }catch(e){ return null; }
+  }catch(e){ return undefined; }   // error de lectura (transitorio): distinto de null = no existe
 }
 async function origBorrar(id){
   try{
@@ -2373,7 +2373,7 @@ async function procesarColaOriginales(){
   try{
     const intentados=new Set();
     for(;;){
-      const ids=Object.keys(leerRecibosPend()).filter(id=>!intentados.has(id) && leerRecibosPend()[id].estado!=='sin_copia');
+      const ids=Object.keys(leerRecibosPend()).filter(id=>{ const p=leerRecibosPend()[id]; return !intentados.has(id) && p && typeof p==='object' && p.estado!=='sin_copia'; });
       if(!ids.length) break;
       let token=localStorage.getItem(DRIVE_TOKEN_KEY);
       if(!driveTokenValid()) token=await asegurarTokenDrive(false);
@@ -2385,6 +2385,7 @@ async function procesarColaOriginales(){
         intentados.add(id);
         try{
           const r=await origLeer(id);
+          if(r===undefined) throw new Error('no se pudo leer la copia temporal (error de IndexedDB); se reintenta');
           if(!r||!r.blob){ const p=leerRecibosPend()[id]; if(p) actualizarPend(id,Object.assign({},p,{estado:'sin_copia',ultimoError:'la copia temporal ya no está en este dispositivo'})); continue; }
           const ref=await driveSubirOriginal(id, r.blob, token);
           const refs=leerRecibos(); refs[id]=ref;
@@ -2636,13 +2637,13 @@ function renderHistorial(){
 function showGastoDetail(id){
   const g=gastos.find(x=>x.id===id);if(!g)return;
   openModal('Detalle de Gasto',`
-    <div class="roi-row"><span class="roi-label">Fecha</span><span>${g.fecha}</span></div>
-    <div class="roi-row"><span class="roi-label">Categoría</span><span>${g.categoria}</span></div>
-    <div class="roi-row"><span class="roi-label">Contratista</span><span>${g.contratista}</span></div>
-    ${g.tel?`<div class="roi-row"><span class="roi-label">Teléfono</span><span class="mono">${g.tel}</span></div>`:''}
-    <div class="roi-row"><span class="roi-label">Lote</span><span class="badge badge-${g.lote==='132A'?'A':g.lote==='132B'?'B':'C'}">${g.lote}</span></div>
-    <div class="roi-row"><span class="roi-label">Método</span><span>${g.metodo}</span></div>
-    ${g.es_abono&&g.cuenta?`<div class="roi-row"><span class="roi-label">Cuenta / Abono</span><span style="color:var(--gold)">⛓ ${g.cuenta}</span></div>`:''}
+    <div class="roi-row"><span class="roi-label">Fecha</span><span>${escHtml(g.fecha)}</span></div>
+    <div class="roi-row"><span class="roi-label">Categoría</span><span>${escHtml(g.categoria)}</span></div>
+    <div class="roi-row"><span class="roi-label">Contratista</span><span>${escHtml(g.contratista)}</span></div>
+    ${g.tel?`<div class="roi-row"><span class="roi-label">Teléfono</span><span class="mono">${escHtml(g.tel)}</span></div>`:''}
+    <div class="roi-row"><span class="roi-label">Lote</span><span class="badge badge-${g.lote==='132A'?'A':g.lote==='132B'?'B':'C'}">${escHtml(g.lote)}</span></div>
+    <div class="roi-row"><span class="roi-label">Método</span><span>${escHtml(g.metodo)}</span></div>
+    ${g.es_abono&&g.cuenta?`<div class="roi-row"><span class="roi-label">Cuenta / Abono</span><span style="color:var(--gold)">⛓ ${escHtml(g.cuenta)}</span></div>`:''}
     ${g.es_abono&&g.monto_total?`<div class="roi-row"><span class="roi-label">Total acordado</span><span>${fmt(g.monto_total)}</span></div>`:''}
     <div class="roi-row hl"><span class="roi-label"><b>Monto</b></span><span class="roi-val gold">${fmt(g.monto)}</span></div>
     ${g.descripcion?`<div style="margin-top:12px;font-size:12px;color:var(--gray);line-height:1.6">${escHtml(g.descripcion)}</div>`:''}
@@ -3221,7 +3222,7 @@ function estadoRespaldoTexto(){
   if(pend) partes.push('⚠️ HAY CAMBIOS SIN RESPALDAR');
   // Dónde viven los datos y qué se comprobó (2026-11-01). Solo se afirma lo verificado por relectura.
   let monto=0; try{ monto=gastos.reduce((s,g)=>s+(Number(g.monto)||0),0); }catch(e){}
-  const nRefs=Object.keys(leerRecibos()).length, colaR=leerRecibosPend(), nPend=Object.values(colaR).filter(p=>p.estado!=='error').length, nErr=Object.values(colaR).filter(p=>p.estado==='error').length;
+  const nRefs=Object.keys(leerRecibos()).length, colaR=leerRecibosPend(), nPend=Object.values(colaR).filter(p=>p&&p.estado!=='error'&&p.estado!=='sin_copia').length, nErr=Object.values(colaR).filter(p=>p.estado==='error').length;
   partes.push('Gastos: en este dispositivo ('+gastos.length+', $'+monto.toFixed(2)+') y en el respaldo de Drive ('+DRIVE_FILE_NAME+')');
   partes.push('Recibos originales: en Google Drive, carpeta «'+RECIBOS_CARPETA_NOMBRE+'» ('+nRefs+' verificados'+(nPend?', '+nPend+' pendientes de subir':'')+(nErr?', ⚠️ '+nErr+' con error':'')+'); miniaturas de 320 px: '+Object.keys(fotos||{}).length+' en el respaldo');
   let v=null; try{ v=JSON.parse(localStorage.getItem(DRIVE_VERIF_KEY)||'null'); }catch(e){}

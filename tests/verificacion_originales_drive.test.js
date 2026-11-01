@@ -195,6 +195,26 @@ const fotoFalsa = (bytes, name = 'r.jpg', type = 'image/jpeg') => new File([byte
   await R('procesarColaOriginales')();
   test('I-C: si la copia temporal falta queda "sin_copia" con mensaje honesto', R('leerRecibosPend')()[5].estado === 'sin_copia' && /se perdió/.test(R('textoEstadoOriginal')(5)));
 
+  // Segunda revisión: lectura transitoria fallida de IndexedDB NO se marca como copia perdida
+  alm.clear(); alm.set('tok', 'T'); idb.clear();
+  idb.set('6', { blob: fotoFalsa(crypto.randomBytes(400)), tipo: 'image/jpeg' });
+  R('actualizarPend')(6, { estado: 'pendiente' });
+  const leerOk = ctx.origLeer; let fallar = true;
+  ctx.origLeer = async id => (fallar ? undefined : leerOk(id));
+  await R('procesarColaOriginales')();
+  test('2ª rev: error transitorio de lectura → estado error (reintentable), no "sin_copia"', R('leerRecibosPend')()[6].estado === 'error' && idb.has('6'));
+  fallar = false;
+  await R('reintentarOriginalesManual' in ctx ? 'procesarColaOriginales' : 'procesarColaOriginales')();
+  test('2ª rev: al volver la lectura, el recibo sube y se verifica', !!R('leerRecibos')()[6] && !idb.has('6') && !R('leerRecibosPend')()[6]);
+  ctx.origLeer = leerOk;
+  // entrada corrupta en la cola no rompe el procesamiento
+  alm.set('a132_recibos_pend', JSON.stringify({ 8: null, 4: { estado: 'pendiente' } }));
+  idb.set('4', { blob: fotoFalsa(crypto.randomBytes(200)), tipo: 'image/jpeg' });
+  let sinError = true; try { await R('procesarColaOriginales')(); } catch (e) { sinError = false; }
+  test('2ª rev: entrada null en la cola no rompe ni bloquea las demás', sinError && !!R('leerRecibos')()[4]);
+  test('2ª rev: sin_copia no cuenta como pendiente de subir', script.includes("p.estado!=='error'&&p.estado!=='sin_copia'"));
+  test('2ª rev: el detalle del gasto escapa todos sus campos', ['fecha', 'categoria', 'contratista', 'tel', 'lote', 'metodo', 'cuenta'].every(k => script.includes('${escHtml(g.' + k + ')}')));
+
   // Subida colgada: el tiempo máximo evita bloquear la cola
   test('la cola usa fetch con tiempo máximo (AbortController)', script.includes('new AbortController()') && script.includes('await fetchConTiempo(') && !extraer('driveSubirOriginal').includes('await fetch('));
   test('la vista previa libera su blob', script.split('revokeObjectURL(_fotoDataUrl)').length - 1 >= 2);
