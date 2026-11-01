@@ -19,8 +19,7 @@ function cargar(codigo, nombre) {
   return m.exports;
 }
 const nuevo = cargar(fs.readFileSync(path.join(__dirname, '..', 'api', 'analyze-invoice.js'), 'utf8'), 'nuevo');
-let viejoCodigo = null;
-try { viejoCodigo = cp.execFileSync('git', ['show', 'produccion-antes-endpoint-20261101:api/analyze-invoice.js'], { cwd: path.join(__dirname, '..'), encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'] }); } catch (e) { viejoCodigo = null; }
+const viejoCodigo = fs.readFileSync(path.join(__dirname, 'fixtures', 'analyze-invoice.anterior.js.txt'), 'utf8'); // copia fija de la version anterior (no depende de git)
 
 function res() {
   const r = { code: 0, headers: {}, body: undefined, ended: false };
@@ -53,18 +52,18 @@ const sinClave = (texto) => !String(texto).includes('CLAVE-FALSA') && !/sk-ant/.
     test('clave mal formada: el registro dice solo el TIPO de error', registros.length === 1 && /excepci/.test(registros[0]), registros);
   }
   // 2. Prueba de sensibilidad: la version anterior SI filtraba (misma entrada)
-  if (viejoCodigo) {
+  {
     const viejo = cargar(viejoCodigo, 'viejo');
     const { r } = await llamar(viejo, { method: 'POST', body: valido() }, { clave: MAL_FORMADA, real: true });
     test('control: la version ANTERIOR filtraba la clave falsa en la respuesta (la prueba detecta el defecto)', !sinClave(JSON.stringify(r.body)), r.code);
-  } else { console.log('SKIP: no se pudo leer la version anterior (etiqueta git ausente)'); }
+  }
   // 3. Un POST vacio o malformado no toca la clave ni llama al proveedor
-  for (const [nombre, cuerpo] of [['{}', {}], ['sin cuerpo', undefined], ['messages vacio', { messages: [] }], ['2 mensajes', { messages: [{ role: 'user', content: 'a' }, { role: 'user', content: 'b' }] }], ['rol no usuario', { messages: [{ role: 'assistant', content: 'a' }] }], ['JSON invalido', '{no es json']]) {
+  for (const [nombre, cuerpo] of [['{}', {}], ['sin cuerpo', undefined], ['messages vacio', { messages: [] }], ['2 mensajes', { messages: [{ role: 'user', content: 'a' }, { role: 'user', content: 'b' }] }], ['rol no usuario', { messages: [{ role: 'assistant', content: 'a' }] }], ['JSON invalido', '{no es json'], ['content no es lista', { messages: [{ role: 'user', content: 'texto suelto' }] }], ['3 bloques', { messages: [{ role: 'user', content: [{ type: 'text', text: 'a' }, { type: 'text', text: 'b' }, { type: 'text', text: 'c' }] }] }], ['tipo de bloque desconocido', { messages: [{ role: 'user', content: [{ type: 'tool_use', name: 'x' }] }] }]]) {
     let llamado = false;
     const { r } = await llamar(nuevo, { method: 'POST', body: cuerpo }, { clave: MAL_FORMADA, fetchFalso: async () => { llamado = true; return { ok: true, json: async () => ({}) }; } });
     test('cuerpo ' + nombre + ': 400 sin llamar al proveedor', r.code === 400 && !llamado && sinClave(JSON.stringify(r.body)), { code: r.code, llamado });
   }
-  { const grande = { messages: [{ role: 'user', content: 'x'.repeat(4_300_000) }] };
+  { const grande = { messages: [{ role: 'user', content: [{ type: 'text', text: 'x'.repeat(4_300_000) }] }] };
     const { r } = await llamar(nuevo, { method: 'POST', body: grande }, { clave: FALSA });
     test('cuerpo demasiado grande: 413', r.code === 413, r.code); }
   // 4. Metodos y CORS

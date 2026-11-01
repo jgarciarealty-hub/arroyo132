@@ -9,7 +9,7 @@
 //     genéricos fijos. El detalle técnico va a los registros del servidor SIN el valor de la clave.
 //   · La petición debe tener forma de «analizar un recibo» (messages = exactamente 1 mensaje de usuario,
 //     cuerpo ≤ 4,2 MB) ANTES de tocar la clave: un POST vacío ya no llega a ningún código que use la clave.
-//   · CORS deja de ser «*»: solo el origen de la app.
+//   · CORS deja de ser «*»: solo el origen de la app (configurable con A132_ALLOWED_ORIGIN si se usa otro dominio).
 'use strict';
 
 const ORIGEN_APP = process.env.A132_ALLOWED_ORIGIN || 'https://arroyo132.vercel.app';
@@ -38,6 +38,13 @@ module.exports = async function handler(req, res) {
   }
   if (!cuerpo || typeof cuerpo !== 'object' || !Array.isArray(cuerpo.messages) ||
       cuerpo.messages.length !== 1 || !cuerpo.messages[0] || cuerpo.messages[0].role !== 'user') {
+    return res.status(400).json({ error: 'Solicitud inválida' });
+  }
+  // Forma del contenido: 1–2 bloques de tipo image/document/text (lo que envía la app: el recibo + una instrucción).
+  const contenido = cuerpo.messages[0].content;
+  const tiposOk = new Set(['image', 'document', 'text']);
+  if (!Array.isArray(contenido) || contenido.length < 1 || contenido.length > 2 ||
+      !contenido.every(function (b) { return b && typeof b === 'object' && tiposOk.has(b.type); })) {
     return res.status(400).json({ error: 'Solicitud inválida' });
   }
   let largo = 0;
