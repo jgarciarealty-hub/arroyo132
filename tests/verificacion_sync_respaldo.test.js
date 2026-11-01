@@ -428,6 +428,7 @@ const probe = `
     control[modo] = 0;
   }
   // Guarda de no-regresión: una fusión que pierde gastos NO sube nada (mutación: quitar la guarda hace fallar esto)
+  gastos = semilla.concat(propios50).map(g => Object.assign({}, g));   // dispositivo con datos reales (la guarda de semillas no aplica)
   drivePoner('arroyo132-datos.json', archivo61);
   const fusionOriginal = fusionarEstado;
   fusionarEstado = (l, r) => { const x = fusionOriginal(l, r); x.gastos = x.gastos.slice(0, 5); return x; };
@@ -443,6 +444,7 @@ const probe = `
   control.recortaGastosEn = null;
   test('VERIFICACIÓN: Drive guarda menos gastos de los escritos → NO hay éxito (pendiente, sin sello de verificado)', almacen.get('a132_drive_pendiente') === '1' && !almacen.get('a132_drive_verificado'));
   test('VERIFICACIÓN: queda en la bitácora como FALLO con el motivo', (() => { const l = JSON.parse(almacen.get('a132_respaldo_log') || '[]'); return l[l.length - 1].resultado === 'FALLO' && /verificación/.test(l[l.length - 1].motivo || ''); })());
+  gastos = semilla.map(g => Object.assign({}, g));
   // I-A (revisión #4): un archivo combinado VACÍO (0 bytes) no bloquea el respaldo para siempre
   drivePoner('arroyo132-datos.json', archivo61);
   control.archivoVacioN = 1;
@@ -452,9 +454,56 @@ const probe = `
   test('I-A: el mensaje de error de un archivo ilegible dice qué hacer', script_html_tiene('Revisa o borra ese archivo en Drive'));
   test('M-D: la fusión sanea las referencias importadas (limpiarRecibos)', script_html_tiene('limpiarRecibos(r.recibos)'));
   // Sin fallos: el respaldo vuelve a verificarse
+  gastos = semilla.concat(propios50).map(g => Object.assign({}, g));
   drivePoner('arroyo132-datos.json', archivo61);
   await backupToDrive(false);
   test('tras normalizarse Drive, el respaldo se verifica y deja el sello', !!almacen.get('a132_drive_verificado') && almacen.get('a132_drive_pendiente') === undefined);
+
+  // ── 11. Respaldo v4 en perfil sembrado (hallazgo real 2026-11-01): no degrada el combinado ──
+  await calma();
+  driveReiniciar();
+  const semH = []; for (let i = 0; i < 11; i++) semH.push({ id: 700001 + i, fecha: '2026-04-15', contratista: 'Sembrado ' + i, tel: '', categoria: 'Electricidad', lote: 'Compartido', metodo: 'efectivo', monto: 100 + i, descripcion: 'semilla ' + i });
+  const remH = semH.slice(0, 9).concat([
+    { id: 700010, fecha: '2026-05-01', contratista: 'Ferretería Cosme Inc.', tel: '', categoria: 'Otros', lote: 'Compartido', metodo: 'efectivo', monto: 232.48, descripcion: 'real A' },
+    { id: 700011, fecha: '2026-05-02', contratista: 'Caguas', tel: '', categoria: 'Otros', lote: 'Compartido', metodo: 'efectivo', monto: 43.89, descripcion: 'real B' }]);
+  const remH61 = remH.concat(propios50);
+  const sumaH = (a) => Math.round(a.reduce((t, g) => t + (Number(g.monto) || 0), 0) * 100) / 100;
+  const archivoH = { version: 4, fecha: '2026-11-01T04:59:14Z', dispositivo: 'celular', gastos: remH61, fotos: {}, viajes: [] };
+  const sumaH61 = sumaH(remH61);
+  const estadoH = () => { const c = driveLeer('arroyo132-datos.json') || { gastos: [] }; return { n: c.gastos.length, suma: sumaH(c.gastos) }; };
+  const logH = () => JSON.parse(almacen.get('a132_respaldo_log') || '[]');
+  gastos = semH.map(g => Object.assign({}, g));
+  drivePoner('arroyo132-datos.json', archivoH);
+  almacen.delete('a132_drive_pendiente'); almacen.delete('a132_drive_verificado');
+  llamadas.length = 0;
+  await backupToDrive(false);
+  test('SEMILLAS: perfil con 11 semillas sobre remoto de 61 → NO se escribe el combinado; Drive conserva 61 y su suma', estadoH().n === 61 && estadoH().suma === sumaH61, estadoH());
+  test('SEMILLAS: el respaldo queda pendiente (no "ok") y sin sello de verificado', almacen.get('a132_drive_pendiente') === '1' && !almacen.get('a132_drive_verificado'));
+  test('SEMILLAS: la bitácora registra PAUSADO con el motivo', (() => { const l = logH(); return l.length && l[l.length - 1].resultado === 'PAUSADO' && /sembrados/.test(l[l.length - 1].motivo || ''); })(), logH().slice(-1));
+  test('SEMILLAS: el aviso del botón dice "respaldo antiguo en pausa"', /respaldo antiguo en pausa/.test(document.getElementById('btn-drive').title));
+  test('SEMILLAS: ninguna escritura sobre el combinado (solo la copia propia)', !llamadas.some(c => c.metodo === 'PATCH' && /upload/.test(c.url) && c.cuerpo && String(c.cuerpo).includes('"dispositivo":"' + deviceId() + '"') && estadoH().n !== 61));
+  // Lista vacía también es perfil sembrado
+  gastos = [];
+  drivePoner('arroyo132-datos.json', archivoH);
+  await backupToDrive(false);
+  test('SEMILLAS: lista vacía sobre remoto de 61 → NO se escribe', estadoH().n === 61, estadoH());
+  // Segunda guarda aislada: perfil sembrado con MÁS gastos locales que el remoto, pero con choque de id desplazado
+  const semG = []; for (let i = 0; i < 19; i++) semG.push({ id: 700001 + i, fecha: '2026-04-15', contratista: 'Sembrado ' + i, tel: '', categoria: 'Electricidad', lote: 'Compartido', metodo: 'efectivo', monto: 100 + i, descripcion: 'semilla ' + i });
+  gastos = semG.map(g => Object.assign({}, g));
+  const remChoque = [{ id: 700010, fecha: '2026-05-01', contratista: 'Ferretería Cosme Inc.', tel: '', categoria: 'Otros', lote: 'Compartido', metodo: 'efectivo', monto: 232.48, descripcion: 'real A' }];
+  drivePoner('arroyo132-datos.json', { version: 4, fecha: '2026-11-01T04:59:14Z', dispositivo: 'celular', gastos: remChoque, fotos: {}, viajes: [] });
+  almacen.delete('a132_drive_pendiente');
+  await backupToDrive(false);
+  test('SEMILLAS: registro remoto desplazado por una semilla con el mismo id → NO se escribe', (() => { const c = driveLeer('arroyo132-datos.json'); return c.gastos.length === 1 && c.gastos[0].monto === 232.48; })());
+  test('SEMILLAS: el desplazamiento queda pendiente y en la bitácora', almacen.get('a132_drive_pendiente') === '1' && /desplazados/.test(logH().slice(-1)[0].motivo || ''));
+  // Dispositivo con datos reales y los mismos choques de id: sigue respaldando como antes
+  gastos = propios50.map(g => Object.assign({}, g)).concat([{ id: 700010, fecha: '2026-06-01', contratista: 'Otra Ferretería', tel: '', categoria: 'Otros', lote: 'Compartido', metodo: 'efectivo', monto: 77.7, descripcion: 'local distinto' }]);
+  drivePoner('arroyo132-datos.json', archivoH);
+  almacen.delete('a132_drive_pendiente'); almacen.delete('a132_drive_verificado');
+  await backupToDrive(false);
+  test('REGRESIÓN: dispositivo con datos reales y choque de id sigue respaldando (verificado, sin pendiente)', !!almacen.get('a132_drive_verificado') && almacen.get('a132_drive_pendiente') === undefined);
+  test('REGRESIÓN: el choque se fusiona como antes (el desplazado queda en conflictos, nada se pierde)', (() => { const c = driveLeer('arroyo132-datos.json'); return c.gastos.length >= 61 && Array.isArray(c.conflictos) && c.conflictos.some(x => x.id === 700010); })());
+  test('GUARDAS: ambas presentes en el código', script_html_tiene('dominadoPorSemillas && remotoLegible && remoto.gastos.length > gastos.length') && script_html_tiene('desplazados.length'));
 
   // ── 9. Red de seguridad local ──
   test('exportarBackup no lanza', (() => { try { exportarBackup(); return true; } catch (e) { return false; } })());

@@ -3986,6 +3986,18 @@ async function backupToDrive(mostrarFeedback=false){
 
     // (2) Archivo combinado: LEER → FUSIONAR → ESCRIBIR. La fusión nunca descarta un registro.
     const remoto = await driveDescargar(DRIVE_FILE_NAME, token, DRIVE_FILE_KEY);
+    // Guarda de perfil sembrado (2026-11-01): un dispositivo que solo tiene los recibos sembrados por la app (ids 700001-700019)
+    // no debe escribir el combinado v4 si el de Drive tiene más gastos: sus ids de semilla chocan con registros reales del
+    // remoto y los desplazarían. Nada se pierde (la fuente central y las copias lo conservan), pero el combinado v4 se degradaría.
+    const remotoLegible = !!(remoto && Array.isArray(remoto.gastos));
+    const nSemillas = gastos.filter(g=>g && Number(g.id)>=700001 && Number(g.id)<=700019).length;
+    const dominadoPorSemillas = gastos.length===0 || nSemillas/gastos.length>=0.8;
+    if(dominadoPorSemillas && remotoLegible && remoto.gastos.length > gastos.length){
+      const motivo='este dispositivo solo tiene recibos sembrados y Drive tiene '+remoto.gastos.length+' gastos';
+      registrarRespaldoLog('PAUSADO', {motivo});
+      marcarRespaldoPendiente('respaldo antiguo en pausa: '+motivo);
+      return;
+    }
     const fusion = fusionarEstado(contenidoBackup(), remoto);
     if(fusion.conflictos.length || fusion.posiblesDuplicados.length){
       try{ localStorage.setItem(CONFLICT_KEY, JSON.stringify({
@@ -4017,6 +4029,19 @@ async function backupToDrive(mostrarFeedback=false){
     // descarta a propósito el duplicado con otro id y los registros corruptos, y eso NO es una pérdida.
     const idsCombinado = new Set((combinado.gastos||[]).map(g=>String(g.id)));
     const clavesCombinado = new Set((combinado.gastos||[]).map(claveContenido));
+    // Segunda guarda de perfil sembrado: un registro remoto con el MISMO id que uno local pero otro contenido, cuyo contenido no
+    // quedó en el combinado, fue desplazado por una semilla; no se escribe (en dispositivos con datos reales sigue fusionándose igual).
+    if(dominadoPorSemillas && remotoLegible){
+      const localPorId = new Map(gastos.map(g=>[String(g && g.id), g]));
+      const desplazados = remoto.gastos.filter(r=>r && typeof r==='object' && localPorId.has(String(r.id))
+        && JSON.stringify(localPorId.get(String(r.id)))!==JSON.stringify(r) && !clavesCombinado.has(claveContenido(r)));
+      if(desplazados.length){
+        const motivo=desplazados.length+' registro(s) de Drive serían desplazados por semillas con el mismo id';
+        registrarRespaldoLog('PAUSADO', {motivo});
+        marcarRespaldoPendiente('respaldo antiguo en pausa: '+motivo);
+        return;
+      }
+    }
     const faltantes = []
       .concat((remoto && Array.isArray(remoto.gastos)) ? remoto.gastos : [], gastos)
       .filter(g=>g && typeof g==='object' && !idsCombinado.has(String(g.id)) && !clavesCombinado.has(claveContenido(g)));
