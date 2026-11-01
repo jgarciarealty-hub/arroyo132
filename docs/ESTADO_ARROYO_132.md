@@ -2,7 +2,7 @@
 
 **Proyecto independiente.** No mezclado con Terreno Ocala, JGarcia Realty, JGarciaIA, ni CouncilOS — este archivo vive únicamente dentro de este repositorio (`arroyo132-git/`), que es la fuente canónica del código de este proyecto.
 
-**Última actualización:** 2026-10-08 (auditoría integral). **[Corrección 2026-10-08: este encabezado decía "2026-08-24" mientras el documento ya contenía secciones del 13 y 21 de septiembre — estaba desactualizado y no reflejaba su propio contenido. Las secciones 1-13 son del 24-ago; de la 14 en adelante son posteriores.]**
+**Última actualización:** 2026-10-19 (acceso por PIN: causa raíz, arreglo probado y comparación computadora↔celular — §26 y §27; el estado consolidado de pendientes vive en `docs/PLAN_DESPLIEGUE_Y_ESCANEO_2026-10-15.md` §8, del 16-oct, con el PIN añadido como bloqueador). **[Corrección 2026-10-08: este encabezado decía "2026-08-24" mientras el documento ya contenía secciones del 13 y 21 de septiembre — estaba desactualizado y no reflejaba su propio contenido. Las secciones 1-13 son del 24-ago; de la 14 en adelante son posteriores.]**
 
 ---
 
@@ -364,3 +364,137 @@ No se hizo merge ni deploy de ningún cambio de código. Rama `port/recuperar-re
 **Rollback si hiciera falta:** `git reset --hard 83102ef && git push --force-with-lease origin main` (devuelve la app al estado aprobado antes de GD-2). Respaldo previo del archivo en la sesión de trabajo: `council_runtime/ops_snapshots/arroyo_index_backup_pre_gd2_diagnostico.html`.
 
 **Incidente menor de esta sesión (registrado por honestidad, sin impacto):** un `node -e` con comillas dobles ejecutó por accidente el contenido entre backticks como comandos de shell, incluido un `git checkout main` no intencional. El árbol estaba limpio (todo ya comprometido), así que no se perdió nada: se volvió a la rama y se verificó el `sha256` del `index.html` (`01045a5b…`, 185.431 bytes) y que este documento seguía intacto. Lección: no pasar texto con backticks/`$` a `node -e`; usar Write/Edit.
+
+## 22. RECIBOS, SINCRONIZACIÓN Y SEGURIDAD DEL ENDPOINT 2026-10-12 — el respaldo a Drive llevaba ~4 meses caído en silencio
+
+**Naturaleza:** auditoría de solo lectura + corrección de código **local, en rama `feat/seguridad-y-sincronizacion-recibos`, sin fusionar y sin desplegar**. Informe completo: `docs/VERIFICACION_RECIBOS_Y_SINCRONIZACION_2026-10-12.md`. Herramientas de auditoría (solo lectura): `council_runtime/supervisor/arroyo132_recibos_20261012/`.
+
+**Hallazgo central — el respaldo automático a Google Drive lleva caído desde el 2026-06-17, sin avisar.** El archivo que la app mantiene (`G:\My Drive\arroyo132-datos.json`) sigue en `version: 2`, con 2 gastos, 0 viajes y 0 imágenes. Causa raíz verificada en el código: el token de Google dura ~58 min (`Date.now() + 3500 * 1000`); al vencer, `driveTokenValid()` da `false` y `backupToDrive()` **salía con `return` en su primera línea, sin avisar**. Todo lo registrado desde el teléfono desde esa fecha existe **solo en el `localStorage` de ese teléfono**.
+
+**Recibos — cuántos y dónde (verificado archivo por archivo):** 13 documentos de recibo en `…\Bo Palmas Arroyo\Recibos\` (`A132-REC-001…014`), **8 PDFs de recibo embebidos en los respaldos de abril y junio** (4.90 MB; 6 adjuntos a gastos y 2 a un ítem de servicio), **0** en el respaldo del 6 de julio y **0** en el archivo vivo. Los 11 gastos embebidos en el código **no son todos los recibos**: son 11 registros sin imagen. **29 gastos únicos** cruzando las 4 fuentes históricas; **0 duplicados dentro de cada fuente**. Por contenido (sha256) hay **19 grupos duplicados**, de los cuales **13 son el mismo recibo guardado dos veces** (nombre original + copia `A132-REC-*`) — **ninguno fue tocado**.
+
+**Gastos de viaje y peajes: SÍ aparecen, como registros sin comprobante.** 4 viajes ($271.30 total; peajes $32.80 = $8.20 por viaje, ida y vuelta PR-5/PR-52), presentes en los respaldos de abril y junio pero **ausentes del respaldo del 6 de julio y del archivo vivo**. Más un 5.º gasto de transportación (Target Rental Car $87.86). **No existe ni una sola imagen de recibo de peaje**: los $8.20 son la tarifa calculada por la app, no un comprobante.
+
+**Respuesta a las preguntas sobre Drive:** el respaldo es **automático por diseño pero estaba caído en la práctica**; **incluye solo miniaturas de 320 px**, nunca la foto completa del recibo; **no incluía** documentos, timeline, presupuesto, Tu Coop ni financiamiento; y **consultarlo desde la computadora era imposible** porque `restaurarDesdeDrive()` existía en el código **sin ningún botón en la interfaz**, y al restaurar **reemplazaba** los gastos en vez de unirlos.
+
+**Corregido y probado (sin desplegar):** renovación silenciosa del token; el fallo deja de ser invisible (⚠️ persistente + fecha del último respaldo bueno + estado en el panel); reintento automático al volver la conexión; el respaldo pasa a `version: 4` con el estado completo; `restaurarDesdeDrive()` **fusiona sin borrar ni duplicar**; botones nuevos (Traer de Drive / Exportar / Importar) y red de seguridad local en archivo; y **corregido un error de orden real** — el bloque `INIT` se ejecutaba antes de declararse las constantes de Drive, lo que con el nuevo estado de respaldo habría lanzado `ReferenceError` y cortado todo el JavaScript al abrir la app (movido al final del script).
+
+**Seguridad de `/api/analyze-invoice`:** era un proxy abierto a una API de pago (`Access-Control-Allow-Origin: *`, sin autenticación, sin límite, reenviando cualquier prompt). Ahora: **CORS en lista blanca** (explícitamente **no** tratado como autenticación), **autenticación real** con ID token de Google verificado en el servidor (firma RS256 contra JWKS, `iss`/`aud`/`exp`/`iat`, correo en lista blanca) → 401 sin ella, **falla cerrado** con 503 si falta `A132_ALLOWED_EMAILS`, **límite por IP + presupuesto diario global**, **validación estricta del cuerpo** (solo "un recibo": 1 imagen/PDF + 1 texto), **modelo y `max_tokens` fijados por el servidor**, y errores de Anthropic sin filtrar detalles internos. No se añadió ningún servicio nuevo: se reutiliza el Google que la app ya usa para Drive.
+
+**Asociación recibo ↔ registro:** **12 de 13** recibos tienen su gasto asociado. **`A132-REC-008 National Lumber` (2026-04-13) no tiene ningún gasto con ese nombre** — existe "Caribbean Lumber Victory $5.09" del mismo día; requiere confirmación de Jesvan.
+
+**Pruebas:** 101 previas sin regresión + 71 nuevas (`verificacion_endpoint_seguridad` 27/27, `verificacion_sync_respaldo` 44/44) = **172, 0 fallos**. La suite `verificacion_app_actual` se corrió además contra el archivo de trabajo (**36/36**) para descartar regresión estructural antes de fusionar.
+
+**Pendiente de decisión de Jesvan:** desplegar la rama (cambio de producción; **configurar `A132_ALLOWED_EMAILS` en Vercel antes** o el endpoint responde 503 a propósito); autorizar **una** llamada real a la IA para cerrar la punta a punta; decidir sobre los 19 duplicados de Drive (destructivo); confirmar el recibo National Lumber; y reconciliar las 4 generaciones de gastos contra la app real.
+
+**Falta acceso que esta sesión no tiene:** el **teléfono / los datos del navegador móvil**, para contar los recibos subidos desde el teléfono que aún no están en Drive; y **resolver el ID de la carpeta Drive** del botón "📂 Abrir Drive" (`11yIIr6FrK2I4pFLtDiW-pcyUbuSGLSE6`), cuyas dos carpetas del proyecto (`📸 Facturas y Recibos`, `📋 Documentos Legales`) están **vacías**.
+
+## 23. SEGUNDA PASADA 2026-10-12 — corrección de un defecto propio de autenticación, sincronización segura entre dispositivos, costos de IA e integración con CouncilOS
+
+**Naturaleza:** verificación independiente del trabajo del §22 + correcciones locales, **en la misma rama `feat/seguridad-y-sincronizacion-recibos`, sin fusionar y sin desplegar**. Informes: `docs/IA_COSTOS_Y_LIMITES_2026-10-12.md`, `docs/INTEGRACION_COUNCILOS_CONTRATO_MINIMO_2026-10-12.md`, `docs/PROTECCION_DATOS_DEL_TELEFONO_2026-10-12.md`.
+
+**DEFECTO PROPIO CORREGIDO — el §22 decía haber implementado autenticación real y no habría funcionado.** El §22 esperaba un ID token (`resp.id_token`) del flujo `google.accounts.oauth2.initTokenClient`. **Ese flujo NO devuelve ningún ID token** (verificado contra la referencia oficial de Google: `TokenResponse` no incluye ese campo). Con ese error, `asegurarIdToken()` habría devuelto siempre `null` y **el escaneo con IA habría caído siempre a entrada manual**: la función quedaba inservible, no insegura. **Mecanismo válido ahora:** el servidor verifica el **token de acceso** contra Google (`oauth2/v1/tokeninfo`, comprobando audiencia, vigencia y correo verificado) — endpoint confirmado en vivo (responde 400 `invalid_token` a un token falso). Se conserva además la verificación de ID token para cuando la credencial sea un JWT: `verificarCredencial()` decide por la forma del token. 11 pruebas nuevas cubren este camino.
+
+**RIESGO CRÍTICO DE MÚLTIPLES DISPOSITIVOS (del encargo) — resuelto.** Un solo archivo compartido permitía que un dispositivo pisara el trabajo del otro. Ahora: **cada dispositivo escribe su propia copia** (`arroyo132-datos-<dispositivo>.json`, que solo escribe su dueño) + el **archivo combinado** se actualiza con LEER → FUSIONAR → ESCRIBIR + un **índice de dispositivos**. La fusión **nunca descarta un registro**: empareja por `id` y, ante un mismo `id` con datos distintos, **registra el conflicto y conserva el local** sin pisar nada. Además se corrigió un error real de la primera versión: descartaba por "comercio+fecha+importe parecidos", lo que podía **hacer desaparecer una compra legítima repetida**; ahora eso se **añade y se marca como posible duplicado** para revisión humana. **Prueba crítica: el respaldo de un equipo no borra los gastos del otro y la copia del otro dispositivo queda intacta.**
+
+**COSTOS DE IA.** Modelo cambiado a **`claude-haiku-5-5`: $0.10/$0.50 por millón de tokens frente a $1.00/$5.00 del anterior — 10× menos**, con **imágenes y PDF verificados EN VIVO** contra `GET /v1/models/…` (llamada gratuita). ≈ **$0.0003 por recibo**; 100 recibos/mes ≈ 3 centavos. Es variable de entorno (`A132_MODEL`), reversible sin tocar código. Ahorros añadidos y probados: **reducción de la foto a 1600 px** antes de enviarla, **caché por huella de imagen** (un recibo repetido no se paga dos veces) y **no llamar a la IA si la foto ya está guardada**. **Límite declarado expresamente:** los contadores por minuto/día viven en memoria del proceso y **no son una cuota global garantizada**; la barrera real es la autenticación. Un límite global real exigiría un contador compartido (Supabase, ya en el ecosistema) → decisión de Jesvan.
+
+**INTEGRACIÓN CON COUNCILOS.** El hecho que define el diseño: **Arroyo no tiene servidor de datos** (todo vive en el navegador + Drive del usuario), así que un endpoint de solo-lectura **no le serviría** a CouncilOS. La superficie correcta es **el archivo que Arroyo ya escribe en Drive** (`version: 4`), documentado como contrato mínimo con esquema, reglas (CouncilOS lee, nunca escribe; sin credenciales compartidas; Arroyo funciona sin CouncilOS) y capacidades declaradas. **No se construyó nada de eso**, como pide el encargo.
+
+**Imágenes (§5 del encargo):** el original completo **nunca lo guardó la app**; solo una miniatura de 320 px. Los únicos originales recuperables son los 8 PDFs embebidos en los respaldos de abril y junio (§22). Los PDFs de recibo que sí existen como archivos están en `…\Bo Palmas Arroyo\Recibos\` y en la raíz de esa carpeta. Recomendación no ejecutada: subir los comprobantes como **archivo** a Drive en vez de base64 dentro del JSON.
+
+**Pruebas: 208, 0 fallos** (101 previas sin regresión + 38 de seguridad del endpoint + 69 de sincronización y escenarios adversarios), más la suite de la app corrida **también contra el archivo de trabajo (36/36)**. Cubre los 13 escenarios adversarios del encargo: token vencido, Drive desconectado, sin internet, dos dispositivos con datos distintos, dos gastos legítimos iguales, documento duplicado con otro nombre, respaldo antiguo frente a recientes, fallo a mitad de escritura, imagen ausente, restauración parcial, usuario no autorizado, límite de API alcanzado, recibo ilegible e interrupción del análisis. **En todos, una falla de IA deja el registro manual disponible.**
+
+**Producción sigue intacta:** `arroyo132.vercel.app` ≡ `main:index.html` (182.138 bytes, `sha256 9f1636224e8577cb…`). Nada fusionado, nada desplegado, ningún recibo ni dato financiero tocado, ninguna credencial cambiada, ninguna prueba facturable ejecutada.
+
+
+## 24. RECUPERACIÓN DE DATOS Y PREPARACIÓN DE DESPLIEGUE 2026-10-15 — respaldo independiente, 2 huecos corregidos, GO técnico / NO-GO de producción
+
+**Naturaleza:** auditoría de solo lectura + respaldo + correcciones locales **en la rama `feat/seguridad-y-sincronizacion-recibos`, sin fusionar, sin subir y sin desplegar**. Informes: `docs/RECUPERACION_DE_DATOS_2026-10-15.md` y `docs/PLAN_DESPLIEGUE_Y_ESCANEO_2026-10-15.md`.
+
+- **Respaldo independiente** (52 archivos, hashes verificados, solo lectura) en `Downloads\arroyo132-respaldo-independiente-20261015\`. Ningún dato real fue modificado.
+- **Corrige el §7 y el §22:** el respaldo del 6-jul **no es el más completo**; es idéntico a la hoja «Registro de Recibos» (19 filas, $4,912.70) pero abril/junio tienen 8 filas que él no tiene (incluidos $60,000 de cierre, agrimensor $1,600, plomero $125, AAA $100, Toa Alta $234.15 y 3 viajes). La **unión** (prueba con datos reales) da 31 gastos y 4 viajes sin perder ningún registro. La discrepancia de REC-008 «National Lumber» vs «Caribbean Lumber Victory» es un cambio de nombre entre las dos versiones de la hoja (mismo día y monto); falta que Jesvan confirme el comercio.
+- **Hallazgo:** `CONTRATO_Y_PRIMER_PAGO_PARCIAL.pdf` (481 KB, agrimensor) solo existía dentro del respaldo de abril; quedó extraído a archivo.
+- **Corregido (2 huecos reales):** el archivo combinado de Drive ahora conserva la versión desplazada de un registro en conflicto y las secciones distintas del otro equipo; un `localStorage` de gastos ilegible ya no se borra (copia `a132_gastos_corrupto_*`).
+- **Pruebas:** 229 comprobaciones, 0 fallos (208 previas + 21 nuevas en `tests/verificacion_recuperacion_20261015.test.js`).
+- **NO verificado:** renovación de token de Google en navegador real, variables de entorno de Vercel (403/sin sesión), llamada real a la IA, datos del teléfono. **Producción NO se desplegó** (`main` @ `48d05e8`); recomendación: código GO, producción NO-GO hasta la lista de la §3 del plan.
+
+## 25. VERIFICACIÓN INDEPENDIENTE 2026-10-18 — la rama sigue intacta y el parche de borrados fusiona limpio (268/268)
+
+**Naturaleza:** solo lectura y ejecución de pruebas locales. Nada fusionado a `main`, nada subido, nada desplegado, ningún dato financiero, credencial ni archivo de Drive tocado. Las ramas quedaron exactamente como estaban.
+
+- **Rama candidata `feat/seguridad-y-sincronizacion-recibos` @ `62dcaa6`:** las 8 suites re-ejecutadas hoy ⇒ **229 comprobaciones, 0 fallos**, idéntico a la medición del 16-oct (§8.4 del plan). Árbol de trabajo limpio.
+- **Producción `https://arroyo132.vercel.app`:** lectura directa ⇒ **HTTP 200, 182.138 bytes, `sha256 9f1636224e8577cb…`** — sin cambios desde el 09-oct; sigue sirviendo `main` (`48d05e8`) byte a byte.
+- **Parche de propagación de borrados (`feat/propagacion-borrados`, 451 inserciones):** probado el merge real en un worktree temporal sobre la punta de la candidata ⇒ **merge limpio, sin conflictos** (los 2 commits documentales posteriores no tocan `index.html` ni las pruebas) y **268 comprobaciones, 0 fallos** en el árbol fusionado (la suite de sincronización pasa de 69 a 108). El worktree temporal se eliminó; las ramas intactas.
+- **Sigue sin fusionar y sin desplegar**, como estaba. Esta verificación reduce los gates pendientes a un sí/no: **desplegar la rama** (§8.3 #1) y **aprobar el parche de borrados** (#11) ya tienen el código probado; ambos siguen siendo decisión de Jesvan.
+
+## 26. ACCESO POR PIN 2026-10-19 — causa raíz demostrada, arreglo local probado (29/29), sin desplegar
+
+**Naturaleza:** diagnóstico sobre el historial real de git, corrección local **reversible** en la rama `feat/seguridad-y-sincronizacion-recibos`, pruebas focalizadas. Sin push, sin merge, sin despliegue. No se tocaron credenciales, datos financieros, Drive ni producción. **La autenticación no se desactivó ni se debilitó**: siguen 5 intentos, bloqueo de 5 minutos y sesión de 30 minutos.
+
+### 26.1 Causa concreta (verificada, no inferida)
+
+- La versión que estuvo en producción **del 5-jul al 20-sep** (base `fc0a54e` más los parches manuales de julio) guardaba el PIN con **SHA-256 y sal** (`sha256('a132-jgarcia-realty-2025' + PIN)`, 64 hex, vía `crypto.subtle`; si el navegador no lo soportaba, un hash con sal de 8 hex).
+- Desde `7735957` — y en `main` hoy — `hashPin` es **síncrono y sin sal**: 8 hex + los códigos de carácter del PIN en hexadecimal (16 caracteres en total).
+- Consecuencia: un PIN creado o cambiado en esa ventana **nunca** puede coincidir con el de hoy. El propietario teclea el PIN correcto, la app lo rechaza, a los 5 intentos bloquea 5 minutos, y al terminar el bloqueo **el contador seguía en 5**: un solo intento lo volvía a bloquear de inmediato. Eso explica el "conoce el PIN pero el sistema no lo deja entrar".
+- Defectos adicionales corregidos: un `a132_lockuntil` corrupto o en el futuro lejano (reloj cambiado) bloqueaba **sin fin**; el contador `parseInt` no tenía protección contra NaN; y el formato de `main` **dejaba los dígitos del PIN recuperables** del valor guardado.
+
+### 26.2 Arreglo aplicado (local, `index.html`)
+
+- `verificarPin()` acepta **los tres formatos**: el actual de `main`, el SHA-256 con sal y el fallback con sal de julio. No se elimina ningún control.
+- Al entrar con una credencial antigua, **se migra a SHA-256 con sal** cuando el navegador lo permite; si no, se conserva la anterior y el acceso sigue funcionando (probado).
+- Los PIN **nuevos** se guardan como SHA-256 con sal; el valor guardado ya no contiene los dígitos.
+- `limpiarBloqueoVencido()`: al arrancar o al pulsar, un bloqueo vencido **se borra y reinicia el contador**; un `lockuntil` a más de una ventana completa (5 min) en el futuro se trata como dato corrupto y se descarta. Un bloqueo vigente y legítimo **se respeta** (probado).
+- El contador se sanea (`NaN`/negativo ⇒ 0).
+
+### 26.3 Pruebas
+
+- Nueva suite `tests/verificacion_pin_acceso.test.js`: **29 comprobaciones, 0 fallos**. Cubre los 3 formatos aceptados, rechazo de PIN incorrecto, bloqueo al 5.º intento, limpieza de bloqueo vencido (el defecto que re-bloqueaba), fecha imposible, bloqueo vigente respetado, contador corrupto, navegador sin `crypto.subtle` y creación de PIN nuevo como SHA-256 sin dígitos recuperables.
+- `verificacion_app_actual`: **36/36** (integridad de la app tras el cambio).
+- **No se repitieron las 8 suites completas**: el cambio está aislado al bloque de PIN y la suite nueva ejecuta el script completo; no hay motivo técnico para repetirlas.
+
+### 26.4 Lo que NO se pudo verificar y el mecanismo de recuperación
+
+- **El PIN real del propietario en un navegador real** no se puede probar desde aquí: las pruebas son simuladas. Por eso el PIN queda como **bloqueador de despliegue** hasta probarlo contra la versión nueva (preview o producción ya desplegada y autorizada).
+- **Recuperación de acceso, estado real:** la puerta trasera `?reset=arroyo132reset` **ya no existe** en el código servido (la retiró el redespliegue del 20-sep). El mecanismo decidido —código temporal por correo en lugar de un restablecimiento inseguro— está **diseñado pero no construido**: exige una credencial de correo (gate humano). Mientras tanto, la vía segura si el PIN no funciona tras desplegar es **exportar los datos desde el propio teléfono antes de tocar nada** (§8.3 #12 del plan); nunca borrar los datos del sitio.
+- **Producción no cambió:** sigue `main` @ `48d05e8` (182.138 bytes, `sha256 9f1636224e8577cb…`). El arreglo vive solo en la rama candidata (commit `88382e4`, sin push).
+
+## 27. DIFERENCIA COMPUTADORA ↔ CELULAR 2026-10-19 — misma URL, mismo código; la diferencia es el estado local del celular
+
+**Hechos confirmados por el propietario:** en la **computadora SÍ entra**; en el **celular NO**; el celular usa **`arroyo132.vercel.app`**. Producción sirve a ambos el **mismo HTML** (182.138 bytes, `sha256 9f1636224e8577cb…`).
+
+**Lo que queda descartado con evidencia:**
+- **No es la versión de la PWA ni una caché vieja:** no hay `serviceWorker`, ni Cache API, ni IndexedDB en la app (búsqueda en el HTML y en el repo: 0 coincidencias; no existe `sw.js`). El `manifest.json` solo declara `start_url: "/"`, `display: standalone`: el ícono abre la **página viva**. Código idéntico en ambos dispositivos ⇒ la diferencia no puede estar en el código.
+- **No es sincronización entre dispositivos:** los datos viven en el `localStorage` de cada navegador; no se comparten.
+- **No es el almacenamiento en sí:** si el PIN guardado no existiera, el celular mostraría «Crea un PIN», no un rechazo con bloqueo.
+
+**Candidatos que quedan y cobertura del arreglo (`88382e4`):**
+| Causa posible en el celular | ¿La cubre el arreglo? | Evidencia |
+|---|---|---|
+| PIN guardado con SHA-256 de julio (64 hex) o con el fallback con sal (8 hex) | **Sí** | acepta los 3 formatos y migra al entrar |
+| Bloqueo vencido con contador todavía en 5 (un intento re-bloqueaba) | **Sí** | limpia bloqueo vencido y reinicia contador |
+| `a132_lockuntil` imposible (reloj del celular cambiado) | **Sí** | descarta fechas a más de 5 min en el futuro |
+| Contador corrupto (`NaN`) | **Sí** | se sanea a 0 |
+| `crypto.subtle` no disponible en ese navegador | **Sí** | acepta el fallback con sal y conserva acceso |
+| **Otro PIN distinto en el celular** | **No, a propósito** | un PIN distinto sigue rechazado; no se desactiva la autenticación |
+
+**Evidencia nueva (simulación de los dos dispositivos, suite `verificacion_pin_acceso` — 36/36):**
+- Escritorio con el hash de `main`: entra.
+- Celular con hash de julio (64 hex), `a132_attempts=5` y bloqueo vencido: **entra al primer intento con el parche**; bloqueo y contador quedan limpios.
+- Celular con fallback de julio (8 hex): entra y **migra a SHA-256**.
+- En ambos casos del celular, **sus registros originales quedan intactos** (ni perdidos ni alterados).
+- Un PIN **distinto** sigue rechazado (1 intento contado) — la autenticación no se debilita.
+
+**Sobre no sobrescribir los datos del teléfono:**
+- Desplegar código **no toca `localStorage`**. La única escritura autónoma al arrancar es la **siembra aditiva de los 11 recibos recuperados si faltan** — código **idéntico al que ya corre hoy en producción** (`git show main:index.html` lo confirma); no borra, no reemplaza ni modifica registros existentes, y no dispara respaldo a Drive. Si `a132_gastos` estuviera ilegible, la rama **conserva una copia** (`a132_gastos_corrupto_*`) antes de apartarlo; `main` no lo hace.
+- **Respaldo del celular antes de cualquier actualización, sin modificar su almacenamiento:** si es **Android**, por USB con `chrome://inspect` → abrir la pestaña de Arroyo → en la consola **solo leer** `localStorage.getItem('a132_gastos')` (y `a132_pin_hash`, `a132_attempts`, `a132_lockuntil`) y copiar el texto a un archivo; conectarse a la consola no escribe nada. Si es **iPhone**, no existe vía segura de solo-lectura sin un Mac con Web Inspector: la vía es desplegar el arreglo (mismo origen), entrar y **exportar de inmediato** desde el panel de respaldo. **Nunca** borrar datos del sitio, «limpiar caché» ni desinstalar la PWA.
+
+**Procedimiento mínimo y seguro (NO ejecutado — requiere autorización):**
+1. Autorización explícita de despliegue.
+2. Publicar la rama `feat/seguridad-y-sincronizacion-recibos` (`88382e4`) en el proyecto `arroyo132` (merge a `main` + push, o deploy directo de la rama; ambos son cambio de producción y ambos gates).
+3. Verificar en vivo: HTTP 200 y `index.html` ≡ blob de la rama.
+4. En el celular: abrir la app **una vez** e introducir el PIN. Si entra → **exportar de inmediato**; si no entra, **detenerse** y reportar el mensaje exacto (no reintentar 5 veces).
+5. Importar el respaldo en la computadora y verificar los registros.
+6. Reversión disponible: Instant Rollback al despliegue anterior.
+
+**Estado:** corregido y probado de forma simulada (BUILT + TESTED); **no desplegado y no verificado en el celular real**. El PIN sigue siendo bloqueador de despliegue hasta el paso 4.
