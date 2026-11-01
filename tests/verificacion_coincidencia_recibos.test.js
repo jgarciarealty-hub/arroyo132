@@ -11,7 +11,7 @@ const crypto = require('node:crypto');
 const { spawnSync } = require('node:child_process');
 
 const HTML = process.env.A132_HTML || path.join(__dirname, '..', 'index.html');
-const html = fs.readFileSync(HTML, 'utf8');
+const html = fs.readFileSync(HTML, 'utf8').split(String.fromCharCode(13, 10)).join(String.fromCharCode(10));   // el árbol de trabajo puede tener CRLF (autocrlf)
 const script = html.match(/<script>([\s\S]*?)<\/script>/)[1];
 const C = require('../central/estado_central.js');
 let pass = 0, fail = 0;
