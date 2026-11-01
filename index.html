@@ -4586,7 +4586,7 @@ function centralCambiosPendientes(){
   const ids=new Set();
   for(const g of gastos){ ids.add(String(g.id)); const b=base.gastos[String(g.id)]; if(!b||b._del||!C.igualContenido(b,g)) return true; }
   for(const [id,b] of Object.entries(base.gastos)) if(!b._del && !ids.has(id)) return true;
-  const rl=leerRecibos(); for(const k of Object.keys(rl)) if(!(base.recibos&&base.recibos[k])) return true;
+  const rl=leerRecibos(); for(const k of Object.keys(rl)){ const br=base.recibos&&base.recibos[k]; if(!br) return true; const kb=new Set(C.clavesReferencia(br)); if(C.clavesReferencia(rl[k]).some(x=>!kb.has(x))) return true; }   // también un documento añadido/actualizado en una referencia que ya existía
   const vb=new Set((base.viajes||[]).map(v=>String(v.id))); if(viajes.some(v=>!vb.has(String(v.id)))) return true;
   const bb=new Set((base.viajesBorrados||[]).map(String)); if(centralViajesBorradosPend().some(i=>!bb.has(i))) return true;
   return false;
@@ -4619,7 +4619,7 @@ function centralMutador(estado){
   estado.viajes=(estado.viajes||[]).filter(v=>!vbs.has(String(v.id))).concat(viajes.filter(v=>v&&!ids.has(String(v.id))&&!vbs.has(String(v.id))));
   toc.viajes=viajes.filter(v=>v&&!vbs.has(String(v.id))).map(v=>String(v.id));
   const rl=A132Central.limpiarRecibos(leerRecibos()); toc.recibos=Object.keys(rl);
-  estado.recibos=Object.assign({},estado.recibos||{},rl);
+  estado.recibos=C.unirRecibos(rl,estado.recibos||{});
   return estado;
 }
 // Adopta el estado central como vista local (los registros se guardan SIN campos internos _v/_t/_o).

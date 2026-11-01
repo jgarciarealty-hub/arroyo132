@@ -120,6 +120,60 @@ const bufPC = leer('Downloads__arroyo132-datos__copia.json');
   const fu2 = C.fusionar(Object.assign(C.nuevoEstado(), { viajes: [], viajesBorrados: ['v1'] }), Object.assign(C.nuevoEstado(), { viajes: [{ id: 'v1' }] }));
   test('fusionar: simétrico — el viaje borrado en A no vuelve desde B', fu2.viajes.length === 0 && fu2.viajesBorrados.join() === 'v1');
 
+
+  // 10. IMPORTANTE-1 (revisión independiente 2026-11-01): unión de referencias de recibo del mismo gasto (nunca se pierde un documento)
+  {
+    const doc = (n, f) => ({ driveId: 'DRV' + String(n).padStart(8, '0'), sha256: String(n).repeat(64).slice(0, 64), nombre: 'r' + n + '.jpg', fecha: f || '2026-11-01' });
+    const P = doc(1, '2026-11-01'), X = doc(2, '2026-11-02'), P2 = doc(3, '2026-11-03');
+    const kk = (d) => d.driveId + '|' + d.sha256;
+    const conj = (r) => { const sal = []; if (r.origen === 'externo') (r.docs || []).forEach((d) => sal.push('x:' + d.driveId)); else sal.push(kk(r)); (r.adicionales || []).forEach((d) => sal.push(kk(d))); (r.reemplazados || []).forEach((d) => sal.push(kk(d))); return sal.sort(); };
+    const U = C.unirReferenciaRecibo;
+    const celular = Object.assign({}, P, { adicionales: [X] });          // el celular añadió X
+    const tabletAtrasada = Object.assign({}, P);                          // la tableta no lo sabe
+    const r1 = U(celular, tabletAtrasada), r2 = U(tabletAtrasada, celular);
+    test('unirReferencia: añadir X (celular) + referencia atrasada → X sigue', conj(r1).join() === [kk(P), kk(X)].sort().join() && r1.driveId === P.driveId && r1.adicionales.length === 1, r1);
+    test('unirReferencia: conmutativa en el conjunto y en el principal', conj(r1).join() === conj(r2).join() && JSON.stringify(r1) === JSON.stringify(r2));
+    const actualizado = Object.assign({}, P2, { adicionales: [X], reemplazados: [P] });   // «Actualizar» ya sincronizado
+    const atrasado = Object.assign({}, P);
+    const r3 = U(actualizado, atrasado), r4 = U(atrasado, actualizado);
+    test('unirReferencia: «Actualizar» no se revierte por una referencia atrasada', r3.driveId === P2.driveId && r3.reemplazados.length === 1 && r3.reemplazados[0].driveId === P.driveId && r3.adicionales.length === 1 && JSON.stringify(r3) === JSON.stringify(r4), r3);
+    const tabAct = Object.assign({}, P2, { reemplazados: [P] });                  // la tableta hizo «Actualizar» sin saber del adicional X
+    const r5 = U(celular, tabAct);
+    test('unirReferencia: «Actualizar» atrasado + «Añadir» concurrente → principal más reciente, P reemplazado, X adicional', r5.driveId === P2.driveId && conj(r5).join() === [kk(P), kk(P2), kk(X)].sort().join() && r5.adicionales[0].driveId === X.driveId && r5.reemplazados[0].driveId === P.driveId, r5);
+    test('unirReferencia: idempotente y sin duplicados', JSON.stringify(U(r5, r5)) === JSON.stringify(r5) && JSON.stringify(U(U(r5, celular), tabAct)) === JSON.stringify(r5));
+    test('unirReferencia: si solo un lado tiene referencia, gana esa (copia)', JSON.stringify(U(celular, undefined)) === JSON.stringify(celular) && JSON.stringify(U(null, celular)) === JSON.stringify(celular) && U(celular, undefined) !== celular);
+    const e1 = { origen: 'externo', fecha: '2026-11-01', docs: [{ driveId: 'EXT0000001', nombre: 'a' }] }, e2 = { origen: 'externo', fecha: '2026-11-02', docs: [{ driveId: 'EXT0000002', nombre: 'b' }, { driveId: 'EXT0000001', nombre: 'a' }] };
+    test('unirReferencia: externos se unen por driveId sin repetir', conj(U(e1, e2)).join() === 'x:EXT0000001,x:EXT0000002' && conj(U(e2, e1)).join() === 'x:EXT0000001,x:EXT0000002');
+    test('unirReferencia: no modifica sus argumentos', (() => { const c1 = JSON.stringify(celular), c2 = JSON.stringify(actualizado); U(celular, actualizado); return JSON.stringify(celular) === c1 && JSON.stringify(actualizado) === c2; })());
+    // Propiedades con pares pseudoaleatorios deterministas
+    let sem = 7; const rnd = (n) => { sem = (sem * 1103515245 + 12345) & 0x7fffffff; return (sem >> 8) % n; };
+    const pool = [1, 2, 3, 4, 5, 6].map((n) => doc(n, '2026-11-0' + n));
+    let ok = true, det;
+    for (let i = 0; i < 400 && ok; i++) {
+      const mkr = () => { const ds = pool.slice().sort(() => rnd(3) - 1); const p = ds.shift(); const r = Object.assign({}, p); const na = rnd(3), nr = rnd(3); if (na) r.adicionales = ds.splice(0, na); if (nr) r.reemplazados = ds.splice(0, nr); return r; };
+      const a = mkr(), b = mkr(), ab = U(a, b), ba = U(b, a);
+      const esperado = [...new Set(conj(a).concat(conj(b)))].sort().join();
+      if (conj(ab).join() !== esperado || conj(ba).join() !== esperado || ab.driveId !== ba.driveId || JSON.stringify(U(ab, ab)) !== JSON.stringify(ab) || new Set(conj(ab)).size !== conj(ab).length) { ok = false; det = { a, b, ab, ba }; }
+    }
+    test('unirReferencia (400 pares): conjunto = unión exacta, conmutativa, principal determinista, idempotente, sin duplicados', ok, det);
+    const eC = Object.assign(C.nuevoEstado(), { recibos: { 5: celular } }), eT = Object.assign(C.nuevoEstado(), { recibos: { 5: tabletAtrasada } });
+    test('fusionar: el adicional del celular sobrevive a un estado atrasado en cualquier orden', C.fusionar(eC, eT).recibos[5].adicionales.length === 1 && C.fusionar(eT, eC).recibos[5].adicionales.length === 1);
+    const eCen = Object.assign(C.nuevoEstado(), { recibos: { 5: actualizado } });
+    const ip = C.incorporarPerfilLocal(eCen, { gastos: [], recibos: { 5: atrasado } }, { origen: 'x' });
+    test('incorporarPerfilLocal: un perfil local atrasado no revierte ni pierde documentos del central', ip.estado.recibos[5].driveId === P2.driveId && ip.estado.recibos[5].adicionales.length === 1 && ip.estado.recibos[5].reemplazados.length === 1, ip.estado.recibos[5]);
+    const ip2 = C.incorporarPerfilLocal(Object.assign(C.nuevoEstado(), { recibos: { 5: atrasado } }), { gastos: [], recibos: { 5: celular } }, { origen: 'x' });
+    test('incorporarPerfilLocal: el adicional que solo tiene el perfil local se incorpora', ip2.estado.recibos[5].adicionales.length === 1);
+    // Escenario del revisor con C.actualizar + almacenMemoria: el mutador reescribe su `rl` atrasado
+    const alm = C.almacenMemoria(Object.assign(C.nuevoEstado(), { recibos: { 5: celular } }));
+    const mut = (rl) => (e) => { e.recibos = C.unirRecibos(C.limpiarRecibos(rl), e.recibos || {}); return e; };
+    await C.actualizar(alm, mut({ 5: tabletAtrasada }));
+    const fin = (await alm.leer()).estado.recibos[5];
+    test('actualizar + almacenMemoria: el mutador de una tableta atrasada no borra el adicional del central', fin.adicionales && fin.adicionales.length === 1 && fin.driveId === P.driveId, fin);
+    await C.actualizar(alm, mut({ 5: Object.assign({}, P2, { reemplazados: [P] }) }));
+    const fin2 = (await alm.leer()).estado.recibos[5];
+    test('actualizar + almacenMemoria: un «Actualizar» posterior conserva el adicional y deja P en reemplazados', fin2.driveId === P2.driveId && fin2.adicionales.length === 1 && fin2.reemplazados.length === 1, fin2);
+  }
+
   console.log(`\n${pass} pasaron, ${fail} fallaron`);
   process.exit(fail ? 1 : 0);
 })();

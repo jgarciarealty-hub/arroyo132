@@ -72,7 +72,7 @@
       informe.anadidos.push(id);
     }
     for (const k of SECCIONES) if (sal[k] === undefined && local && local[k] !== undefined) sal[k] = clon(local[k]);
-    if (local && local.recibos && typeof local.recibos === 'object') sal.recibos = Object.assign({}, limpiarRecibos(local.recibos), sal.recibos || {});
+    if (local && local.recibos && typeof local.recibos === 'object') sal.recibos = unirRecibos(sal.recibos || {}, limpiarRecibos(local.recibos));
     for (const k of SECCIONES) if (Array.isArray(sal[k]) && local && Array.isArray(local[k])) sal[k] = unirListas(sal[k], local[k]);
     sal.conflictos = acotarConflictos(sal.conflictos);
     aplicarViajesBorrados(sal);
@@ -96,11 +96,63 @@
     return s;
   }
 
+  // --- Unión de referencias de recibo del MISMO gasto (2026-11-01, IMPORTANTE-1 de la revisión independiente).
+  // Antes «gana la clave entera de un lado»: un dispositivo atrasado borraba `adicionales[]`/`reemplazados[]` o revertía el principal.
+  // Ahora se unen por documento (driveId+sha256; los externos por driveId). Nunca se descarta un documento; el principal es el del lado
+  // más reciente por `fecha` (a igualdad, desempate determinista por contenido); el otro principal pasa a `reemplazados` (o se queda
+  // donde ya estaba). Conmutativa en el conjunto de documentos y determinista en el principal. Pura: no modifica sus argumentos.
+  function claveDoc(d) {
+    if (!d || typeof d !== 'object') return 'v:' + JSON.stringify(d);
+    if (d.origen === 'externo') return 'x:' + (Array.isArray(d.docs) ? d.docs.map((x) => String(x && x.driveId)).sort().join(',') : '');
+    return String(d.driveId) + '|' + String(d.sha256);
+  }
+  function cuerpoRef(r) { const c = Object.assign({}, r); delete c.adicionales; delete c.reemplazados; return c; }
+  function unirReferenciaRecibo(a, b) {
+    const va = docRefValido(a), vb = docRefValido(b);
+    if (!va && !vb) return a !== undefined && a !== null ? clon(a) : (b !== undefined && b !== null ? clon(b) : a);
+    if (!vb) return clon(a);
+    if (!va) return clon(b);
+    const A = clon(a), B = clon(b);
+    const ord = (r) => JSON.stringify(estable(r));
+    const fa = String(A.fecha || ''), fb = String(B.fecha || '');
+    const aGana = fa !== fb ? fa > fb : ord(A) >= ord(B);   // determinista y simétrico (si son idénticos da igual cuál)
+    const W = aGana ? A : B, L = aGana ? B : A;
+    const cw = cuerpoRef(W), cl = cuerpoRef(L);
+    let principal = cw; const extraReemplazados = [];
+    if (cw.origen === 'externo' && cl.origen === 'externo') {
+      const vistos = new Set(); const docs = [];
+      for (const d of (cw.docs || []).concat(cl.docs || [])) { const k = String(d && d.driveId); if (!vistos.has(k)) { vistos.add(k); docs.push(d); } }
+      principal = Object.assign({}, cw, { docs });
+    } else if (claveDoc(cl) !== claveDoc(cw)) extraReemplazados.push(cl);
+    const kp = claveDoc(principal);
+    const arr = (r, f) => (Array.isArray(r[f]) ? r[f] : []);
+    const reemp = [], adic = [], vistos = new Set([kp]);
+    for (const d of arr(W, 'reemplazados').concat(arr(L, 'reemplazados'), extraReemplazados)) { const k = claveDoc(d); if (!vistos.has(k)) { vistos.add(k); reemp.push(d); } }
+    for (const d of arr(W, 'adicionales').concat(arr(L, 'adicionales'))) { const k = claveDoc(d); if (!vistos.has(k)) { vistos.add(k); adic.push(d); } }
+    const sal = Object.assign({}, principal);
+    if (adic.length || A.adicionales !== undefined || B.adicionales !== undefined) sal.adicionales = adic;
+    if (reemp.length || A.reemplazados !== undefined || B.reemplazados !== undefined) sal.reemplazados = reemp;
+    return sal;
+  }
+  // Claves de todos los documentos de una referencia (principal, adicionales, reemplazados).
+  function clavesReferencia(r) {
+    if (!docRefValido(r)) return [];
+    const c = cuerpoRef(r); const sal = c.origen === 'externo' ? (c.docs || []).map((d) => 'x:' + String(d && d.driveId)) : [claveDoc(c)];
+    for (const f of ['adicionales', 'reemplazados']) if (Array.isArray(r[f])) r[f].forEach((d) => sal.push(claveDoc(d)));
+    return sal;
+  }
+  // Unión de dos mapas de referencias: `base` gana solo en lo que no sean dos referencias válidas del mismo gasto (se unen).
+  function unirRecibos(base, otro) {
+    const sal = Object.assign({}, otro || {}, base || {});
+    for (const k of Object.keys(base || {})) if (otro && Object.prototype.hasOwnProperty.call(otro, k) && docRefValido(base[k]) && docRefValido(otro[k])) sal[k] = unirReferenciaRecibo(base[k], otro[k]);
+    return sal;
+  }
+
   // --- Fusión por registro con versión: gana la versión mayor; a igualdad, la marca de tiempo; a igualdad, el origen (determinista).
   function fusionar(a, b) {
     const sal = clon(a);
     sal.conflictos = (a.conflictos || []).slice();
-    sal.recibos = Object.assign({}, limpiarRecibos(b.recibos), limpiarRecibos(a.recibos));
+    sal.recibos = unirRecibos(limpiarRecibos(a.recibos), limpiarRecibos(b.recibos));
     for (const [id, rb] of Object.entries(b.gastos || {})) {
       const ra = sal.gastos[id];
       if (!ra) { sal.gastos[id] = clon(rb); continue; }
@@ -207,5 +259,5 @@
     return a;
   }
 
-  return { unirListas, aplicarViajesBorrados, acotarConflictos, nuevoEstado, migrarAV5, incorporarPerfilLocal, fusionar, guardarGasto, borrarGasto, vigentes, resumen, verificarCentral, importarMapaRecibos, limpiarRecibos, actualizar, instantaneaDiaria, almacenMemoria, claveContenido, strip, igualContenido, clon };
+  return { unirListas, aplicarViajesBorrados, acotarConflictos, nuevoEstado, migrarAV5, incorporarPerfilLocal, fusionar, guardarGasto, borrarGasto, vigentes, resumen, verificarCentral, importarMapaRecibos, limpiarRecibos, unirReferenciaRecibo, unirRecibos, clavesReferencia, actualizar, instantaneaDiaria, almacenMemoria, claveContenido, strip, igualContenido, clon };
 });

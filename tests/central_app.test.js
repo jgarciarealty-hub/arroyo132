@@ -304,6 +304,44 @@ const NCEL = cel.gastos.length, SUMA = Math.round(cel.gastos.reduce((s, g) => s 
   const copias = [...rv.alm.entries()].filter(([k]) => k.indexOf('a132_antes_central') === 0).map(([, v]) => v);
   test('revertir y reactivar: el gasto aún no sincronizado sigue en alguna copia local', copias.some((v) => /"id":777/.test(v)), [...rv.alm.keys()].filter((k) => k.indexOf('a132_antes') === 0));
 
+
+  // IMPORTANTE-1 (revisión independiente): un dispositivo atrasado que edita OTRO gasto no borra `adicionales`/`reemplazados` ni revierte el principal
+  {
+    const rf = (n, f) => ({ driveId: 'DRV' + String(n).padStart(8, '0'), nombre: 'r' + n + '.jpg', bytes: 10, sha256: String(n).repeat(64).slice(0, 64), tipo: 'image/jpeg', carpetaId: 'c', enlace: 'https://drive.google.com/file/d/DRV' + String(n).padStart(8, '0') + '/view', fecha: f });
+    const P = rf(1, '2026-11-01'), X = rf(2, '2026-11-02'), P2 = rf(3, '2026-11-03');
+    const setRef = (d, id, ref) => d.R("guardarRecibos(Object.assign({}, leerRecibos(), {'" + id + "': " + JSON.stringify(ref) + "}))");
+    const refCentral = (dr, id) => (dr.estado().recibos || {})[id];
+    const preparar = async () => {
+      const dr = driveSimulado(); const cel = dispositivo('celx', dr, { gastos: base1 }), tab = dispositivo('tabx', dr, { gastos: base1 });
+      await cel.activar(); await tab.activar();
+      setRef(cel, '2', P); await cel.sync(); await tab.sync();      // ambos conocen P
+      return { dr, cel, tab };
+    };
+    // 1. «Añadir» del celular + tableta atrasada edita otro gasto
+    let { dr, cel, tab } = await preparar();
+    test('IMP-1: ambos dispositivos parten con P', refCentral(dr, '2') && refCentral(dr, '2').driveId === P.driveId && JSON.parse(tab.alm.get('a132_recibos'))['2'].driveId === P.driveId);
+    setRef(cel, '2', Object.assign({}, P, { adicionales: [X] })); await cel.sync();
+    test('IMP-1: el celular sincroniza el adicional X', (refCentral(dr, '2').adicionales || []).length === 1);
+    tab.editar(3, { monto: 31 }); await tab.sync();
+    const r1 = refCentral(dr, '2');
+    test('IMP-1: la tableta atrasada edita OTRO gasto y el adicional X sigue en el central', r1.driveId === P.driveId && (r1.adicionales || []).length === 1 && r1.adicionales[0].driveId === X.driveId && dr.estado().gastos['3'].monto === 31, r1);
+    test('IMP-1: la tableta recibe el adicional en su vista local', (JSON.parse(tab.alm.get('a132_recibos'))['2'].adicionales || []).length === 1);
+    // 2. «Actualizar» del celular + tableta atrasada edita otro gasto: el principal nuevo no se revierte
+    ({ dr, cel, tab } = await preparar());
+    setRef(cel, '2', Object.assign({}, P2, { reemplazados: [P], adicionales: [] })); await cel.sync();
+    tab.editar(3, { monto: 32 }); await tab.sync();
+    const r2 = refCentral(dr, '2');
+    test('IMP-1: «Actualizar» (celular) no se revierte por la tableta atrasada: principal P2, P en reemplazados', r2.driveId === P2.driveId && (r2.reemplazados || []).length === 1 && r2.reemplazados[0].driveId === P.driveId, r2);
+    // 3. «Actualizar» atrasado de la tableta con un adicional previo del celular: no se pierde ni el adicional ni el principal anterior
+    ({ dr, cel, tab } = await preparar());
+    setRef(cel, '2', Object.assign({}, P, { adicionales: [X] })); await cel.sync();
+    setRef(tab, '2', Object.assign({}, P2, { reemplazados: [P] })); tab.editar(3, { monto: 33 }); await tab.sync();
+    const r3 = refCentral(dr, '2'), claves = [r3.driveId].concat((r3.adicionales || []).map((d) => d.driveId), (r3.reemplazados || []).map((d) => d.driveId)).sort().join();
+    test('IMP-1: «Actualizar» atrasado de la tableta + adicional del celular → ningún documento se pierde (P2 principal; X y P conservados)', r3.driveId === P2.driveId && claves === [P.driveId, P2.driveId, X.driveId].sort().join(), r3);
+    await cel.sync();
+    test('IMP-1: el celular converge al mismo conjunto', JSON.stringify(JSON.parse(cel.alm.get('a132_recibos'))['2']) === JSON.stringify(refCentral(dr, '2')));
+  }
+
   console.log(`\n${pass} pasaron, ${fail} fallaron`);
   process.exit(fail ? 1 : 0);
 })();
