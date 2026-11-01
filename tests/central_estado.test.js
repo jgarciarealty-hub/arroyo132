@@ -83,6 +83,18 @@ const bufPC = leer('Downloads__arroyo132-datos__copia.json');
   const s2 = await C.instantaneaDiaria(almSnap, C.guardarGasto(JSON.parse(JSON.stringify(base)), { id: 9, contratista: 'Z', fecha: '2026-01-01', monto: 1 }, 'x'), '20261101');
   test('instantánea: se crea una vez y nunca se sobrescribe', s1.creada && !s2.creada && snaps.get('arroyo132-snap-20261101.json') === primero);
 
+  // 8. Compras legítimas idénticas (peajes de ida y vuelta): se cuentan por multiplicidad, no se fusionan por error
+  const peaje = (id) => ({ id, contratista: 'Autoexpreso', fecha: '2026-06-24', monto: 28.13, categoria: 'Transportación', lote: 'Compartido', metodo: 'tarjeta', tipo: 'viaje' });
+  const cen2 = C.migrarAV5({ version: 4, fecha: 'x', gastos: [peaje(1), peaje(2)] }, { origen: 'celular' });
+  const r2x = C.incorporarPerfilLocal(cen2, { gastos: [peaje(11), peaje(12)] }, { origen: 'pc' });
+  test('multiplicidad: 2 peajes idénticos en el central y 2 locales con otros ids → ambos son duplicados (no se añaden)', r2x.informe.duplicadosOtroId.length === 2 && r2x.informe.anadidos.length === 0 && C.resumen(r2x.estado).gastos === 2, r2x.informe);
+  const r3x = C.incorporarPerfilLocal(cen2, { gastos: [peaje(11), peaje(12), peaje(13)] }, { origen: 'pc' });
+  test('multiplicidad: un tercer peaje idéntico SÍ se añade (compra legítima distinta)', r3x.informe.anadidos.length === 1 && C.resumen(r3x.estado).gastos === 3, r3x.informe);
+  const r1x = C.incorporarPerfilLocal(cen2, { gastos: [peaje(1), peaje(2)] }, { origen: 'pc' });
+  test('multiplicidad: mismos ids e idénticos → no cambia nada', r1x.informe.identicos.length === 2 && C.resumen(r1x.estado).gastos === 2);
+  const r0x = C.incorporarPerfilLocal(cen2, { gastos: [peaje(1), peaje(12)] }, { origen: 'pc' });
+  test('multiplicidad: uno idéntico por id y otro con otro id → ninguno se añade', r0x.informe.identicos.length === 1 && r0x.informe.duplicadosOtroId.length === 1 && C.resumen(r0x.estado).gastos === 2, r0x.informe);
+
   console.log(`\n${pass} pasaron, ${fail} fallaron`);
   process.exit(fail ? 1 : 0);
 })();

@@ -37,26 +37,33 @@
   // --- Incorporar un perfil LOCAL antiguo (sin versiones) a un estado central, sin perder nada y sin duplicar.
   function incorporarPerfilLocal(central, local, { origen = 'local', ahora = new Date().toISOString() } = {}) {
     const sal = clon(central);
-    const porClave = new Map(Object.values(sal.gastos).map((g) => [claveContenido(g), g]));
+    // Multiconjunto por contenido: dos compras legítimas idénticas (p. ej. peajes de ida y vuelta el mismo día) cuentan DOS veces.
+    const cuenta = new Map(); const usados = new Map();
+    for (const g of Object.values(sal.gastos)) if (!g._del) { const k = claveContenido(g); cuenta.set(k, (cuenta.get(k) || 0) + 1); }
+    const quedan = (k) => (cuenta.get(k) || 0) - (usados.get(k) || 0);
+    const usar = (k) => usados.set(k, (usados.get(k) || 0) + 1);
+    const idCentral = (k) => (Object.values(sal.gastos).find((g) => !g._del && claveContenido(g) === k) || {}).id;
     const informe = { anadidos: [], duplicadosOtroId: [], conflictosMismoId: [], identicos: [] };
-    for (const g of (local && local.gastos) || []) {
-      if (g == null || typeof g !== 'object') continue;
-      const id = String(g.id);
-      const existente = sal.gastos[id];
-      const k = claveContenido(g);
+    const lista = ((local && local.gastos) || []).filter((g) => g != null && typeof g === 'object');
+    // Pasada 1: mismo id y mismo contenido → idéntico (consume una unidad del contenido).
+    const pendientes = [];
+    for (const g of lista) {
+      const id = String(g.id), existente = sal.gastos[id], k = claveContenido(g);
+      if (existente && !existente._del && claveContenido(existente) === k && Math.abs(Number(existente.monto) - Number(g.monto)) < 0.005) { informe.identicos.push(id); usar(k); }
+      else pendientes.push(g);
+    }
+    // Pasada 2: el resto.
+    for (const g of pendientes) {
+      const id = String(g.id), existente = sal.gastos[id], k = claveContenido(g);
+      if (quedan(k) > 0) { usar(k); informe.duplicadosOtroId.push({ idLocal: id, idCentral: String(idCentral(k)) }); continue; }
       if (existente) {
-        if (claveContenido(existente) === k && Math.abs(Number(existente.monto) - Number(g.monto)) < 0.005) { informe.identicos.push(id); continue; }
-        if (porClave.has(k)) { informe.duplicadosOtroId.push({ idLocal: id, idCentral: String(porClave.get(k).id) }); continue; }
         sal.conflictos.push({ tipo: 'mismo_id_distinto_contenido', id, central: existente, local: g, fecha: ahora });
         informe.conflictosMismoId.push({ id, central: Number(existente.monto), local: Number(g.monto) });
         continue;
       }
-      if (porClave.has(k)) { informe.duplicadosOtroId.push({ idLocal: id, idCentral: String(porClave.get(k).id) }); continue; }
       sal.gastos[id] = Object.assign({}, g, { _v: 1, _t: ahora, _o: origen });
-      porClave.set(k, sal.gastos[id]);
       informe.anadidos.push(id);
     }
-    // Secciones y referencias de recibos locales: se conservan las del central y se añaden las que falten.
     for (const k of SECCIONES) if (sal[k] === undefined && local && local[k] !== undefined) sal[k] = clon(local[k]);
     if (local && local.recibos && typeof local.recibos === 'object') sal.recibos = Object.assign({}, limpiarRecibos(local.recibos), sal.recibos || {});
     return { estado: sal, informe };
