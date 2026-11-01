@@ -297,6 +297,13 @@ const NCEL = cel.gastos.length, SUMA = Math.round(cel.gastos.reduce((s, g) => s 
     test('M-5: arranque con bandera pero sin gastos ni base → no escribe en el central y reconstruye desde él con copia previa', dr2.estado().rev === rev2 && C.resumen(dr2.estado()).gastos === base1.length && arr.resumen().gastos === base1.length && !!arr.alm.get('a132_antes_central_reciente'), { rev: dr2.estado().rev, rev2, g: arr.resumen() });
   }
 
+  // IMPORTANTE-1 (revisión #3): revertir y reactivar sin sincronizar en medio no pierde el gasto no sincronizado
+  const dR = driveSimulado(); const rv = dispositivo('rv', dR, { gastos: base1 });
+  await rv.activar(); rv.anadir(mk(777, 'Sin sincronizar', '2026-04-01', 7)); dR.caido = true; await rv.sync();
+  rv.R('centralRevertir()'); dR.caido = false; await rv.activar();
+  const copias = [...rv.alm.entries()].filter(([k]) => k.indexOf('a132_antes_central') === 0).map(([, v]) => v);
+  test('revertir y reactivar: el gasto aún no sincronizado sigue en alguna copia local', copias.some((v) => /"id":777/.test(v)), [...rv.alm.keys()].filter((k) => k.indexOf('a132_antes') === 0));
+
   console.log(`\n${pass} pasaron, ${fail} fallaron`);
   process.exit(fail ? 1 : 0);
 })();

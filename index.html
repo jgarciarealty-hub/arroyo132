@@ -4487,7 +4487,12 @@ async function centralActivar(){
     }
     if(centralHayCorrupcion()) msg+='\n\n⚠️ Este dispositivo tiene una copia ilegible de los gastos (a132_gastos_corrupto_*): con la fuente central activa, la sincronización se detendrá hasta que la revises y pulses «Ya revisé la copia ilegible».';
     if(!confirm('🗂️ Activar fuente central única\n\n'+msg+'\n\n¿Continuar?')) return;
-    const kAntes=localStorage.getItem(CENTRAL_ANTES_KEY)?CENTRAL_ANTES_KEY+'_reciente':CENTRAL_ANTES_KEY;   // la primera copia (previa a la primera activación) nunca se pisa
+    let kAntes=CENTRAL_ANTES_KEY;   // la primera copia (previa a la primera activación) nunca se pisa
+    if(localStorage.getItem(CENTRAL_ANTES_KEY)){
+      kAntes=CENTRAL_ANTES_KEY+'_reciente';
+      const previa=localStorage.getItem(kAntes);   // tampoco se pisa la «reciente» anterior (p. ej. la que guardó «Volver a la copia previa»)
+      if(previa){ try{ localStorage.setItem(kAntes+'_'+Date.now(),previa); }catch(e){ alert('No hay espacio para conservar la copia anterior; no se activa.'); return; } }
+    }
     try{ localStorage.setItem(kAntes,JSON.stringify({fecha:new Date().toISOString(),dispositivo:deviceId(),gastos,viajes,recibos:leerRecibos()})); }catch(e){ alert('No hay espacio para la copia local previa; no se activa.'); return; }
     let final=l.estado;
     if(!l.estado || JSON.stringify(C.incorporarPerfilLocal(l.estado,local).estado)!==JSON.stringify(l.estado)) final=(await C.actualizar(alm,mutador)).estado;
