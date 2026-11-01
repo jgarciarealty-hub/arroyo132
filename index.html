@@ -1969,7 +1969,9 @@ function guardarGasto(btn){
     monto_total:esAbono?montoTotal:0
   });
   if(_fotoSmall) fotos[nuevoId]=_fotoSmall;
-  if(_archivoOriginal) origGuardar(nuevoId,_archivoOriginal);   // original legible, solo en este dispositivo
+  if(_archivoOriginal) origGuardar(nuevoId,_archivoOriginal).then(ok=>{   // original legible, solo en este dispositivo
+    if(!ok) alert('⚠️ El gasto se guardó, pero el recibo original NO se pudo guardar en este dispositivo (solo quedó la miniatura).');
+  });
   save();resetRegistrar();
   alert('✅ Gasto guardado. ¡Que Dios bendiga cada inversión!');
 }
@@ -2233,8 +2235,17 @@ async function verReciboOriginal(id){
     return;
   }
   const url=URL.createObjectURL(r.blob);
-  if((r.tipo||'').startsWith('image/')) cont.innerHTML='<img src="'+url+'" style="width:100%;border-radius:8px;border:1px solid rgba(201,168,76,0.2)" alt="Recibo original">';
-  else cont.innerHTML='<a class="btn btn-sm" href="'+url+'" target="_blank" rel="noopener">📄 Abrir recibo original ('+(r.tipo||'archivo')+', '+Math.round((r.bytes||0)/1024)+' KB)</a>';
+  setTimeout(()=>{ try{ URL.revokeObjectURL(url); }catch(e){} }, 10*60*1000);   // no retener el blob indefinidamente
+  cont.textContent='';
+  if((r.tipo||'').startsWith('image/')){
+    const im=document.createElement('img'); im.src=url; im.alt='Recibo original';
+    im.style.cssText='width:100%;border-radius:8px;border:1px solid rgba(201,168,76,0.2)';
+    cont.appendChild(im);
+  } else {
+    const a=document.createElement('a'); a.className='btn btn-sm'; a.href=url; a.target='_blank'; a.rel='noopener';
+    a.textContent='📄 Abrir recibo original ('+String(r.tipo||'archivo')+', '+Math.round((r.bytes||0)/1024)+' KB)';
+    cont.appendChild(a);
+  }
 }
 
 function toBase64(file){return new Promise((r,j)=>{const rd=new FileReader();rd.onload=()=>r(rd.result.split(',')[1]);rd.onerror=j;rd.readAsDataURL(file);});}
@@ -3664,9 +3675,11 @@ async function driveLeerPorId(fileId, token){
 function verificarEscrituraBackup(esperado, leido){
   if(!leido || !Array.isArray(leido.gastos)) return {ok:false, motivo:'Drive no devolvió la lista de gastos'};
   const esp = Array.isArray(esperado && esperado.gastos) ? esperado.gastos : [];
-  const ids = new Set(leido.gastos.map(g=>String(g && g.id)));
-  const falta = esp.filter(g=>!ids.has(String(g.id))).length;
+  const porId = new Map(leido.gastos.map(g=>[String(g && g.id), g]));
+  const falta = esp.filter(g=>!porId.has(String(g.id))).length;
   if(falta) return {ok:false, motivo:'faltan '+falta+' de '+esp.length+' gastos en Drive'};
+  const alterados = esp.filter(g=>Math.abs((Number(porId.get(String(g.id)).monto)||0)-(Number(g.monto)||0))>0.004).length;
+  if(alterados) return {ok:false, motivo:alterados+' gasto(s) con monto distinto al escrito'};
   if(leido.gastos.length < esp.length) return {ok:false, motivo:'Drive tiene '+leido.gastos.length+' gastos y se esperaban '+esp.length};
   const monto = Math.round(leido.gastos.reduce((s,g)=>s+(Number(g.monto)||0),0)*100)/100;
   return {ok:true, gastos:leido.gastos.length, monto};
@@ -3720,10 +3733,13 @@ async function backupToDrive(mostrarFeedback=false){
     }catch(e){ /* informativo: nunca debe impedir el respaldo */ }
     // Guarda de no-regresión (2026-11-01): el archivo combinado nunca puede tener MENOS gastos
     // que los que ya había en Drive ni que los de este dispositivo. Si pasara, no se sube nada.
+    // "Perdido" = ni su id ni su contenido (comercio+fecha+importe) están en el combinado: la fusión
+    // descarta a propósito el duplicado con otro id y los registros corruptos, y eso NO es una pérdida.
     const idsCombinado = new Set((combinado.gastos||[]).map(g=>String(g.id)));
+    const clavesCombinado = new Set((combinado.gastos||[]).map(claveContenido));
     const faltantes = []
       .concat((remoto && Array.isArray(remoto.gastos)) ? remoto.gastos : [], gastos)
-      .filter(g=>g && !idsCombinado.has(String(g.id)));
+      .filter(g=>g && typeof g==='object' && !idsCombinado.has(String(g.id)) && !clavesCombinado.has(claveContenido(g)));
     if(faltantes.length) throw new Error('el combinado perdería '+faltantes.length+' gasto(s); no se sube');
     const idArchivo = await driveSubir(DRIVE_FILE_NAME, JSON.stringify(combinado), token, DRIVE_FILE_KEY);
     // Verificación por lectura: un HTTP 200 no prueba que el contenido quedó bien. Se vuelve a

@@ -23,7 +23,7 @@ function extraer(nombre) {
 
 // ── 1. Extracción veraz ──────────────────────────────────────────────────────
 const ctx = vm.createContext({});
-vm.runInContext(['interpretarExtraccion', 'textoEstadoExtraccion', 'verificarEscrituraBackup'].map(extraer).join('\n'), ctx);
+vm.runInContext(['normalizarTexto','claveContenido','interpretarExtraccion', 'textoEstadoExtraccion', 'verificarEscrituraBackup'].map(extraer).join('\n'), ctx);
 const I = (t) => vm.runInContext('interpretarExtraccion', ctx)(t);
 const T = (l) => vm.runInContext('textoEstadoExtraccion', ctx)(l);
 
@@ -52,7 +52,21 @@ const esp = { gastos: [{ id: 1, monto: 10 }, { id: 2, monto: 5.5 }] };
 test('relectura completa → ok con conteo y suma', (() => { const r = V(esp, { gastos: [{ id: 1, monto: 10 }, { id: 2, monto: 5.5 }] }); return r.ok && r.gastos === 2 && r.monto === 15.5; })());
 test('relectura con faltantes → falla', V(esp, { gastos: [{ id: 1, monto: 10 }] }).ok === false);
 test('relectura sin lista → falla', V(esp, {}).ok === false && V(esp, null).ok === false);
-test('Drive con más gastos que lo escrito → ok (no se pierde nada)', V(esp, { gastos: [{ id: 1 }, { id: 2 }, { id: 3, monto: 1 }] }).ok === true);
+test('Drive con más gastos que lo escrito → ok (no se pierde nada)', V(esp, { gastos: [{ id: 1, monto: 10 }, { id: 2, monto: 5.5 }, { id: 3, monto: 1 }] }).ok === true);
+
+test('monto alterado en la relectura → falla', V({gastos:[{id:1,monto:10}]},{gastos:[{id:1,monto:1}]}).ok===false);
+// B1 (revisión independiente): un duplicado con otro id NO es una pérdida para la guarda.
+{
+  const C=vm.runInContext('claveContenido',ctx);
+  const local={id:2,contratista:'Ferreteria Y',fecha:'2026-01-01',monto:50};
+  const remoto={id:1,contratista:'FERRETERÍA Y',fecha:'2026-01-01',monto:50};
+  const comb=[local]; const ids=new Set(comb.map(g=>String(g.id))), claves=new Set(comb.map(C));
+  const falt=[remoto,local,'corrupto'].filter(g=>g&&typeof g==='object'&&!ids.has(String(g.id))&&!claves.has(C(g)));
+  test('guarda: duplicado con otro id y registro corrupto no cuentan como pérdida', falt.length===0, falt);
+  const real={id:9,contratista:'Otro',fecha:'2026-02-02',monto:7};
+  test('guarda: un gasto realmente ausente sí se detecta', [real].filter(g=>!ids.has(String(g.id))&&!claves.has(C(g))).length===1);
+  test('el código de la guarda usa clave de contenido', script.includes('clavesCombinado.has(claveContenido(g))'));
+}
 const iOk = script.search(/marcarRespaldoOk\(\);\s*if\(mostrarFeedback\)/);
 const iVer = script.indexOf('verificarEscrituraBackup(combinado');
 test('marcarRespaldoOk ocurre DESPUÉS de verificar por relectura', iVer > 0 && iOk > iVer);
