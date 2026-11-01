@@ -52,6 +52,7 @@ const control = {
   archivoRoto: false,      // si true, la descarga devuelve texto no-JSON
   archivoInexistente: false,
   fallaLecturaN: 0,        // las próximas N descargas alt=media devuelven HTTP 503
+  archivoVacioN: 0,        // las próximas N descargas devuelven 200 con cuerpo de 0 bytes
   fallaLecturaIlegible: 0, // las próximas N descargas devuelven 200 con contenido no-JSON
   recortaGastosEn: null,   // si es un nombre de archivo: Drive guarda ese archivo con UN gasto menos (escritura que no se persiste bien)
   ia: { status: 200, texto: '{"fecha":"2026-05-05","monto":12.34,"contratista":"Proveedor"}', lanza: false },
@@ -90,6 +91,7 @@ const fetchStub = async (url, opts) => {
   }
   // Descargar contenido
   if (u.includes('alt=media')) {
+    if (control.archivoVacioN > 0) { control.archivoVacioN--; return { ok: true, status: 200, text: async () => '', json: async () => { throw new Error('cuerpo vacío'); } }; }
     if (control.fallaLecturaN > 0) { control.fallaLecturaN--; return { ok: false, status: 503, json: async () => ({}) }; }
     if (control.fallaLecturaIlegible > 0) { control.fallaLecturaIlegible--; return { ok: true, status: 200, json: async () => { throw new Error('no es JSON'); } }; }
     if (control.archivoInexistente) return { ok: false, status: 404, json: async () => ({}) };
@@ -97,7 +99,7 @@ const fetchStub = async (url, opts) => {
     const f = drive.porId.get(id);
     if (!f) return { ok: false, status: 404, json: async () => ({}) };
     if (control.archivoRoto) return { ok: true, status: 200, json: async () => { throw new Error('no es JSON'); } };
-    return { ok: true, status: 200, json: async () => JSON.parse(f.contenido || '{}') };
+    return { ok: true, status: 200, text: async () => f.contenido || '', json: async () => JSON.parse(f.contenido || '{}') };
   }
   if (u.includes('/api/analyze-invoice')) {
     if (control.ia.lanza) throw new Error('se cortó la conexión');
@@ -441,6 +443,14 @@ const probe = `
   control.recortaGastosEn = null;
   test('VERIFICACIÓN: Drive guarda menos gastos de los escritos → NO hay éxito (pendiente, sin sello de verificado)', almacen.get('a132_drive_pendiente') === '1' && !almacen.get('a132_drive_verificado'));
   test('VERIFICACIÓN: queda en la bitácora como FALLO con el motivo', (() => { const l = JSON.parse(almacen.get('a132_respaldo_log') || '[]'); return l[l.length - 1].resultado === 'FALLO' && /verificación/.test(l[l.length - 1].motivo || ''); })());
+  // I-A (revisión #4): un archivo combinado VACÍO (0 bytes) no bloquea el respaldo para siempre
+  drivePoner('arroyo132-datos.json', archivo61);
+  control.archivoVacioN = 1;
+  almacen.delete('a132_drive_verificado');
+  await backupToDrive(false);
+  test('I-A: combinado de 0 bytes en Drive → el respaldo se recupera solo y queda verificado', !!almacen.get('a132_drive_verificado') && almacen.get('a132_drive_pendiente') === undefined && cuenta61() === 11, cuenta61());
+  test('I-A: el mensaje de error de un archivo ilegible dice qué hacer', script_html_tiene('Revisa o borra ese archivo en Drive'));
+  test('M-D: la fusión sanea las referencias importadas (limpiarRecibos)', script_html_tiene('limpiarRecibos(r.recibos)'));
   // Sin fallos: el respaldo vuelve a verificarse
   drivePoner('arroyo132-datos.json', archivo61);
   await backupToDrive(false);
@@ -455,6 +465,7 @@ const probe = `
 })();
 `;
 
+sandbox.script_html_tiene = (s) => m[1].includes(s);
 try {
   vm.runInContext(m[1] + probe, sandbox, { timeout: 30000 });
   setTimeout(() => {

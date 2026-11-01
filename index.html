@@ -2448,8 +2448,9 @@ async function verReciboOriginal(id){
   cont.textContent='Cargando…';
   const ref=leerRecibos()[id];
   let blob=null, tipo='', nota='';
-  const temp=ref ? null : await origLeer(id);         // copia temporal: solo si aún no hay referencia verificada en Drive
-  if(ref) origBorrar(id);                             // sobrante de un borrado fallido: ya está verificado en Drive
+  const tempLocal=await origLeer(id);
+  if(ref && tempLocal && tempLocal.bytes===ref.bytes) origBorrar(id);   // sobrante de un borrado fallido: ya está verificado en Drive
+  const temp=ref ? null : tempLocal;                  // con referencia verificada manda Drive; la copia local solo se muestra si aún no la hay
   if(temp&&temp.blob){ blob=temp.blob; tipo=temp.tipo||''; nota='Copia temporal de este dispositivo (aún no verificada en Drive).'; }
   else if(ref){
     try{
@@ -2674,7 +2675,7 @@ function showGastoDetail(id){
 }
 function eliminarGasto(id){
   if(!confirm('¿Eliminar este gasto?'))return;
-  if(leerRecibosPend()[id] && !confirm('⚠️ El recibo original de este gasto AÚN NO se ha subido a Drive; si lo eliminas se pierde. ¿Eliminar de todas formas?'))return;
+  if(leerRecibosPend()[id] && leerRecibosPend()[id].estado!=='sin_copia' && !confirm('⚠️ El recibo original de este gasto AÚN NO se ha subido a Drive; si lo eliminas se pierde. ¿Eliminar de todas formas?'))return;
   gastos=gastos.filter(g=>g.id!==id);
   delete fotos[id];
   origBorrar(id); { const p=leerRecibosPend(); if(p[id]){ delete p[id]; guardarRecibosPend(p); } }   // Drive no se toca
@@ -2691,8 +2692,8 @@ function editarGasto(id){
   const catOriginal=document.getElementById('f-cat');
   const catOptionsHtml=catOriginal?catOriginal.innerHTML:'';
   openModal('Editar Gasto',`
-    <div class="form-group"><label>Fecha</label><input type="date" id="e-fecha" value="${g.fecha}"></div>
-    <div class="form-group"><label>Contratista</label><input type="text" id="e-cont" value="${(g.contratista||'').replace(/"/g,'&quot;')}"></div>
+    <div class="form-group"><label>Fecha</label><input type="date" id="e-fecha" value="${escHtml(g.fecha)}"></div>
+    <div class="form-group"><label>Contratista</label><input type="text" id="e-cont" value="${escHtml(g.contratista||'')}"></div>
     <div class="form-group"><label>Categoría</label><select id="e-cat">${catOptionsHtml}</select></div>
     <div class="form-group"><label>Lote</label>
       <select id="e-lote">
@@ -3908,7 +3909,11 @@ async function driveDescargar(nombre, token, claveId){
   // El archivo EXISTE pero no se pudo leer: NO se devuelve null (eso haría creer que está vacío y un respaldo
   // lo sobrescribiría con menos datos). Se lanza error y el respaldo se aborta, visible y reintentable.
   if(!res.ok) throw new Error('no se pudo leer '+nombre+' en Drive (HTTP '+res.status+'); no se sobrescribe');
-  try{ return await res.json(); }catch(e){ throw new Error(nombre+' existe en Drive pero no se puede leer (contenido ilegible); no se sobrescribe'); }
+  let texto=null;
+  if(typeof res.text==='function'){ try{ texto=await res.text(); }catch(e){ throw new Error('no se pudo leer '+nombre+' en Drive (lectura interrumpida); no se sobrescribe'); } }
+  if(texto!==null && texto.trim()==='') return null;   // archivo vacío (0 bytes): no hay nada que perder, se trata como inexistente
+  try{ return texto!==null ? JSON.parse(texto) : await res.json(); }
+  catch(e){ throw new Error(nombre+' existe en Drive pero no se puede leer (contenido ilegible); no se sobrescribe. Revisa o borra ese archivo en Drive (tus datos siguen en este dispositivo y en la copia por dispositivo)'); }
 }
 
 const DRIVE_VERIF_KEY='a132_drive_verificado';
