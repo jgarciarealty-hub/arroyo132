@@ -95,6 +95,20 @@ const bufPC = leer('Downloads__arroyo132-datos__copia.json');
   const r0x = C.incorporarPerfilLocal(cen2, { gastos: [peaje(1), peaje(12)] }, { origen: 'pc' });
   test('multiplicidad: uno idéntico por id y otro con otro id → ninguno se añade', r0x.informe.identicos.length === 1 && r0x.informe.duplicadosOtroId.length === 1 && C.resumen(r0x.estado).gastos === 2, r0x.informe);
 
+  // 9. Cobertura adicional pedida por la revisión independiente
+  const refP = { driveId: 'ABCDEFGHIJ1', sha256: 'a'.repeat(64) }, refQ = { driveId: 'QRSTUVWXYZ2', sha256: 'b'.repeat(64) };
+  const fa = Object.assign(C.nuevoEstado(), { recibos: { 1: refP } }), fb = Object.assign(C.nuevoEstado(), { recibos: { 2: refQ } });
+  test('fusionar: las referencias de recibos de ambos lados se unen', Object.keys(C.fusionar(fa, fb).recibos).sort().join() === '1,2');
+  const verBase = C.migrarAV5({ version: 4, fecha: 'x', gastos: [{ id: 1, contratista: 'A', fecha: '2026-01-01', monto: 1 }] }, { origen: 'a' });
+  const verDos = C.guardarGasto(C.clon(verBase), { id: 1, contratista: 'A', fecha: '2026-01-01', monto: 2 }, 'a');
+  test('verificarCentral: una versión MENOR de un registro esperado se rechaza', C.verificarCentral(verBase, { esperado: verDos }).ok === false);
+  test('verificarCentral: acepta un estado válido y detecta un registro faltante', C.verificarCentral(verDos, { esperado: verBase }).ok === true && C.verificarCentral(C.nuevoEstado(), { esperado: verBase }).ok === false);
+  const borrado = C.borrarGasto(C.clon(verBase), 1, 'a'); const revivido = C.guardarGasto(C.clon(borrado), { id: 1, contratista: 'A', fecha: '2026-01-01', monto: 1 }, 'b');
+  test('guardarGasto sobre una lápida la revive con versión mayor (no hereda _del)', !revivido.gastos['1']._del && revivido.gastos['1']._v === borrado.gastos['1']._v + 1);
+  test('unirListas: no descarta elementos y no duplica por id', C.unirListas([{ id: 1 }, { id: 2 }], [{ id: 2 }, { id: 3 }]).map((x) => x.id).join() === '1,2,3');
+  const muchos = []; for (let i = 0; i < 300; i++) muchos.push({ tipo: 'x', id: i });
+  test('conflictos: se acotan a 200 y no se repiten', C.acotarConflictos(muchos).length === 200 && C.acotarConflictos([{ tipo: 'x', id: 1 }, { tipo: 'x', id: 1 }]).length === 1);
+
   console.log(`\n${pass} pasaron, ${fail} fallaron`);
   process.exit(fail ? 1 : 0);
 })();

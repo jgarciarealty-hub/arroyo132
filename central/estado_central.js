@@ -66,6 +66,8 @@
     }
     for (const k of SECCIONES) if (sal[k] === undefined && local && local[k] !== undefined) sal[k] = clon(local[k]);
     if (local && local.recibos && typeof local.recibos === 'object') sal.recibos = Object.assign({}, limpiarRecibos(local.recibos), sal.recibos || {});
+    for (const k of SECCIONES) if (Array.isArray(sal[k]) && local && Array.isArray(local[k])) sal[k] = unirListas(sal[k], local[k]);
+    sal.conflictos = acotarConflictos(sal.conflictos);
     return { estado: sal, informe };
   }
 
@@ -91,9 +93,26 @@
       if (!(igualContenido(ra, rb) && !!ra._del === !!rb._del)) sal.conflictos.push({ tipo: 'edicion_concurrente', id, ganador: gana ? rb._o : ra._o, perdedor: gana ? strip(ra) : strip(rb), fecha: new Date().toISOString() });
       if (gana) sal.gastos[id] = clon(rb);
     }
-    for (const k of SECCIONES) if (sal[k] === undefined && b[k] !== undefined) sal[k] = clon(b[k]);
+    for (const k of SECCIONES) {
+      if (sal[k] === undefined && b[k] !== undefined) sal[k] = clon(b[k]);
+      else if (Array.isArray(sal[k]) && Array.isArray(b[k])) sal[k] = unirListas(sal[k], b[k]);   // viajes, contratistas, docs, timeline: unión por id
+    }
+    sal.conflictos = acotarConflictos(sal.conflictos);
     sal.rev = Math.max(a.rev || 0, b.rev || 0);
     return sal;
+  }
+
+  // Unión de listas de objetos: por id si lo tienen; si no, por contenido. Nunca descarta un elemento.
+  function unirListas(a, b) {
+    const sal = a.slice(); const vistos = new Set(a.map((x) => (x && typeof x === 'object' && x.id !== undefined ? 'id:' + x.id : 'j:' + JSON.stringify(estable(x)))));
+    for (const x of b) { const k = x && typeof x === 'object' && x.id !== undefined ? 'id:' + x.id : 'j:' + JSON.stringify(estable(x)); if (!vistos.has(k)) { vistos.add(k); sal.push(clon(x)); } }
+    return sal;
+  }
+  // El registro de conflictos no crece sin límite ni repite el mismo conflicto.
+  function acotarConflictos(lista) {
+    const vistos = new Set(); const sal = [];
+    for (const c of lista || []) { const k = JSON.stringify(estable({ t: c.tipo, i: c.id, l: c.local && c.local.monto, c: c.central && c.central.monto, p: c.perdedor })); if (vistos.has(k)) continue; vistos.add(k); sal.push(c); }
+    return sal.slice(-200);
   }
 
   // --- Operaciones sobre registros (siempre suben la versión; borrar = lápida, nunca eliminación física)
@@ -171,5 +190,5 @@
     return a;
   }
 
-  return { nuevoEstado, migrarAV5, incorporarPerfilLocal, fusionar, guardarGasto, borrarGasto, vigentes, resumen, verificarCentral, importarMapaRecibos, limpiarRecibos, actualizar, instantaneaDiaria, almacenMemoria, claveContenido, strip, igualContenido, clon };
+  return { unirListas, acotarConflictos, nuevoEstado, migrarAV5, incorporarPerfilLocal, fusionar, guardarGasto, borrarGasto, vigentes, resumen, verificarCentral, importarMapaRecibos, limpiarRecibos, actualizar, instantaneaDiaria, almacenMemoria, claveContenido, strip, igualContenido, clon };
 });

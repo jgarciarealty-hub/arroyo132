@@ -35,8 +35,14 @@
       try { return JSON.parse(texto); } catch (e) { throw new Error(que + ' existe pero no se puede leer (contenido ilegible); no se sobrescribe'); }
     }
     async function revisiones(id) {
-      const r = await fetchFn(url('/drive/v3/files/' + id + '/revisions?fields=revisions(id,modifiedTime)&pageSize=200'), { headers: H });
-      return ((await json(r, 'historial de revisiones')).revisions) || [];
+      const todas = []; let pagina = null;
+      for (let i = 0; i < 50; i++) {                       // el historial puede pasar de una página
+        const r = await fetchFn(url('/drive/v3/files/' + id + '/revisions?fields=nextPageToken,revisions(id,modifiedTime)&pageSize=200' + (pagina ? '&pageToken=' + encodeURIComponent(pagina) : '')), { headers: H });
+        const j = await json(r, 'historial de revisiones');
+        todas.push(...(j.revisions || [])); pagina = j.nextPageToken;
+        if (!pagina) break;
+      }
+      return todas;
     }
     async function subir(id, texto) {
       const r = await fetchFn(url('/upload/drive/v3/files/' + id + '?uploadType=media'), { method: 'PATCH', headers: Object.assign({ 'Content-Type': 'application/json' }, H), body: texto });
@@ -52,13 +58,21 @@
     async function leer() {
       const meta = await buscar();
       if (!meta) return { estado: null, token: 'ausente' };
-      const estado = parsear(await contenido('/drive/v3/files/' + meta.id + '?alt=media', 'lectura del archivo central'), 'el archivo central');
+      const texto = await contenido('/drive/v3/files/' + meta.id + '?alt=media', 'lectura del archivo central');
+      // Un archivo creado pero nunca escrito (falló la primera subida): vacío y con una sola revisión → se reutiliza, no bloquea.
+      if ((texto == null || String(texto).trim() === '') && (await revisiones(meta.id)).length <= 1) return { estado: null, token: 'vacio:' + meta.id + ':' + meta.headRevisionId };
+      const estado = parsear(texto, 'el archivo central');
       return { estado, token: meta.headRevisionId };
     }
 
     async function escribir(estado, tokenEsperado) {
       let fileId, esperado = tokenEsperado;
-      if (tokenEsperado === 'ausente') {
+      if (typeof tokenEsperado === 'string' && tokenEsperado.startsWith('vacio:')) {
+        const [, idv, revv] = tokenEsperado.split(':');
+        const meta = await buscar();
+        if (!meta || meta.id !== idv || meta.headRevisionId !== revv) return { ok: false };
+        fileId = idv; esperado = 'ausente';
+      } else if (tokenEsperado === 'ausente') {
         if (await buscar()) return { ok: false };
         fileId = await crear();
         if ((await listar()).length > 1) throw new Error('dos dispositivos crearon «' + nombre + '» a la vez; no se elige ninguno automáticamente: resolver a mano');
@@ -72,15 +86,17 @@
         const texto = JSON.stringify(actual);
         await subir(fileId, texto);
         const revs = await revisiones(fileId);
-        const cabeza = revs[revs.length - 1];
+        const metaTras = await buscar();
+        const cabeza = (metaTras && revs.find((r) => r.id === metaTras.headRevisionId)) || revs[revs.length - 1];
         if (!cabeza) throw new Error('el archivo central quedó sin revisiones');
+        const posCabeza = revs.findIndex((r) => r.id === cabeza.id);
         // Verificación inmutable: el contenido de NUESTRA revisión debe ser exactamente lo escrito.
         const guardado = await contenido('/drive/v3/files/' + fileId + '/revisions/' + cabeza.id + '?alt=media', 'verificación de la revisión escrita');
         if (guardado !== texto) throw new Error('la verificación de la escritura falló: Drive no guardó lo enviado');
         // ¿Se coló otro dispositivo entre la comprobación y la escritura?
         const idxEsperado = esperado === 'ausente' ? -1 : revs.findIndex((r) => r.id === esperado);
         if (esperado !== 'ausente' && idxEsperado < 0) throw new Error('la revisión esperada ya no existe en el historial; se reintenta con una lectura nueva');
-        const ajenas = revs.slice(idxEsperado + 1, revs.length - 1).filter((r) => esperado !== 'ausente' || r.id !== revs[0].id);
+        const ajenas = revs.slice(idxEsperado + 1, posCabeza).filter((r) => esperado !== 'ausente' || r.id !== revs[0].id);
         if (!ajenas.length) return { ok: true, token: cabeza.id, estado: actual };
         // Recuperación: fusionar lo que escribieron otros y reescribir.
         let fusion = actual;

@@ -55,13 +55,42 @@ const mk = (id, c, f, m) => ({ id, contratista: c, fecha: f, monto: m, categoria
   // 7. Archivo vacío o ilegible: NO se trata como inexistente y NO se escribe
   const d3 = driveSimulado(); const Z = d3.dispositivo();
   d3.archivos.set('F1', { id: 'F1', name: D.NOMBRE_CENTRAL, t: 1, revs: [{ id: 'r1', text: '' }] });
+  // Revisión #: un archivo creado y NUNCA escrito (falló la primera subida) se reutiliza; no bloquea a nadie.
+  const lv = await Z.leer();
+  test('central vacío con UNA revisión (primera subida fallida) → se reutiliza, no bloquea', lv.estado === null && /^vacio:/.test(lv.token), lv.token);
+  const rvac = await C.actualizar(Z, () => base);
+  test('central vacío: la escritura siguiente lo llena sin crear un segundo archivo', d3.archivosCentrales() === 1 && C.resumen(d3.estado()).gastos === 2 && rvac.estado.rev === 1);
+  const parches0 = d3.llamadas.filter((x) => x.startsWith('PATCH')).length;
+  d3.archivos.get('F1').revs.push({ id: 'rx', text: '' });
   let e3 = null; try { await Z.leer(); } catch (e) { e3 = e.message; }
-  test('central vacío → error (no se confunde con "no existe")', /vacío/.test(e3 || ''), e3);
+  test('central vacío con VARIAS revisiones → error (no se confunde con "no existe")', /vacío/.test(e3 || ''), e3);
   d3.archivos.get('F1').revs.push({ id: 'r2', text: '{"gastos": [' });
   let e4 = null; try { await Z.leer(); } catch (e) { e4 = e.message; }
   test('central ilegible → error', /ilegible/.test(e4 || ''), e4);
   const nPatch = d3.llamadas.filter((x) => x.startsWith('PATCH')).length;
-  test('ante un central ilegible no se escribió nada', nPatch === 0);
+  test('ante un central ilegible no se escribió nada', nPatch === parches0);
+
+  // 7b. Primera subida con HTTP 500: el archivo queda vacío y el reintento lo reutiliza (no queda bloqueado)
+  const d7 = driveSimulado(); const P = d7.dispositivo(); d7.patch500 = 1;
+  let e7b = null; try { await C.actualizar(P, () => base); } catch (e) { e7b = e.message; }
+  const rp = await C.actualizar(P, () => base);
+  test('primera subida fallida → el reintento funciona y hay un solo archivo central', /HTTP 500/.test(e7b || '') && d7.archivosCentrales() === 1 && C.resumen(d7.estado()).gastos === 2 && rp.intentos === 1, { e7b, n: d7.archivosCentrales() });
+
+  // 7c. Historial largo (más de una página de revisiones): la cabeza y la recuperación siguen correctas
+  const d8 = driveSimulado(); d8.tamPagina = 50; const L = d8.dispositivo(); const L2 = d8.dispositivo();
+  await C.actualizar(L, () => base);
+  for (let i = 0; i < 130; i++) await C.actualizar(L, (e) => C.guardarGasto(e, mk(1000 + i, 'N' + i, '2026-05-01', 1), 'a'));
+  d8.antesDeSubir = async () => { await C.actualizar(L2, (e) => C.guardarGasto(e, mk(5000, 'Otro dispositivo', '2026-05-02', 2), 'b')); };
+  await C.actualizar(L, (e) => C.guardarGasto(e, mk(5001, 'Yo', '2026-05-02', 3), 'a'));
+  const fL = d8.estado();
+  test('historial de 130+ revisiones (varias páginas): ninguna escritura falla y la carrera final se recupera', C.resumen(fL).gastos === 2 + 130 + 2 && !!fL.gastos['5000'] && !!fL.gastos['5001'], C.resumen(fL));
+
+  // 7d. Carrera que añade un VIAJE (sección distinta de gastos): la unión por id lo conserva
+  const d9 = driveSimulado(); const V1 = d9.dispositivo(), V2 = d9.dispositivo();
+  await C.actualizar(V1, () => Object.assign(C.clon(base), { viajes: [{ id: 'v1', monto: 28.13 }] }));
+  d9.antesDeSubir = async () => { await C.actualizar(V2, (e) => Object.assign(e, { viajes: e.viajes.concat([{ id: 'v2', monto: 28.13 }]) })); };
+  await C.actualizar(V1, (e) => Object.assign(e, { viajes: e.viajes.concat([{ id: 'v3', monto: 27.95 }]) }));
+  test('carrera sobre viajes: v1, v2 y v3 se conservan (unión por id)', d9.estado().viajes.map((v) => v.id).sort().join() === 'v1,v2,v3', d9.estado().viajes);
 
   // 8. Drive guarda algo distinto de lo enviado → la verificación falla (no hay "ok")
   const d4 = driveSimulado(); const W = d4.dispositivo(); d4.recortar = true;

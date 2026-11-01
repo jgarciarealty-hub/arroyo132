@@ -22,7 +22,7 @@ function driveSimulado() {
       const f = s.archivos.get(mm[1]); let t = o.body; if (s.recortar) t = t.slice(0, t.length - 5);
       f.revs.push({ id: rid(), text: t }); return R(200, { id: f.id });
     }
-    if (m === 'GET' && (mm = url.pathname.match(/^\/drive\/v3\/files\/([^/]+)\/revisions$/))) return R(200, { revisions: s.archivos.get(mm[1]).revs.map((r) => ({ id: r.id })) });
+    if (m === 'GET' && (mm = url.pathname.match(/^\/drive\/v3\/files\/([^/]+)\/revisions$/))) { const todas = s.archivos.get(mm[1]).revs.map((r) => ({ id: r.id })); const tam = Math.min(Number(url.searchParams.get('pageSize') || 200), s.tamPagina || 200); const ini = Number(url.searchParams.get('pageToken') || 0); const pag = todas.slice(ini, ini + tam); return R(200, Object.assign({ revisions: pag }, ini + tam < todas.length ? { nextPageToken: String(ini + tam) } : {})); }
     if (m === 'GET' && (mm = url.pathname.match(/^\/drive\/v3\/files\/([^/]+)\/revisions\/([^/]+)$/))) return R(200, s.archivos.get(mm[1]).revs.find((r) => r.id === mm[2]).text);
     if (m === 'GET' && (mm = url.pathname.match(/^\/drive\/v3\/files\/([^/]+)$/)) && url.searchParams.get('alt') === 'media') { const f = s.archivos.get(mm[1]); return R(200, f.revs[f.revs.length - 1].text); }
     return R(404, {});

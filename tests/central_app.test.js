@@ -17,7 +17,7 @@ function extraer(nombre) {
   for (; k < script.length; k++) { if (script[k] === '{') n++; else if (script[k] === '}') { n--; if (!n) break; } }
   return script.slice(ini, k + 1);
 }
-const NOMBRES = ['modoCentral', 'centralLeerBase', 'centralLocal', 'centralMarcar', 'centralCambiosPendientes', 'centralMutador', 'centralAdoptar', 'centralAlmacen', 'centralToken', 'centralSincronizar', 'centralProgramar', 'centralTexto', 'centralActivar', 'leerRecibos', 'leerRecibosPend', 'guardarRecibos', 'escribirVerificado', 'limpiarRecibos', 'actualizarPend'];
+const NOMBRES = ['modoCentral', 'centralLeerBase', 'centralLocal', 'centralMarcar', 'centralCambiosPendientes', 'centralMutador', 'centralAdoptar', 'centralAlmacen', 'centralToken', 'centralSincronizar', 'centralProgramar', 'centralTexto', 'centralActivar', 'leerRecibos', 'leerRecibosPend', 'guardarRecibos', 'escribirVerificado', 'limpiarRecibos', 'actualizarPend', 'centralFoto', 'centralHayCorrupcion', 'centralRevertir', 'restaurarDesdeDrive', 'importarBackup', 'escHtml'];
 
 function dispositivo(nombre, drive, { gastos = [], viajes = [] } = {}) {
   const alm = new Map([['tok', 'T']]);
@@ -25,7 +25,7 @@ function dispositivo(nombre, drive, { gastos = [], viajes = [] } = {}) {
   const ctx = vm.createContext({
     console, JSON, Math, Date, Object, Array, Set, Map, Promise, Error, String, Number, setTimeout, clearTimeout, URL,
     A132Central: C, A132Drive: D,
-    localStorage: { getItem: (k) => (alm.has(k) ? alm.get(k) : null), setItem: (k, v) => alm.set(k, String(v)), removeItem: (k) => alm.delete(k) },
+    localStorage: { getItem: (k) => (alm.has(k) ? alm.get(k) : null), setItem: (k, v) => alm.set(k, String(v)), removeItem: (k) => alm.delete(k), get length() { return alm.size; }, key: (i) => [...alm.keys()][i] },
     deviceId: () => nombre, driveTokenValid: () => true, DRIVE_TOKEN_KEY: 'tok', asegurarTokenDrive: async () => 'T',
     fetchConTiempo: (u, o) => drive.fetch(u, o), renderDashboard() {}, renderHistorial() {}, refrescarPanelRespaldo() {},
     alert: (m) => avisos.push(String(m)), confirm: (m) => { confirmaciones.push(String(m)); return true; },
@@ -70,7 +70,7 @@ const NCEL = cel.gastos.length, SUMA = Math.round(cel.gastos.reduce((s, g) => s 
   // 2. La computadora (solo semilla) se incorpora SIN el 59/$8,528.53
   await compu.activar();
   test('computadora: ve los mismos ' + NCEL + ' gastos y $' + SUMA, compu.resumen().gastos === NCEL && compu.resumen().suma === SUMA, compu.resumen());
-  test('computadora: la confirmación explicó duplicados/conflictos antes de activar', /Ya existe la fuente central/.test(compu.confirmaciones[0] || '') && /con importe distinto/.test(compu.confirmaciones[0] || ''), compu.confirmaciones[0]);
+  test('computadora: la confirmación explicó duplicados/conflictos antes de activar', /Ya existe la fuente central/.test(compu.confirmaciones[0] || '') && /con el mismo id pero otro contenido/.test(compu.confirmaciones[0] || ''), compu.confirmaciones[0]);
   const ids = (d) => d.gastos().map((g) => String(g.id)).sort().join();
   test('celular y computadora tienen exactamente los mismos registros e importes', ids(movil) === ids(compu) && movil.gastos().every((g) => compu.gastos().find((x) => String(x.id) === String(g.id)).monto === g.monto));
   test('computadora: su perfil anterior se guardó para poder revertir', !!compu.alm.get('a132_antes_central') && JSON.parse(compu.alm.get('a132_antes_central')).gastos.length === pc.gastos.length);
@@ -128,6 +128,66 @@ const NCEL = cel.gastos.length, SUMA = Math.round(cel.gastos.reduce((s, g) => s 
   const d2 = driveSimulado(); const nuevo = dispositivo('tablet', d2, { gastos: [mk(1, 'X', '2026-01-01', 1)] }); d2.caido = true;
   await nuevo.activar();
   test('activación sin conexión: avisa, no activa, no cambia los datos', nuevo.flag() === undefined && nuevo.resumen().gastos === 1 && nuevo.avisos.some((a) => /No se activó/.test(a)), nuevo.avisos);
+
+
+  // ═══ Revisión independiente: B1, B2, I4–I7 ═══
+  // B1: una edición/alta hecha MIENTRAS se sincroniza no se pierde
+  const dB1 = driveSimulado(); const base1 = [mk(1, 'A', '2026-01-01', 10), mk(2, 'B', '2026-01-02', 20), mk(3, 'C', '2026-01-03', 30)];
+  const m1 = dispositivo('m1', dB1, { gastos: base1 }); const p1 = dispositivo('p1', dB1, { gastos: [] });
+  await m1.activar();
+  m1.anadir(mk(50, 'Pendiente', '2026-02-01', 1)); m1.R('gastos.find(g=>g.id===2).monto=21');
+  dB1.antesDeSubir = async () => { m1.anadir(mk(99, 'Durante la sincronización', '2026-02-02', 2)); m1.R('gastos.find(g=>g.id===2).monto=222'); };
+  await m1.sync(); await new Promise((res) => setTimeout(res, 900));   // la segunda vuelta automática reenvía lo hecho durante la primera
+  test('B1: lo registrado durante la sincronización se conserva en el dispositivo', m1.gastos().some((g) => g.id === 99) && m1.gastos().find((g) => g.id === 2).monto === 222, m1.gastos().map((g) => g.id + ':' + g.monto));
+  test('B1: y llega al central en la vuelta siguiente', dB1.estado().gastos['99'] && dB1.estado().gastos['2'].monto === 222 && dB1.estado().gastos['50'], Object.keys(dB1.estado().gastos));
+
+  // B2: un dispositivo con gastos vacíos/dañados NO borra el central ni a los demás
+  const dB2 = driveSimulado(); const cel2 = dispositivo('cel2', dB2, { gastos: cel.gastos, viajes: cel.viajes || [] }); const pc2 = dispositivo('pc2', dB2, { gastos: [] });
+  await cel2.activar(); await pc2.activar();
+  pc2.R('gastos = []');   // perfil vacío/dañado con la bandera puesta
+  await pc2.sync();
+  const vigentes2 = C.resumen(dB2.estado());
+  test('B2: un dispositivo vacío no borra el central (' + NCEL + ' gastos siguen vigentes, 0 lápidas)', vigentes2.gastos === NCEL && vigentes2.lapidas === 0, vigentes2);
+  test('B2: el error es visible y explica por qué no se envió', /borraría/.test(pc2.R('centralTexto()')), pc2.R('centralTexto()'));
+  await cel2.sync();
+  test('B2: el otro dispositivo sigue viendo todos sus gastos', cel2.resumen().gastos === NCEL);
+  pc2.alm.set('a132_gastos_corrupto_1', 'xx'); pc2.R('gastos = ' + JSON.stringify(cel.gastos.slice(0, 3)));
+  const llamadasAntes = dB2.llamadas.length; await pc2.sync();
+  test('B2: con una copia ilegible guardada la sincronización se detiene sin tocar Drive', /ilegible/.test(pc2.R('centralTexto()')) && dB2.llamadas.length === llamadasAntes, pc2.R('centralTexto()'));
+
+  // I4: la primera copia previa nunca se pisa y existe reversión local
+  const dI4 = driveSimulado(); const a4 = dispositivo('a4', dI4, { gastos: base1 });
+  await a4.activar(); const primera = a4.alm.get('a132_antes_central');
+  a4.anadir(mk(77, 'Después', '2026-03-01', 7)); await a4.sync();
+  await a4.activar();   // reactivar
+  test('I4: la primera copia previa se conserva intacta al reactivar', a4.alm.get('a132_antes_central') === primera && !!a4.alm.get('a132_antes_central_reciente'));
+  a4.R('centralRevertir()');
+  test('I4: «volver a la copia previa» restaura los datos anteriores, apaga la bandera y no toca Drive', a4.resumen().gastos === base1.length && a4.flag() === undefined && !!dI4.estado().gastos['77']);
+
+  // I5: bandera puesta pero sin base local → no se escribe; se reconstruye desde el central con copia local previa
+  const dI5 = driveSimulado(); const a5 = dispositivo('a5', dI5, { gastos: base1 }); const b5 = dispositivo('b5', dI5, { gastos: [] });
+  await a5.activar(); await b5.activar();
+  b5.quitar(3); await b5.sync(); await a5.sync();   // el gasto 3 queda borrado (lápida)
+  a5.alm.delete('a132_central_base'); a5.R("gastos.find(g=>g.id===1).monto=999");   // base perdida + cambio local
+  const revI5 = dI5.estado().rev; await a5.sync();
+  test('I5: sin base no se escribe en el central (ni resucita lo borrado ni pisa importes)', dI5.estado().rev === revI5 && dI5.estado().gastos['3']._del === true && dI5.estado().gastos['1'].monto === 10);
+  test('I5: se reconstruye desde el central y se guarda la copia local previa', a5.gastos().find((g) => g.id === 1).monto === 10 && !a5.gastos().some((g) => g.id === 3) && !!a5.alm.get('a132_antes_central_reciente'));
+
+  // I6: acciones de la copia v4 desactivadas con la fuente central activa
+  const nAntes = dI5.llamadas.length; await a5.R('restaurarDesdeDrive()'); a5.R('importarBackup()');
+  test('I6: «Traer datos desde Drive» e «Importar respaldo» se desactivan con la fuente central activa', a5.avisos.filter((x) => /desactivada/.test(x)).length === 2 && dI5.llamadas.length === nAntes, a5.avisos.slice(-2));
+
+  // I7: no crear el central desde un dispositivo que solo tiene las semillas
+  const dI7 = driveSimulado(); const sem = dispositivo('compu-sem', dI7, { gastos: pc.gastos.filter((g) => g.id >= 700001 && g.id <= 700019) });
+  await sem.activar();
+  test('I7: un dispositivo con solo las semillas no puede crear el central', dI7.archivos.size === 0 && sem.flag() === undefined && sem.avisos.some((a) => /solo tiene los recibos sembrados/.test(a)), sem.avisos);
+
+  // Borrado vs edición simultáneos: gana la edición y queda registrado
+  const dBE = driveSimulado(); const x1 = dispositivo('x1', dBE, { gastos: base1 }); const x2 = dispositivo('x2', dBE, { gastos: [] });
+  await x1.activar(); await x2.activar();
+  x1.quitar(2); x2.editar(2, { descripcion: 'editado en x2' });
+  await x2.sync(); await x1.sync(); await x2.sync();
+  test('borrado vs edición simultáneos: se conserva la edición y queda registrado', dBE.estado().gastos['2']._del !== true && dBE.estado().conflictos.some((c) => String(c.id) === '2' && c.tipo === 'borrado_vs_edicion'), dBE.estado().conflictos);
 
   console.log(`\n${pass} pasaron, ${fail} fallaron`);
   process.exit(fail ? 1 : 0);
