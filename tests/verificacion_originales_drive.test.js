@@ -72,12 +72,12 @@ const ctx = vm.createContext({
   document: { getElementById: () => null },
   DRIVE_TOKEN_KEY: 'tok', driveTokenValid: () => true, asegurarTokenDrive: async () => 'T',
   marcarRespaldoPendiente() { ctx.__pend++; }, backupToDrive() {}, __pend: 0,
-  estadoRespaldoTexto: () => '',
+  estadoRespaldoTexto: () => '', gastos: [], origClaves: async () => [...idb.keys()],
   origLeer: async id => idb.get(String(id)) || null,
   origBorrar: async id => { idb.delete(String(id)); },
   origGuardar: async (id, a) => { idb.set(String(id), { blob: a, tipo: a.type }); return true; },
 });
-const nombres = ['md5Hex', 'sha256Hex', 'extensionDe', 'verificarCargaOriginal', 'driveCarpetaRecibos', 'driveSubirOriginal', 'procesarColaOriginales', 'refrescarPanelRespaldo', 'registrarOriginalNuevo', 'textoEstadoOriginal', 'leerRecibos', 'leerRecibosPend', 'guardarRecibos', 'guardarRecibosPend', 'escribirVerificado', 'actualizarPend', 'escHtml', 'fetchConTiempo'];
+const nombres = ['md5Hex', 'sha256Hex', 'extensionDe', 'verificarCargaOriginal', 'driveCarpetaRecibos', 'driveSubirOriginal', 'procesarColaOriginales', 'refrescarPanelRespaldo', 'registrarOriginalNuevo', 'textoEstadoOriginal', 'leerRecibos', 'leerRecibosPend', 'guardarRecibos', 'guardarRecibosPend', 'escribirVerificado', 'actualizarPend', 'escHtml', 'fetchConTiempo', 'limpiarRecibos'];
 vm.runInContext("const RECIBOS_KEY='a132_recibos', RECIBOS_PEND_KEY='a132_recibos_pend', RECIBOS_CARPETA_KEY='a132_recibos_carpeta', RECIBOS_CARPETA_NOMBRE='Arroyo 132 — Recibos originales'; const DRIVE_CAMPOS_ARCHIVO='id,name,size,md5Checksum,webViewLink,appProperties'; let _colaOriginalesEnCurso=false;\n" + nombres.map(extraer).join('\n'), ctx);
 const R = n => vm.runInContext(n, ctx);
 const fotoFalsa = (bytes, name = 'r.jpg', type = 'image/jpeg') => new File([bytes], name, { type });
@@ -214,6 +214,33 @@ const fotoFalsa = (bytes, name = 'r.jpg', type = 'image/jpeg') => new File([byte
   test('2ª rev: entrada null en la cola no rompe ni bloquea las demás', sinError && !!R('leerRecibos')()[4]);
   test('2ª rev: sin_copia no cuenta como pendiente de subir', script.includes("p.estado!=='error'&&p.estado!=='sin_copia'"));
   test('2ª rev: el detalle del gasto escapa todos sus campos', ['fecha', 'categoria', 'contratista', 'tel', 'lote', 'metodo', 'cuenta'].every(k => script.includes('${escHtml(g.' + k + ')}')));
+
+
+  // 3ª revisión: huérfano (copia temporal sin pendiente ni referencia) se re-encola y se sube
+  alm.clear(); alm.set('tok', 'T'); idb.clear(); ctx.gastos.length = 0; ctx.gastos.push({ id: 70 });
+  idb.set('70', { blob: fotoFalsa(crypto.randomBytes(321)), tipo: 'image/jpeg' });
+  await R('procesarColaOriginales')();
+  test('3ª rev (I-2): copia temporal huérfana se re-encola, se sube y se verifica', !!R('leerRecibos')()[70] && !idb.has('70') && !R('leerRecibosPend')()[70]);
+  // copia de un gasto que ya no existe: no se inventa un pendiente
+  idb.set('71', { blob: fotoFalsa(crypto.randomBytes(100)), tipo: 'image/jpeg' });
+  await R('procesarColaOriginales')();
+  test('3ª rev: copia sin gasto asociado no se sube ni se borra', idb.has('71') && !R('leerRecibos')()[71]);
+  // M-3: tope de reintentos automáticos
+  alm.clear(); alm.set('tok', 'T'); idb.clear(); ctx.gastos.length = 0;
+  idb.set('72', { blob: fotoFalsa(crypto.randomBytes(100)), tipo: 'image/jpeg' });
+  R('actualizarPend')(72, { estado: 'error', intentos: 5, ultimoError: 'x' });
+  const antesLlamadas = drive.llamadas.length;
+  await R('procesarColaOriginales')();
+  test('3ª rev (M-3): tras 5 intentos fallidos la cola automática deja de reintentar', drive.llamadas.length === antesLlamadas && idb.has('72'));
+  test('3ª rev (M-3): el reintento manual reinicia los intentos', script.includes("x.estado='pendiente'; x.intentos=0;"));
+  // M-6: referencias importadas basura se descartan
+  const L = R('limpiarRecibos');
+  test('3ª rev (M-6): limpiarRecibos descarta arreglos, nulos y entradas sin driveId/sha256', Object.keys(L([1, 2])).length === 0 && Object.keys(L({ a: null, b: 'x', c: { driveId: 'z' }, d: { driveId: 'z', sha256: 'h' } })).join() === 'd' && Object.keys(L(null)).length === 0);
+  // I-3: escape en historial y edición
+  const sitios = ['${escHtml(g.contratista)}', "'+escHtml(g.tel)+'", "'+escHtml(g.cuenta)+'", '<textarea id="e-desc">${escHtml(g.descripcion||\'\')}</textarea>'];
+  test('3ª rev (I-3): historial, resumen y edición escapan contratista/teléfono/cuenta/descripción', sitios.every(s => script.includes(s)), sitios.filter(s => !script.includes(s)));
+  test('3ª rev (M-8): eliminar un gasto con original pendiente pide confirmación extra', script.includes('AÚN NO se ha subido a Drive'));
+  test('3ª rev (B-1): driveDescargar distingue "no existe" de "no se pudo leer"', script.includes("no se pudo leer '+nombre+' en Drive") && script.includes('contenido ilegible); no se sobrescribe'));
 
   // Subida colgada: el tiempo máximo evita bloquear la cola
   test('la cola usa fetch con tiempo máximo (AbortController)', script.includes('new AbortController()') && script.includes('await fetchConTiempo(') && !extraer('driveSubirOriginal').includes('await fetch('));

@@ -51,6 +51,9 @@ const control = {
   crearOk: true,           // si false, crear archivo nuevo falla
   archivoRoto: false,      // si true, la descarga devuelve texto no-JSON
   archivoInexistente: false,
+  fallaLecturaN: 0,        // las próximas N descargas alt=media devuelven HTTP 503
+  fallaLecturaIlegible: 0, // las próximas N descargas devuelven 200 con contenido no-JSON
+  recortaGastosEn: null,   // si es un nombre de archivo: Drive guarda ese archivo con UN gasto menos (escritura que no se persiste bien)
   ia: { status: 200, texto: '{"fecha":"2026-05-05","monto":12.34,"contratista":"Proveedor"}', lanza: false },
 };
 const llamadas = [];
@@ -74,6 +77,7 @@ const fetchStub = async (url, opts) => {
     const f = drive.porId.get(id);
     if (!f) return { ok: false, status: 404, json: async () => ({}) };
     f.contenido = o.body;
+    if (control.recortaGastosEn && f.nombre === control.recortaGastosEn) { const j = JSON.parse(o.body); j.gastos = j.gastos.slice(0, -1); f.contenido = JSON.stringify(j); }
     return { ok: true, status: 200, json: async () => ({ id }) };
   }
   // Buscar por nombre
@@ -86,6 +90,8 @@ const fetchStub = async (url, opts) => {
   }
   // Descargar contenido
   if (u.includes('alt=media')) {
+    if (control.fallaLecturaN > 0) { control.fallaLecturaN--; return { ok: false, status: 503, json: async () => ({}) }; }
+    if (control.fallaLecturaIlegible > 0) { control.fallaLecturaIlegible--; return { ok: true, status: 200, json: async () => { throw new Error('no es JSON'); } }; }
     if (control.archivoInexistente) return { ok: false, status: 404, json: async () => ({}) };
     const id = u.match(/files\/([^?]+)\?/)[1];
     const f = drive.porId.get(id);
@@ -394,6 +400,51 @@ const probe = `
   test('ADVERSARIO (corte durante el análisis): el formulario manual queda disponible', document.getElementById('reg-form').style.display === 'block');
   test('ADVERSARIO (corte durante el análisis): la app avisa y no se queda colgada', document.getElementById('aiStatus').textContent.length > 0);
   control.ia = { status: 200, texto: '{"monto":0}', lanza: false };
+
+
+  // ── 10. REVISIÓN INDEPENDIENTE #3: el incidente original no puede repetirse ──
+  // Un dispositivo con SOLO los 11 gastos sembrados respalda sobre un archivo de Drive con 61.
+  await calma();
+  driveReiniciar();
+  const semilla = []; for (let i = 0; i < 11; i++) semilla.push({ id: 700001 + i, fecha: '2026-04-15', contratista: 'Sembrado ' + i, tel: '', categoria: 'Electricidad', lote: 'Compartido', metodo: 'efectivo', monto: 100 + i, descripcion: 'semilla ' + i });
+  const propios50 = []; for (let i = 0; i < 50; i++) propios50.push({ id: 1780000000000 + i, fecha: '2026-05-10', contratista: 'Propio ' + i, tel: '', categoria: 'Otros', lote: 'Compartido', metodo: 'efectivo', monto: 200 + i, descripcion: 'p' + i });
+  const archivo61 = { version: 4, fecha: '2026-11-01T04:59:14Z', dispositivo: 'celular', gastos: semilla.concat(propios50), fotos: {}, viajes: [] };
+  gastos = semilla.map(g => Object.assign({}, g));
+  const cuenta61 = () => (driveLeer('arroyo132-datos.json') || { gastos: [] }).gastos.length;
+  drivePoner('arroyo132-datos.json', archivo61);
+  await backupToDrive(false);
+  test('INCIDENTE: dispositivo solo-semilla sobre 61 con lectura correcta → Drive conserva 61', cuenta61() === 61, cuenta61());
+
+  for (const [modo, etiqueta] of [['fallaLecturaN', 'HTTP 503'], ['fallaLecturaIlegible', 'contenido ilegible']]) {
+    drivePoner('arroyo132-datos.json', archivo61);
+    control[modo] = 1;
+    llamadas.length = 0;
+    await backupToDrive(false);
+    test('INCIDENTE (B-1): lectura del combinado falla (' + etiqueta + ') → NO se sobrescribe, Drive sigue con 61', cuenta61() === 61, cuenta61());
+    test('INCIDENTE (B-1): ' + etiqueta + ' → el respaldo queda pendiente y visible (no "ok")', almacen.get('a132_drive_pendiente') === '1');
+    test('INCIDENTE (B-1): no se hizo ninguna escritura sobre el combinado', !llamadas.some(c => c.metodo === 'PATCH' && /upload/.test(c.url) && c.cuerpo && String(c.cuerpo).includes('"gastos"') && cuenta61() !== 61));
+    control[modo] = 0;
+  }
+  // Guarda de no-regresión: una fusión que pierde gastos NO sube nada (mutación: quitar la guarda hace fallar esto)
+  drivePoner('arroyo132-datos.json', archivo61);
+  const fusionOriginal = fusionarEstado;
+  fusionarEstado = (l, r) => { const x = fusionOriginal(l, r); x.gastos = x.gastos.slice(0, 5); return x; };
+  await backupToDrive(false);
+  fusionarEstado = fusionOriginal;
+  test('GUARDA: si el combinado perdiera gastos, no se sube y Drive sigue con 61', cuenta61() === 61, cuenta61());
+  test('GUARDA: el intento queda registrado como FALLO en la bitácora', (() => { const l = JSON.parse(almacen.get('a132_respaldo_log') || '[]'); return l.length && l[l.length - 1].resultado === 'FALLO' && /perdería/.test(l[l.length - 1].motivo || ''); })(), almacen.get('a132_respaldo_log'));
+  // Verificación por relectura: si Drive guarda MENOS de lo escrito, no se declara éxito (mutación: quitar la verificación hace fallar esto)
+  drivePoner('arroyo132-datos.json', archivo61);
+  almacen.delete('a132_drive_verificado');
+  control.recortaGastosEn = 'arroyo132-datos.json';
+  await backupToDrive(false);
+  control.recortaGastosEn = null;
+  test('VERIFICACIÓN: Drive guarda menos gastos de los escritos → NO hay éxito (pendiente, sin sello de verificado)', almacen.get('a132_drive_pendiente') === '1' && !almacen.get('a132_drive_verificado'));
+  test('VERIFICACIÓN: queda en la bitácora como FALLO con el motivo', (() => { const l = JSON.parse(almacen.get('a132_respaldo_log') || '[]'); return l[l.length - 1].resultado === 'FALLO' && /verificación/.test(l[l.length - 1].motivo || ''); })());
+  // Sin fallos: el respaldo vuelve a verificarse
+  drivePoner('arroyo132-datos.json', archivo61);
+  await backupToDrive(false);
+  test('tras normalizarse Drive, el respaldo se verifica y deja el sello', !!almacen.get('a132_drive_verificado') && almacen.get('a132_drive_pendiente') === undefined);
 
   // ── 9. Red de seguridad local ──
   test('exportarBackup no lanza', (() => { try { exportarBackup(); return true; } catch (e) { return false; } })());

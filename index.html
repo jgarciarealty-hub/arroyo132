@@ -1798,8 +1798,8 @@ function renderDashboard(){
   document.getElementById('recent-list').innerHTML=rec.length?rec.map(g=>`
     <div style="display:flex;justify-content:space-between;align-items:center;padding:9px 0;border-bottom:1px solid rgba(255,255,255,0.04)">
       <div>
-        <div style="font-size:13px">${g.categoria} <span class="badge badge-${g.lote==='132A'?'A':g.lote==='132B'?'B':'C'}">${g.lote}</span></div>
-        <div style="font-size:11px;color:var(--gray);margin-top:2px">${g.contratista} · ${g.fecha}</div>
+        <div style="font-size:13px">${escHtml(g.categoria)} <span class="badge badge-${g.lote==='132A'?'A':g.lote==='132B'?'B':'C'}">${escHtml(g.lote)}</span></div>
+        <div style="font-size:11px;color:var(--gray);margin-top:2px">${escHtml(g.contratista)} · ${escHtml(g.fecha)}</div>
       </div>
       <div class="mono" style="color:var(--gold)">${fmt(g.monto)}</div>
     </div>`).join(''):'<div class="empty"><div class="empty-icon">📄</div>Sin registros</div>';
@@ -2230,6 +2230,13 @@ async function origLeer(id){
     db.close(); return r;
   }catch(e){ return undefined; }   // error de lectura (transitorio): distinto de null = no existe
 }
+async function origClaves(){
+  try{
+    const db=await origAbrir();
+    const ks=await new Promise((res,rej)=>{ const rq=db.transaction(ORIG_STORE,'readonly').objectStore(ORIG_STORE).getAllKeys(); rq.onsuccess=()=>res(rq.result||[]); rq.onerror=()=>rej(rq.error); });
+    db.close(); return ks.map(String);
+  }catch(e){ return null; }
+}
 async function origBorrar(id){
   try{
     const db=await origAbrir();
@@ -2250,6 +2257,7 @@ async function origBorrar(id){
 //     (pendiente / error); la copia temporal se borra únicamente DESPUÉS de verificar.
 const RECIBOS_KEY='a132_recibos', RECIBOS_PEND_KEY='a132_recibos_pend', RECIBOS_CARPETA_KEY='a132_recibos_carpeta';
 const RECIBOS_CARPETA_NOMBRE='Arroyo 132 — Recibos originales';
+function limpiarRecibos(o){ const s={}; if(o && typeof o==='object' && !Array.isArray(o)) Object.keys(o).forEach(k=>{ const v=o[k]; if(v && typeof v==='object' && typeof v.driveId==='string' && typeof v.sha256==='string') s[k]=v; }); return s; }
 function leerRecibos(){ try{ const o=JSON.parse(localStorage.getItem(RECIBOS_KEY)||'{}'); return (o&&typeof o==='object')?o:{}; }catch(e){ return {}; } }
 function leerRecibosPend(){ try{ const o=JSON.parse(localStorage.getItem(RECIBOS_PEND_KEY)||'{}'); return (o&&typeof o==='object')?o:{}; }catch(e){ return {}; } }
 function escribirVerificado(k,o){ try{ const s=JSON.stringify(o); localStorage.setItem(k,s); return localStorage.getItem(k)===s; }catch(e){ return false; } }
@@ -2371,9 +2379,14 @@ let _colaOriginalesEnCurso=false;
 async function procesarColaOriginales(){
   if(_colaOriginalesEnCurso) return; _colaOriginalesEnCurso=true;
   try{
+    // Reconciliación: una copia temporal sin pendiente ni referencia (p. ej. falló la escritura de la cola) se vuelve a encolar.
+    if(typeof origClaves==='function' && typeof gastos!=='undefined'){
+      const ks=await origClaves();
+      if(ks) ks.forEach(k=>{ if(!leerRecibos()[k] && !leerRecibosPend()[k] && gastos.some(g=>String(g.id)===k)) actualizarPend(k,{estado:'pendiente', nombre:'', tipo:'', bytes:0, intentos:0, recuperado:true, fecha:new Date().toISOString()}); });
+    }
     const intentados=new Set();
     for(;;){
-      const ids=Object.keys(leerRecibosPend()).filter(id=>{ const p=leerRecibosPend()[id]; return !intentados.has(id) && p && typeof p==='object' && p.estado!=='sin_copia'; });
+      const ids=Object.keys(leerRecibosPend()).filter(id=>{ const p=leerRecibosPend()[id]; return !intentados.has(id) && p && typeof p==='object' && p.estado!=='sin_copia' && (p.intentos||0)<5; });
       if(!ids.length) break;
       let token=localStorage.getItem(DRIVE_TOKEN_KEY);
       if(!driveTokenValid()) token=await asegurarTokenDrive(false);
@@ -2405,7 +2418,7 @@ async function procesarColaOriginales(){
 async function reintentarOriginalesManual(){
   const p=leerRecibosPend();
   if(!Object.keys(p).length){ alert('No hay recibos pendientes de subir.'); return; }
-  Object.values(p).forEach(x=>{ if(x.estado!=='sin_copia') x.estado='pendiente'; }); guardarRecibosPend(p);
+  Object.values(p).forEach(x=>{ if(x && x.estado!=='sin_copia'){ x.estado='pendiente'; x.intentos=0; } }); guardarRecibosPend(p);
   if(!driveTokenValid() && !(await asegurarTokenDrive(true))){ alert('Primero conecta Google Drive tocando el ícono ☁️.'); return; }
   await procesarColaOriginales();
   const q=leerRecibosPend(), n=Object.keys(q).length;
@@ -2418,7 +2431,9 @@ function refrescarPanelRespaldo(){
 async function registrarOriginalNuevo(gastoId, archivo){
   const ok=await origGuardar(gastoId, archivo);
   if(!ok){ alert('⚠️ El gasto se guardó, pero el recibo original NO se pudo guardar (ni siquiera de forma temporal). Solo quedó la miniatura. Guarda la foto o el PDF por tu cuenta si lo necesitas; esta versión aún no permite adjuntarlo después.'); return; }
-  actualizarPend(gastoId,{estado:'pendiente', nombre:String(archivo.name||'').slice(0,100), tipo:archivo.type||'', bytes:archivo.size||0, intentos:0, fecha:new Date().toISOString()}); refrescarPanelRespaldo();
+  const encolado=actualizarPend(gastoId,{estado:'pendiente', nombre:String(archivo.name||'').slice(0,100), tipo:archivo.type||'', bytes:archivo.size||0, intentos:0, fecha:new Date().toISOString()});
+  if(!encolado) alert('⚠️ El recibo original está guardado temporalmente en este dispositivo, pero no se pudo registrar su subida a Drive (almacenamiento lleno). Libera espacio y pulsa «Reintentar subida de recibos» en el panel de respaldo; no cierres la app sin hacerlo.');
+  refrescarPanelRespaldo();
   procesarColaOriginales();
 }
 function textoEstadoOriginal(id){
@@ -2433,7 +2448,8 @@ async function verReciboOriginal(id){
   cont.textContent='Cargando…';
   const ref=leerRecibos()[id];
   let blob=null, tipo='', nota='';
-  const temp=await origLeer(id);                      // copia temporal (solo si aún no se verificó en Drive)
+  const temp=ref ? null : await origLeer(id);         // copia temporal: solo si aún no hay referencia verificada en Drive
+  if(ref) origBorrar(id);                             // sobrante de un borrado fallido: ya está verificado en Drive
   if(temp&&temp.blob){ blob=temp.blob; tipo=temp.tipo||''; nota='Copia temporal de este dispositivo (aún no verificada en Drive).'; }
   else if(ref){
     try{
@@ -2622,11 +2638,11 @@ function renderHistorial(){
 
   if(!filtered.length){tbody.innerHTML='<tr><td colspan="7"><div class="empty"><div class="empty-icon">📋</div>'+(gastos.length===0?'No hay datos cargados':'Ningún resultado con estos filtros')+'</div></td></tr>';document.getElementById('tabla-total').textContent='';return;}
   tbody.innerHTML=filtered.map(g=>`<tr>
-    <td class="mono" style="font-size:12px">${g.fecha}</td>
-    <td>${g.categoria}</td>
-    <td>${g.contratista}${g.tel?'<br><span style="font-size:10px;color:var(--gray)">'+g.tel+'</span>':''}${g.es_abono&&g.cuenta?'<br><span style="font-size:10px;color:var(--gold)">⛓ '+g.cuenta+'</span>':''}</td>
-    <td><span class="badge badge-${g.lote==='132A'?'A':g.lote==='132B'?'B':'C'}">${g.lote}</span></td>
-    <td><span class="badge badge-${g.metodo==='efectivo'?'green':'blue'}">${g.metodo}</span></td>
+    <td class="mono" style="font-size:12px">${escHtml(g.fecha)}</td>
+    <td>${escHtml(g.categoria)}</td>
+    <td>${escHtml(g.contratista)}${g.tel?'<br><span style="font-size:10px;color:var(--gray)">'+escHtml(g.tel)+'</span>':''}${g.es_abono&&g.cuenta?'<br><span style="font-size:10px;color:var(--gold)">⛓ '+escHtml(g.cuenta)+'</span>':''}</td>
+    <td><span class="badge badge-${g.lote==='132A'?'A':g.lote==='132B'?'B':'C'}">${escHtml(g.lote)}</span></td>
+    <td><span class="badge badge-${g.metodo==='efectivo'?'green':'blue'}">${escHtml(g.metodo)}</span></td>
     <td class="mono">${fmt(g.monto)}</td>
     <td><button class="btn btn-xs btn-ghost" onclick="showGastoDetail(${g.id})">${fotos[g.id]?'📷 ':''}Ver</button></td>
   </tr>`).join('');
@@ -2658,6 +2674,7 @@ function showGastoDetail(id){
 }
 function eliminarGasto(id){
   if(!confirm('¿Eliminar este gasto?'))return;
+  if(leerRecibosPend()[id] && !confirm('⚠️ El recibo original de este gasto AÚN NO se ha subido a Drive; si lo eliminas se pierde. ¿Eliminar de todas formas?'))return;
   gastos=gastos.filter(g=>g.id!==id);
   delete fotos[id];
   origBorrar(id); { const p=leerRecibosPend(); if(p[id]){ delete p[id]; guardarRecibosPend(p); } }   // Drive no se toca
@@ -2692,7 +2709,7 @@ function editarGasto(id){
       </select>
     </div>
     <div class="form-group"><label>Monto</label><input type="number" step="0.01" id="e-monto" value="${g.monto}"></div>
-    <div class="form-group"><label>Descripción</label><textarea id="e-desc">${g.descripcion||''}</textarea></div>
+    <div class="form-group"><label>Descripción</label><textarea id="e-desc">${escHtml(g.descripcion||'')}</textarea></div>
     <div class="form-actions" style="margin-top:16px">
       <button class="btn btn-gold btn-sm" onclick="guardarEdicionGasto(${g.id})">💾 Guardar Cambios</button>
       <button class="btn btn-sm btn-ghost" onclick="showGastoDetail(${g.id})">Cancelar</button>
@@ -3222,7 +3239,7 @@ function estadoRespaldoTexto(){
   if(pend) partes.push('⚠️ HAY CAMBIOS SIN RESPALDAR');
   // Dónde viven los datos y qué se comprobó (2026-11-01). Solo se afirma lo verificado por relectura.
   let monto=0; try{ monto=gastos.reduce((s,g)=>s+(Number(g.monto)||0),0); }catch(e){}
-  const nRefs=Object.keys(leerRecibos()).length, colaR=leerRecibosPend(), nPend=Object.values(colaR).filter(p=>p&&p.estado!=='error'&&p.estado!=='sin_copia').length, nErr=Object.values(colaR).filter(p=>p.estado==='error').length;
+  const nRefs=Object.keys(leerRecibos()).length, colaR=leerRecibosPend(), nPend=Object.values(colaR).filter(p=>p&&p.estado!=='error'&&p.estado!=='sin_copia').length, nErr=Object.values(colaR).filter(p=>p&&p.estado==='error').length;
   partes.push('Gastos: en este dispositivo ('+gastos.length+', $'+monto.toFixed(2)+') y en el respaldo de Drive ('+DRIVE_FILE_NAME+')');
   partes.push('Recibos originales: en Google Drive, carpeta «'+RECIBOS_CARPETA_NOMBRE+'» ('+nRefs+' verificados'+(nPend?', '+nPend+' pendientes de subir':'')+(nErr?', ⚠️ '+nErr+' con error':'')+'); miniaturas de 320 px: '+Object.keys(fotos||{}).length+' en el respaldo');
   let v=null; try{ v=JSON.parse(localStorage.getItem(DRIVE_VERIF_KEY)||'null'); }catch(e){}
@@ -3885,11 +3902,13 @@ async function driveSubir(nombre, texto, token, claveId){
 // en Drive, un id viejo devolvería contenido obsoleto sin avisar.
 async function driveDescargar(nombre, token, claveId){
   const fileId = await driveBuscarId(nombre, token);
-  if(!fileId) return null;
+  if(!fileId) return null;                       // no existe: es un caso normal (primer respaldo)
   const res = await fetch('https://www.googleapis.com/drive/v3/files/'+fileId+'?alt=media',
     { headers: { Authorization:'Bearer '+token } });
-  if(!res.ok) return null;
-  try{ return await res.json(); }catch(e){ return null; }   // archivo corrupto: no rompe nada
+  // El archivo EXISTE pero no se pudo leer: NO se devuelve null (eso haría creer que está vacío y un respaldo
+  // lo sobrescribiría con menos datos). Se lanza error y el respaldo se aborta, visible y reintentable.
+  if(!res.ok) throw new Error('no se pudo leer '+nombre+' en Drive (HTTP '+res.status+'); no se sobrescribe');
+  try{ return await res.json(); }catch(e){ throw new Error(nombre+' existe en Drive pero no se puede leer (contenido ilegible); no se sobrescribe'); }
 }
 
 const DRIVE_VERIF_KEY='a132_drive_verificado';
@@ -4080,7 +4099,7 @@ function fusionarEstado(local, remoto){
   });
 
   // Referencias a originales en Drive: unión; si ambos lados tienen el mismo gasto gana este equipo.
-  const recibosFusion = Object.assign({}, (r.recibos&&typeof r.recibos==='object')?r.recibos:{}, local.recibos||{});
+  const recibosFusion = Object.assign({}, limpiarRecibos(r.recibos), limpiarRecibos(local.recibos));
   return {
     gastos: f.gastos, viajes: vLocales.concat(vNuevos), fotos: fotosFusion, recibos: recibosFusion,
     agregados: f.agregados, viajesAgregados: vNuevos.length,
