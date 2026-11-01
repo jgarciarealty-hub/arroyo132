@@ -104,7 +104,7 @@ vm.runInContext('const ORIG_DB="a132_originales", ORIG_STORE="recibos";' + ['ori
   vm.runInContext('const ORIG_DB="x", ORIG_STORE="y";' + ['origAbrir', 'origGuardar', 'origLeer'].map(extraer).join('\n'), ctx3);
   test('sin IndexedDB: guardar devuelve false y no lanza', (await vm.runInContext('origGuardar', ctx3)(1, archivo)) === false);
   test('detalle del gasto ofrece «Ver recibo original»', /verReciboOriginal\(\$\{g\.id\}\)/.test(script) && /id="orig-recibo-\$\{g\.id\}"/.test(script));
-  test('guardarGasto conserva el original', /origGuardar\(nuevoId,_archivoOriginal\)/.test(script));
+  test('guardarGasto conserva el original (ahora vía Drive)', script.includes('registrarOriginalNuevo(nuevoId,_archivoOriginal)'));
 
   // ── 4. Causa 61 vs 11: el conjunto sembrado ─────────────────────────────────
   const bloque = script.slice(script.indexOf('const recuperados=['), script.indexOf('];', script.indexOf('const recuperados=[')));
@@ -112,7 +112,9 @@ vm.runInContext('const ORIG_DB="a132_originales", ORIG_STORE="recibos";' + ['ori
   test('conjunto sembrado = 11 gastos por $3,299.58 (el "respaldo viejo")', montos.length === 11 && Math.abs(montos.reduce((a, b) => a + b, 0) - 3299.58) < 0.005, montos.length);
 
   // ── 5. Panel de estado ──────────────────────────────────────────────────────
-  test('panel muestra ubicación, conteo y verificación por relectura', /Datos en este dispositivo/.test(script) && /Drive verificado por relectura/.test(script) && /solo en este dispositivo, no en Drive/.test(script));
+  test('panel muestra ubicación, conteo y verificación por relectura', /Gastos: en este dispositivo/.test(script) && /Drive verificado por relectura/.test(script) && /Recibos originales: en Google Drive/.test(script));
+test('IVU leído es informativo y no cambia el monto', (()=>{const r=I('{"fecha":"2026-04-15","monto":112.5,"ivu":11.5,"contratista":"A"}'); return r.campos.ivu===11.5 && r.campos.monto===112.5;})());
+test('IVU absurdo (mayor que el total) se descarta', I('{"fecha":"2026-04-15","monto":10,"ivu":50,"contratista":"A"}').campos.ivu===undefined);
 
   console.log(`\n${pass} pasaron, ${fail} fallaron`);
   process.exit(fail ? 1 : 0);
