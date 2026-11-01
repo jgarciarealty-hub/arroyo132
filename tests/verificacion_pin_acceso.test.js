@@ -2,7 +2,7 @@
 // Causa raiz: la version publicada entre el 5-jul y el 20-sep (base fc0a54e) guardaba el
 // PIN con SHA-256 + sal; main usa un hash sincrono distinto. Un PIN correcto creado en esa
 // ventana nunca coincidia -> 5 intentos -> bloqueo de 5 minutos que se repetia.
-// Este arreglo ACEPTA los formatos anteriores y migra a SHA-256; NO desactiva la autenticacion.
+// Version minima (2026-11-01): ACEPTA los formatos anteriores y limpia el bloqueo vencido; NO migra ni cambia el formato de almacenamiento; NO desactiva la autenticacion.
 // Uso: node tests/verificacion_pin_acceso.test.js
 'use strict';
 const fs = require('node:fs');
@@ -87,25 +87,25 @@ const en = (sandbox, code) => vm.runInContext(code, sandbox, { timeout: 20000 })
       const fuerte = ${JSON.stringify(sha256hex(PIN_SALT + '1234'))};
       const legacy = ${JSON.stringify(legacySaltHost('1234'))};
       let r = await verificarPin('1234', fuerte);
-      test('acepta el formato SHA-256 con sal', r.ok === true && r.migrar === false, r);
+      test('acepta el formato SHA-256 con sal', r.ok === true, r);
       r = await verificarPin('1234', legacy);
-      test('acepta el formato de julio (sal + hash 8 hex) y pide migrar', r.ok === true && r.migrar === true, r);
+      test('acepta el formato de julio (sal + hash 8 hex)', r.ok === true, r);
       r = await verificarPin('1234', hashPin('1234'));
-      test('sigue aceptando el formato actual de main', r.ok === true && r.migrar === false, r);
+      test('sigue aceptando el formato actual de main', r.ok === true, r);
       r = await verificarPin('9999', fuerte);
-      test('rechaza un PIN incorrecto en cualquier formato', r.ok === false && r.migrar === false, r);
+      test('rechaza un PIN incorrecto en cualquier formato', r.ok === false, r);
       r = await verificarPin('1234', 'basura');
       test('rechaza una credencial corrupta sin lanzar excepcion', r.ok === false, r);
     })()`);
 
-    // ---- login con credencial de julio: entra y migra a SHA-256 ----
+    // ---- login con credencial de julio: entra y NO reescribe la credencial (version minima) ----
     __seedStore(s, { a132_pin_hash: legacySaltHost('1234') });
     await en(s, `(async () => {
       pinBuffer = '1234';
       await processPin();
       test('PIN de julio correcto: entra (sesion creada)', !!localStorage.getItem('a132_session'));
-      test('al entrar migra la credencial a SHA-256 (64 hex)',
-        localStorage.getItem('a132_pin_hash') === ${JSON.stringify(sha256hex(PIN_SALT + '1234'))},
+      test('al entrar NO reescribe la credencial guardada (sin migracion)',
+        localStorage.getItem('a132_pin_hash') === ${JSON.stringify(legacySaltHost('1234'))},
         localStorage.getItem('a132_pin_hash'));
       test('al entrar deja los intentos en 0 y sin bloqueo',
         localStorage.getItem('a132_attempts') === '0' && !localStorage.getItem('a132_lockuntil'));
@@ -222,9 +222,9 @@ const en = (sandbox, code) => vm.runInContext(code, sandbox, { timeout: 20000 })
     });
     await en(sCelularViejo, `(async () => {
       pinBuffer = '1234'; await processPin();
-      test('celular (fallback de julio sin crypto): entra y migra a SHA-256',
+      test('celular (fallback de julio): entra y la credencial guardada queda intacta',
         !!localStorage.getItem('a132_session') &&
-        localStorage.getItem('a132_pin_hash') === ${JSON.stringify(sha256hex(PIN_SALT + '1234'))});
+        localStorage.getItem('a132_pin_hash') === ${JSON.stringify(legacySaltHost('1234'))});
       const orig = JSON.parse(${JSON.stringify(gastosCelular)});
       const act = JSON.parse(localStorage.getItem('a132_gastos'));
       test('celular (fallback): sus registros originales quedan intactos',
@@ -240,17 +240,14 @@ const en = (sandbox, code) => vm.runInContext(code, sandbox, { timeout: 20000 })
         !localStorage.getItem('a132_session') && localStorage.getItem('a132_attempts') === '1');
     })()`);
 
-    // ---- PIN nuevo se guarda fuerte y no deja los digitos en el hash ----
+    // ---- PIN nuevo: se guarda como en main (la version minima no cambia el formato de almacenamiento) ----
     const s7 = cargarApp({});
     await en(s7, `(async () => {
       pinBuffer = '5073'; await processPin();   // primer paso: pide confirmacion
       pinBuffer = '5073'; await processPin();   // confirmacion
       const g = localStorage.getItem('a132_pin_hash') || '';
-      test('PIN nuevo: se guarda como SHA-256 (64 hex)', /^[0-9a-f]{64}$/.test(g), g);
-      test('PIN nuevo: el hash coincide con SHA-256(sal+PIN)',
-        g === ${JSON.stringify(sha256hex(PIN_SALT + '5073'))});
-      test('PIN nuevo: el hash NO contiene los digitos del PIN en hexadecimal',
-        !g.includes('5073') && !g.includes('35303733'));
+      test('PIN nuevo: se guarda en el formato actual de main (sin cambiar el almacenamiento)', g === hashPin('5073'), g);
+      test('PIN nuevo: NO se guarda en SHA-256 (fuera de la version minima)', !/^[0-9a-f]{64}$/.test(g), g);
       test('PIN nuevo: entra sin pedir intentos', !!localStorage.getItem('a132_session'));
     })()`);
   } catch (e) {
