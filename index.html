@@ -2497,7 +2497,7 @@ async function registrarOriginalNuevo(gastoId, archivo, opciones){
   const modo=opciones && (opciones.modo==='anadir'||opciones.modo==='actualizar') ? opciones.modo : null;
   const clave=modo ? String(gastoId)+'~'+Date.now().toString(36)+Math.random().toString(36).slice(2,5) : gastoId;
   const ok=await origGuardar(clave, archivo);
-  if(!ok){ alert('⚠️ El gasto se guardó, pero el recibo original NO se pudo guardar (ni siquiera de forma temporal). Solo quedó la miniatura. Guarda la foto o el PDF por tu cuenta si lo necesitas; esta versión aún no permite adjuntarlo después.'); return; }
+  if(!ok){ alert('⚠️ El gasto se guardó, pero el recibo original NO se pudo guardar (ni siquiera de forma temporal). Solo quedó la miniatura. Guarda la foto o el PDF por tu cuenta si lo necesitas; puedes adjuntarlo después desde la ficha del gasto («📎 Adjuntar recibo original»).'); return; }
   const encolado=actualizarPend(clave,Object.assign({estado:'pendiente', nombre:String(archivo.name||'').slice(0,100), tipo:archivo.type||'', bytes:archivo.size||0, intentos:0, fecha:new Date().toISOString()}, modo?{modo}:{}));
   if(!encolado) alert('⚠️ El recibo original está guardado temporalmente en este dispositivo, pero no se pudo registrar su subida a Drive (almacenamiento lleno). Libera espacio y pulsa «Reintentar subida de recibos» en el panel de respaldo; no cierres la app sin hacerlo.');
   refrescarPanelRespaldo();
@@ -2517,6 +2517,13 @@ function textoEstadoOriginalBase(id){
   if(ref) return '✅ En Google Drive, carpeta «'+escHtml(RECIBOS_CARPETA_NOMBRE)+'», archivo '+escHtml(ref.nombre)+' (verificado '+escHtml(String(ref.fecha).slice(0,10))+(ref.reutilizado?', ya existía el mismo archivo':'')+')';
   if(p&&p.estado==='sin_copia') return '⚠️ La copia temporal se perdió antes de subirla a Drive: este gasto no tiene recibo original (solo la miniatura, si la hay).';
   if(p) return (p.estado==='error'?'⚠️ Error al subir a Drive: '+escHtml(p.ultimoError||'')+' — ':'⏳ Pendiente de subir a Drive — ')+'la copia temporal sigue en este dispositivo y se reintenta';
+  return escHtml(textoSinOriginal(id));
+}
+// Gasto antiguo sin original vinculado: dice exactamente lo que hay (metadatos del archivo, no el original) y apunta al botón de adjuntar.
+function textoSinOriginal(id){
+  const g=(typeof gastos!=='undefined'?gastos:[]).find(x=>String(x.id)===String(id));
+  const nombres=g && Array.isArray(g.archivos) ? g.archivos.map(a=>a && a.nombre).filter(Boolean) : [];
+  if(nombres.length) return 'ℹ️ Este gasto solo tiene registrado el nombre del archivo ('+nombres.slice(0,3).map(n=>'«'+String(n).slice(0,60)+'»').join(', ')+'): el recibo original NO está vinculado a este gasto. Usa «📎 Adjuntar recibo original» para vincularlo.';
   return 'Sin recibo original guardado para este gasto.';
 }
 async function verReciboOriginal(id){
@@ -2552,7 +2559,7 @@ async function verReciboOriginal(id){
     }catch(e){ cont.textContent=''; const d=document.createElement('div'); d.style.cssText='padding:12px;font-size:12px;color:var(--gray)'; d.textContent='⚠️ No se pudo abrir el recibo original: '+String(e.message||e); cont.appendChild(d); return; }
   } else {
     cont.textContent=''; const d=document.createElement('div'); d.style.cssText='padding:12px;font-size:12px;color:var(--gray);background:rgba(255,255,255,0.03);border-radius:8px;border:1px dashed rgba(201,168,76,0.2)';
-    d.textContent='⚠️ Este gasto no tiene recibo original guardado (solo la miniatura, si la hay). Los recibos nuevos se guardan en Google Drive.'; cont.appendChild(d); return;
+    d.textContent=textoSinOriginal(id)+' (Solo la miniatura, si la hay.)'; cont.appendChild(d); return;
   }
   const url=URL.createObjectURL(blob);
   setTimeout(()=>{ try{ URL.revokeObjectURL(url); }catch(e){} }, 10*60*1000);
@@ -2815,6 +2822,15 @@ function similitudProveedor(a,b){
   const lev=1-distanciaLev(ja,jb)/Math.max(ja.length,jb.length);
   return Math.max(dice, lev>=0.85?lev:0);
 }
+// Nombre corto contenido en el largo («QUALITY iS» dentro de «Quality iS (Herramientas PR)»): todos los tokens significativos del más corto están en el otro.
+function proveedorContenido(a,b){
+  if(/^s*sin especificars*$/i.test(String(a||'')) || /^s*sin especificars*$/i.test(String(b||''))) return false;
+  const A=new Set(tokensProveedor(a)), B=new Set(tokensProveedor(b));
+  if(!A.size || !B.size) return false;
+  const [c,l]=A.size<=B.size?[A,B]:[B,A];
+  let todos=true; c.forEach(t=>{ if(!l.has(t)) todos=false; });
+  return todos;
+}
 function diasEntreFechas(a,b){
   const x=Date.parse(String(a||'')+'T00:00:00Z'), y=Date.parse(String(b||'')+'T00:00:00Z');
   if(isNaN(x)||isNaN(y)) return null;
@@ -2852,6 +2868,8 @@ function buscarGastoCoincidente(campos, lista){
     let nivel='NINGUNA';
     if(pOk && fFuerte && iOk) nivel='ALTA';
     else if(fuertes>=2 || (pDud && (fFuerte||fDebil) && iOk)) nivel='INCIERTA';
+    // Lectura SIN fecha utilizable: importe exacto + proveedor compatible → nunca ALTA, pero sí INCIERTA (evita ofrecer un gasto nuevo duplicado).
+    if(nivel==='NINGUNA' && dias===null && imp==='fuerte' && c.contratista && (pDud || proveedorContenido(c.contratista,g.contratista))){ nivel='INCIERTA'; motivos.push('la lectura no trae fecha: importe exacto y proveedor compatible'); }
     if(nivel==='NINGUNA') return;
     const puntos=Math.round(40*sim)+(fFuerte?30:fDebil?15:0)+(imp==='fuerte'?30:imp==='aceptable'?22:0)+apoyo;
     cand.push({gasto:g, nivel, puntos, motivos, proveedor:pOk?'ok':(pDud?'dudoso':'no'), fecha:fFuerte?'igual':(fDebil?'cercana':'no'), importe:imp});
@@ -2914,11 +2932,37 @@ function mostrarCoincidencia(res){
   }
   return true;
 }
-async function terminarAsociacion(gastoId, modo){
-  const r=await asociarOriginalAGasto(gastoId, _archivoOriginal, modo);
+// archivo/idEstado opcionales: desde la ficha del gasto el archivo llega directo (no toca el formulario de Registrar) y el estado se muestra en idEstado.
+// El «✅» solo aparece cuando Drive confirmó la subida; mientras tanto el texto es neutral, y un fallo es el estado visible.
+async function terminarAsociacion(gastoId, modo, archivo, idEstado){
+  const desdeFicha=!!archivo;
+  const r=await asociarOriginalAGasto(gastoId, desdeFicha?archivo:_archivoOriginal, modo);
   if(!r.ok){ alert('⚠️ No se asoció el recibo: '+r.motivo); return; }
-  cerrarCoincidencia(); resetRegistrar();   // NO se guarda ningún gasto nuevo; el gasto existente queda intacto
-  alert('✅ El recibo original se asoció al gasto existente. No se creó un gasto nuevo ni se cambió ningún dato del gasto; la subida a Drive se verifica en segundo plano.');
+  const neutro='📎 Recibo guardado en este dispositivo; subiendo a Drive, se confirma al terminar…';
+  const elEstado=idEstado?document.getElementById(idEstado):document.getElementById('coincidencia-box');
+  if(elEstado){ elEstado.textContent=neutro; elEstado.style.display='block'; }
+  await procesarColaOriginales();
+  for(let i=0;i<60 && _colaOriginalesEnCurso;i++) await new Promise(res=>setTimeout(res,500));
+  const pend=clavesPendDeGasto(gastoId).map(k=>leerRecibosPend()[k]).filter(Boolean);
+  const verificado=pend.length===0 && documentosDeGasto(gastoId).docs.length>0;
+  if(!desdeFicha){ cerrarCoincidencia(); resetRegistrar(); }   // NO se guarda ningún gasto nuevo; el gasto existente queda intacto
+  let msg;
+  if(verificado) msg='✅ El recibo original quedó verificado en Drive y asociado al gasto existente. No se creó un gasto nuevo ni se cambió ningún dato del gasto.';
+  else { const e=pend.find(q=>q.estado==='error'||q.ultimoError); msg='⚠️ El recibo quedó guardado en este dispositivo, pero NO se pudo confirmar la subida a Drive'+(e&&e.ultimoError?': '+e.ultimoError:' todavía')+'. Se reintenta desde el panel de respaldo. No se creó un gasto nuevo ni se cambió ningún dato del gasto.'; }
+  if(desdeFicha){ const el=document.getElementById(idEstado); if(el) el.textContent=msg; }
+  alert(msg);
+}
+// Ficha del gasto: adjunta un original a un gasto ya registrado, sin lectura IA ni cambios de monto/fecha/proveedor.
+function adjuntarReciboFicha(id, input){
+  const f=input && input.files && input.files[0]; if(input) input.value=''; if(!f) return;
+  const idEstado='adjuntar-estado-'+id, cont=document.getElementById(idEstado);
+  if(!documentosDeGasto(id).tiene) return terminarAsociacion(id,'nuevo',f,idEstado);
+  if(!cont) return;
+  cont.textContent=''; cont.style.display='block';
+  const t=document.createElement('div'); t.style.cssText='font-size:12px;color:var(--light);margin-bottom:6px'; t.textContent='Este gasto ya tiene documento. ¿Qué hacemos con «'+String(f.name||'archivo').slice(0,50)+'»?'; cont.appendChild(t);
+  cont.appendChild(_btnCoinc('Conservar el actual (no subir nada)', ()=>{ cont.textContent='No se subió nada: el gasto conserva su documento actual.'; }));
+  cont.appendChild(_btnCoinc('Añadir otro documento', ()=>terminarAsociacion(id,'anadir',f,idEstado), true));
+  cont.appendChild(_btnCoinc('Actualizar (el anterior se conserva como histórico)', ()=>terminarAsociacion(id,'actualizar',f,idEstado), true));
 }
 
 
@@ -2995,7 +3039,8 @@ function showGastoDetail(id){
     <div class="roi-row hl"><span class="roi-label"><b>Monto</b></span><span class="roi-val gold">${fmt(g.monto)}</span></div>
     ${g.descripcion?`<div style="margin-top:12px;font-size:12px;color:var(--gray);line-height:1.6">${escHtml(g.descripcion)}</div>`:''}
     ${fotos[g.id]?`<div style="margin-top:14px"><div style="font-size:10px;color:var(--gold);text-transform:uppercase;letter-spacing:1px;margin-bottom:6px">📷 Foto del Recibo</div><img src="${fotos[g.id]}" style="width:100%;border-radius:8px;border:1px solid rgba(201,168,76,0.2)" loading="lazy" onerror="this.outerHTML='<div style=&quot;padding:16px;text-align:center;color:var(--gray);font-size:12px;background:rgba(255,255,255,0.03);border-radius:8px;border:1px dashed rgba(201,168,76,0.2)&quot;>⚠️ Foto no disponible en este dispositivo</div>'"></div>`:''}
-    <div style="margin-top:14px"><div style="font-size:11px;color:var(--gray);margin-bottom:6px">${textoEstadoOriginal(g.id)}</div><div id="orig-recibo-${g.id}"><button class="btn btn-sm btn-ghost" onclick="verReciboOriginal(${g.id})">🧾 Ver recibo original</button></div></div>
+    <div style="margin-top:14px"><div style="font-size:11px;color:var(--gray);margin-bottom:6px">${textoEstadoOriginal(g.id)}</div><div id="orig-recibo-${g.id}"><button class="btn btn-sm btn-ghost" onclick="verReciboOriginal(${g.id})">🧾 Ver recibo original</button></div>
+    ${g.tipo!=='viaje'?`<div style="margin-top:8px"><input type="file" id="adj-file-${g.id}" accept="image/*,application/pdf" style="display:none" onchange="adjuntarReciboFicha(${g.id}, this)"><button class="btn btn-sm" id="adj-btn-${g.id}" onclick="document.getElementById('adj-file-${g.id}').click()">${documentosDeGasto(g.id).tiene?'📎 Añadir o actualizar recibo original':'📎 Adjuntar recibo original'}</button><div id="adjuntar-estado-${g.id}" style="display:none;font-size:12px;color:var(--gray);margin-top:6px"></div></div>`:''}</div>
     <div class="form-actions" style="margin-top:16px">
       <button class="btn btn-sm" onclick="editarGasto(${g.id})">✏️ Editar</button>
       <button class="btn btn-sm btn-danger" onclick="eliminarGasto(${g.id})">🗑️ Eliminar</button>

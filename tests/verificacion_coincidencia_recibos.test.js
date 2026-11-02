@@ -96,7 +96,7 @@ const ctx = vm.createContext({
 const nombres = ['md5Hex', 'sha256Hex', 'extensionDe', 'verificarCargaOriginal', 'driveCarpetaRecibos', 'driveSubirOriginal', 'procesarColaOriginales', 'refrescarPanelRespaldo', 'registrarOriginalNuevo',
   'textoEstadoOriginal', 'textoEstadoOriginalBase', 'leerRecibos', 'leerRecibosPend', 'guardarRecibos', 'guardarRecibosPend', 'escribirVerificado', 'actualizarPend', 'escHtml', 'fetchConTiempo', 'limpiarRecibos',
   'docRefValido', 'listarDocumentos', 'sinHistorico', 'aplicarReferencia', 'gastoDeClave', 'clavesPendDeGasto', 'documentosDeGasto',
-  'tokensProveedor', 'distanciaLev', 'similitudProveedor', 'diasEntreFechas', 'buscarGastoCoincidente', 'asociarOriginalAGasto', '_btnCoinc', '_lineaGasto', 'cerrarCoincidencia', 'mostrarCoincidencia', 'terminarAsociacion',
+  'tokensProveedor', 'proveedorContenido', 'distanciaLev', 'similitudProveedor', 'diasEntreFechas', 'buscarGastoCoincidente', 'asociarOriginalAGasto', '_btnCoinc', '_lineaGasto', 'cerrarCoincidencia', 'mostrarCoincidencia', 'terminarAsociacion',
   'verReciboOriginal', 'pintarOtrosDocumentos', 'eliminarGasto'];
 vm.runInContext("const RECIBOS_KEY='a132_recibos', RECIBOS_PEND_KEY='a132_recibos_pend', RECIBOS_CARPETA_KEY='a132_recibos_carpeta', RECIBOS_CARPETA_NOMBRE='Arroyo 132 — Recibos originales'; const DRIVE_CAMPOS_ARCHIVO='id,name,size,md5Checksum,webViewLink,appProperties'; var _archivoOriginal=null; var _colaOriginalesEnCurso=false;\n"
   + constante('PROV_RUIDO') + '\n' + constante('_cents') + '\n' + nombres.map(extraer).join('\n'), ctx);
@@ -169,7 +169,7 @@ const ids = r => r.candidatos.map(c => c.gasto.id);
   const ref = R('leerRecibos')()[QID], enDrive = ref && drive.archivos.get(ref.driveId);
   test('asociar: pendiente → VERIFICADO, el archivo completo (bytes idénticos, sin reducir) está en Drive', ref && ref.sha256 === sha(foto) && ref.bytes === 2_400_000 && Buffer.compare(enDrive.datos, foto) === 0 && !idb.has(String(QID)) && !R('leerRecibosPend')()[QID]);
   test('asociar: NO se creó otro gasto ni se tocó ningún campo (importe, fecha, proveedor, archivos)', JSON.stringify(ctx.gastos) === gastosAntes && ctx.gastos.length === 5);
-  test('asociar: el formulario de gasto nuevo NO se guardó (guardarGasto nunca llamado) y la pantalla se reinició', cont.guardarGasto === 0 && cont.reset === 1 && alertas.some(a => /asoció al gasto existente/.test(a)));
+  test('asociar: el formulario de gasto nuevo NO se guardó (guardarGasto nunca llamado) y la pantalla se reinició', cont.guardarGasto === 0 && cont.reset === 1 && alertas.some(a => /NO se pudo confirmar la subida a Drive/.test(a)) && !alertas.some(a => /✅/.test(a)));   // D4: con Drive caído no hay «✅» prematuro
   test('asociar: se abre desde el detalle del gasto (verReciboOriginal muestra el original y verifica integridad)', await (async () => { await R('verReciboOriginal')(QID); const t = dom['orig-recibo-' + QID].textContent; return /integridad verificada/.test(t) && dom['orig-recibo-' + QID].children.some(c => c.tag === 'img' || c.tag === 'a'); })());
   test('asociar: nunca se borra ni se sobrescribe en Drive', !drive.llamadas.some(l => /^(DELETE|PATCH|PUT)/.test(l)));
 
@@ -285,6 +285,19 @@ const ids = r => r.candidatos.map(c => c.gasto.id);
   test('el round-trip por JSON (respaldo/Drive) conserva el esquema', JSON.stringify(JSON.parse(JSON.stringify(mapa)).recibos[1]) === JSON.stringify(mapa.recibos[1]));
 
   // ── 7. Integración en la app ───────────────────────────────────────────────────
+  // ── 6b. D2: lectura SIN fecha ───────────────────────────────────────────────────
+  r = nivel({ monto: 25.06, contratista: 'Quality iS (Herramientas PR)' });
+  test('D2: sin fecha, «Quality iS (Herramientas PR)» $25.06 → INCIERTA hacia QUALITY iS (no ofrece gasto nuevo)', r.nivel === 'INCIERTA' && ids(r)[0] === QID, r);
+  r = nivel({ monto: 25.06, contratista: 'Ferretería Cosme' });
+  test('D2: sin fecha, mismo importe con proveedor distinto → NINGUNA', r.nivel === 'NINGUNA', r);
+  r = nivel({ monto: 25.07, contratista: 'Quality iS (Herramientas PR)' });
+  test('D2: sin fecha, proveedor compatible con importe distinto → NINGUNA', r.nivel === 'NINGUNA', r);
+  r = nivel({ fecha: '2026-06-24', monto: 25.07, contratista: 'QUALITY IS' });
+  test('D2: proveedor y fecha iguales con importe distinto → nunca ALTA', r.nivel !== 'ALTA', r.nivel);
+  r = nivel({ monto: 25.06, contratista: 'QUALITY IS' });
+  test('D2: sin fecha jamás es ALTA aunque proveedor e importe sean exactos', r.nivel === 'INCIERTA', r.nivel);
+  r = nivel({ monto: 25.06, contratista: 'Sin especificar' });
+  test('D2: «Sin especificar» sin fecha con importe exacto → NINGUNA', r.nivel === 'NINGUNA', r);
   test('handleUpload busca coincidencia tras la lectura (ruta normal y ruta de caché)', script.includes('mostrarCoincidencia(buscarGastoCoincidente(ext,gastos))') && script.includes('mostrarCoincidencia(buscarGastoCoincidente(cacheIA,gastos))'));
   test('la lectura vacía no dispara la búsqueda (solo campos válidos)', /if\(lectura\.estado!=='vacia'\) mostrarCoincidencia/.test(script));
   test('el HTML tiene la caja de coincidencia y resetRegistrar la limpia', html.includes('id="coincidencia-box"') && /_archivoOriginal=null;\n  \{ const cb=document\.getElementById\('coincidencia-box'\)/.test(script));
@@ -306,7 +319,9 @@ const ids = r => r.candidatos.map(c => c.gasto.id);
     ['limpiarRecibos descarta adicionales', 'if(Array.isArray(c[f])) c[f]=c[f].filter(docRefValido); else delete c[f];', 'delete c[f];'],
     ['el formulario de gasto nuevo no se oculta', "const form=document.getElementById('reg-form'); if(form) form.style.display='none';", ''],
     ['Conservar sube el archivo', "cerrarCoincidencia(); resetRegistrar(); alert('No se subió nada", "terminarAsociacion(g.id,'anadir'); alert('No se subió nada"],
-    ['asociar guarda un gasto nuevo', 'cerrarCoincidencia(); resetRegistrar();   // NO se guarda', 'guardarGasto(); cerrarCoincidencia(); resetRegistrar();   // NO se guarda'],
+    ['asociar guarda un gasto nuevo', 'if(!desdeFicha){ cerrarCoincidencia(); resetRegistrar(); }   // NO se guarda', 'guardarGasto(); if(!desdeFicha){ cerrarCoincidencia(); resetRegistrar(); }   // NO se guarda'],
+    ['sin fecha basta el importe con cualquier proveedor (D2)', '(pDud || proveedorContenido(c.contratista,g.contratista))', 'true'],
+    ['sin fecha se promueve a ALTA (D2)', "nivel='INCIERTA'; motivos.push('la lectura no trae fecha", "nivel='ALTA'; motivos.push('la lectura no trae fecha"],
     ['sin deduplicar el mismo documento', 'if(listarDocumentos(actual).some(x=>x.doc.driveId===nueva.driveId && x.doc.sha256===nueva.sha256)) return actual;', ''],
     ['eliminar gasto no limpia pendientes compuestos', 'ks.forEach(k=>origBorrar(k)); ', ''],
     ['añadir pisa la copia temporal pendiente (sin clave propia)', "const clave=modo ? String(gastoId)+'~'+Date.now().toString(36)+Math.random().toString(36).slice(2,5) : gastoId;", 'const clave=gastoId;'],
