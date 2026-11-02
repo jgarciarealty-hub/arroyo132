@@ -38,8 +38,8 @@
 //   A132_MODEL               Modelo de lectura de recibos. Por defecto `claude-haiku-5-5`
 //                            ($0.10/$0.50 por millón de tokens, 10x más barato que
 //                            `claude-haiku-4-5`; ambos soportan imágenes y PDF, verificado).
-//   A132_EFFORT              `low`/`medium`/`high`. Con el modelo por defecto (Haiku 5.5) se envía `low`
-//                            si no se configura (ver MIN_TOKENS_LECTURA); con otro modelo solo se envía si se pone.
+//   A132_EFFORT              `low`/`medium`/`high`. Opcional: solo se envía si se configura (con cualquier modelo).
+//                            La protección contra respuestas vacías es el margen de max_tokens (MIN_TOKENS_LECTURA).
 // ─────────────────────────────────────────────────────────────────────────────
 'use strict';
 
@@ -60,8 +60,9 @@ const MODELO_DEFECTO = 'claude-haiku-5-5';
 // adaptativo ACTIVADO por defecto (esfuerzo por defecto `medium`) y los tokens de pensamiento cuentan
 // contra `max_tokens`. Con max_tokens=600 una foto difícil puede gastar los 600 pensando y devolver
 // `stop_reason: max_tokens` con texto vacío: HTTP 200, sin datos — exactamente el síntoma de «No se pudo
-// leer el recibo». Un PDF limpio necesita poco pensamiento y cabía. Leer un recibo no necesita razonar
-// largo: esfuerzo `low` y más margen de tokens. El piso evita que una variable de entorno vieja (600)
+// leer el recibo». Un PDF limpio necesita poco pensamiento y cabía. La protección es el MARGEN de
+// max_tokens (no el esfuerzo: mediciones del 2026-11-02 mostraron que con `low` el modelo siguió usando
+// ~489 tokens de pensamiento, sin beneficio demostrado). El piso evita que una variable de entorno vieja (600)
 // reintroduzca el problema.
 const MIN_TOKENS_LECTURA = 1000;
 const TOKENS_DEFECTO = 1500;
@@ -430,7 +431,7 @@ async function handler(req, res) {
     };
     // `effort` (opcional) solo lo entienden los modelos nuevos. Si no está configurado no se
     // envía nada, para que el mismo código funcione con cualquier modelo.
-    const esfuerzo = process.env.A132_EFFORT || (process.env.A132_MODEL ? '' : 'low');
+    const esfuerzo = process.env.A132_EFFORT;
     if (esfuerzo) cuerpoAnthropic.output_config = { effort: esfuerzo };
 
     const respuesta = await fetch('https://api.anthropic.com/v1/messages', {

@@ -460,9 +460,9 @@ async function llamadaConEnv(env) {
   } finally { for (const k of Object.keys(guardado)) { if (guardado[k] === undefined) delete process.env[k]; else process.env[k] = guardado[k]; } }
 }
 
-test('con el modelo por defecto se pide esfuerzo bajo y margen de tokens para el pensamiento', async () => {
+test('sin A132_EFFORT no se envía output_config (ni con el modelo por defecto) y hay margen de tokens', async () => {
   const l = await llamadaConEnv({ A132_MODEL: null, A132_EFFORT: null, A132_MAX_TOKENS: null });
-  assert.deepEqual(l.output_config, { effort: 'low' });
+  assert.equal(l.output_config, undefined);
   assert.ok(l.max_tokens >= 1000, 'max_tokens=' + l.max_tokens);
 });
 

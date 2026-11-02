@@ -53,8 +53,8 @@ test('JSON cortado por max_tokens → json_truncado', r.d.causa === 'json_trunca
 r = diag(ia('{"fecha": 2026-06-24, monto}', 'end_turn'));
 test('JSON mal formado → json_invalido', r.d.causa === 'json_invalido', r.d);
 test('el mensaje de estado vacío sigue sin marcar éxito', /No se pudo leer/.test(sb.textoEstadoExtraccion({ estado: 'vacia', faltan: [] })) && !/✅/.test(sb.textoEstadoExtraccion({ estado: 'vacia', faltan: [] })));
-sb.guardarUltimaLecturaIA(r.d, 'x'.repeat(5000));
+sb.guardarUltimaLecturaIA(r.d, 'TOTAL 99.99 COMERCIO SECRETO ' + 'x'.repeat(5000));
 const g = JSON.parse(guardado.a132_ultima_lectura_ia || 'null');
-test('la última lectura se guarda localmente con texto acotado a 600 y SIN imagen', g && g.causa === 'json_invalido' && g.texto.length <= 600 && !('data' in g) && !('base64' in g), g && Object.keys(g));
+test('la última lectura guarda SOLO metadatos: sin texto, sin valores del recibo, sin imagen', g && g.causa === 'json_invalido' && !('texto' in g) && !JSON.stringify(g).includes('SECRETO') && !JSON.stringify(g).includes('99.99') && !('data' in g) && !('base64' in g), g && Object.keys(g));
 console.log(`\n${pass} pasaron, ${fail} fallaron`);
 process.exit(fail ? 1 : 0);

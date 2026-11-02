@@ -2165,15 +2165,10 @@ async function handleUpload(e, source){
     let res=await llamarIA(tokenIA,bloqueUsado);
     if(!res.ok && variante==='recortada'){ res=await llamarIA(tokenIA,contentBlock); variante='completa'; }   // el recorte nunca debe empeorar un caso que antes funcionaba
     if(!res.ok){
-      let motivo='';
-      try{ motivo=(await res.json()).error||''; }catch(e){}
-      if(res.status===401) motivo='Tu sesión de Google no es válida o venció. Toca el ícono ☁️ para reconectar.';
-      else if(res.status===429) motivo='Demasiadas lecturas seguidas. Espera un minuto.';
-      else if(res.status===413) motivo='El archivo es demasiado grande para la IA (el original se guarda completo igual).';
-      else if(res.status===503) motivo='El servicio de lectura no está disponible o no está configurado.';
-      else if(!motivo) motivo='error '+res.status;
-      else motivo=motivo+' (error '+res.status+')';
-      guardarUltimaLecturaIA({causa:'http_'+res.status,stop:'',tipos:[],chars:0,uso:null},'');
+      let json0=null;
+      try{ json0=await res.json(); }catch(e){}
+      const motivo=motivoHttpIA(res,json0);
+      guardarUltimaLecturaIA({causa:'http_'+res.status,stop:'',tipos:[],chars:0,uso:null});
       aiStatus.textContent='⚠️ No se pudo leer con IA'+(motivo?` — ${motivo}`:'')+'. Ingresa los datos manualmente.';
       aiBox.querySelector('.spinner').style.display='none';
       document.getElementById('reg-form').style.display='block';
@@ -2185,20 +2180,27 @@ async function handleUpload(e, source){
     let data=await res.json();
     let text=data.content?.map(c=>c.text||'').join('')||'';
     let lectura=interpretarExtraccion(text);
+    let reintentoMotivo='';
     if(lectura.estado==='vacia' && variante==='recortada'){
-      guardarUltimaLecturaIA(diagnosticarLectura(data,text,lectura),text);   // queda registrado por qué falló el recorte
+      guardarUltimaLecturaIA(diagnosticarLectura(data,text,lectura));   // queda registrado por qué falló el recorte
       aiStatus.textContent='Lectura vacía con el recorte — reintentando con la foto completa...';
       const res2=await llamarIA(tokenIA,contentBlock);
       if(res2.ok){ data=await res2.json(); text=data.content?.map(c=>c.text||'').join('')||''; lectura=interpretarExtraccion(text); variante='completa'; }
+      else{
+        // El fallo del reintento no se oculta: la lectura del recorte salió vacía Y el reintento falló por este motivo.
+        let json2=null; try{ json2=await res2.json(); }catch(e){}
+        reintentoMotivo=motivoHttpIA(res2,json2);
+        guardarUltimaLecturaIA({causa:'http_'+res2.status+'_reintento',stop:'',tipos:[],chars:0,uso:null});
+      }
     }
     const ext=lectura.campos;
     const diag=diagnosticarLectura(data,text,lectura);
-    guardarUltimaLecturaIA(diag,text);
+    if(!reintentoMotivo) guardarUltimaLecturaIA(diag);
     // Solo se cachea una lectura utilizable: una respuesta vacía o ilegible no debe "reutilizarse"
     // después como si fuera un resultado bueno.
     if(lectura.estado==='completa' || (lectura.estado!=='vacia' && variante==='completa')) guardarEnCacheIA(huella, ext);   // una lectura parcial sobre el recorte no se cachea
     precrellenarConIA(ext);
-    aiStatus.textContent=lectura.estado==='vacia' ? '⚠️ '+diag.mensaje+' — ingresa los datos manualmente' : textoEstadoExtraccion(lectura);
+    aiStatus.textContent=lectura.estado==='vacia' ? '⚠️ '+diag.mensaje+(reintentoMotivo?' (la lectura del recorte salió vacía y el reintento con la foto completa también falló: '+reintentoMotivo+')':'')+' — ingresa los datos manualmente' : textoEstadoExtraccion(lectura);
     aiBox.querySelector('.spinner').style.display='none';
     // mostrar formulario de confirmación
     const form=document.getElementById('reg-form');
@@ -2212,7 +2214,7 @@ async function handleUpload(e, source){
     aiBox.querySelector('.spinner').style.display='none';
     document.getElementById('reg-form').style.display='block';
     document.getElementById('f-fecha').value=new Date().toISOString().split('T')[0];
-    guardarUltimaLecturaIA({causa:'excepcion_cliente',stop:'',tipos:[],chars:0,uso:null},String(err&&err.message||''));
+    guardarUltimaLecturaIA({causa:'excepcion_cliente',stop:'',tipos:[],chars:0,uso:null});
     console.error(err);
   }
 }
@@ -2754,9 +2756,20 @@ function diagnosticarLectura(data,texto,lectura){
   return Object.assign(base,{causa:'sin_datos',mensaje:'La IA recibió la imagen pero no encontró fecha, monto ni comercio legibles (acerca la cámara al recibo, mejora la luz o usa Galería/PDF)'});
 }
 // Guarda en este dispositivo la última lectura (sin imagen) para poder revisar qué pasó. No sale del dispositivo.
-function guardarUltimaLecturaIA(diag,texto){
+// Solo metadatos: NUNCA se guarda el texto de la respuesta (puede contener datos del recibo).
+function motivoHttpIA(res,json){
+  let motivo=(json&&json.error)||'';
+  if(res.status===401) motivo='Tu sesión de Google no es válida o venció. Toca el ícono ☁️ para reconectar.';
+  else if(res.status===429) motivo='Demasiadas lecturas seguidas. Espera un minuto.';
+  else if(res.status===413) motivo='El archivo es demasiado grande para la IA (el original se guarda completo igual).';
+  else if(res.status===503) motivo='El servicio de lectura no está disponible o no está configurado.';
+  else if(!motivo) motivo='error '+res.status;
+  else motivo=motivo+' (error '+res.status+')';
+  return motivo;
+}
+function guardarUltimaLecturaIA(diag){
   try{
-    localStorage.setItem('a132_ultima_lectura_ia',JSON.stringify({fecha:new Date().toISOString(),causa:diag.causa,stop:diag.stop,tipos:diag.tipos,chars:diag.chars,uso:diag.uso,texto:String(texto||'').slice(0,600)}));
+    localStorage.setItem('a132_ultima_lectura_ia',JSON.stringify({fecha:new Date().toISOString(),causa:diag.causa,stop:diag.stop,tipos:diag.tipos,chars:diag.chars,uso:diag.uso}));
   }catch(e){}
   try{ console.info('[lectura IA]',diag.causa,'stop='+diag.stop,'bloques='+(diag.tipos||[]).join(','),'chars='+diag.chars); }catch(e){}
 }
