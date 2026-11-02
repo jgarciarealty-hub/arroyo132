@@ -43,7 +43,7 @@ test('array o null no rompe', I('[1,2]').estado === 'vacia' && I('null').estado 
 
 // el handler usa el intérprete y no cachea respuestas vacías
 test('handleUpload usa interpretarExtraccion y textoEstadoExtraccion', /interpretarExtraccion\(text\)/.test(script) && /textoEstadoExtraccion\(lectura\)/.test(script));
-test('no se cachea lectura vacía', /if\(lectura\.estado!=='vacia'\) guardarEnCacheIA/.test(script));
+test('no se cachea lectura vacía', /lectura\.estado==='completa' \|\| \(lectura\.estado!=='vacia' && variante==='completa'\)\) guardarEnCacheIA/.test(script));
 test('ya no existe el éxito incondicional', !/aiStatus\.textContent='✅ Datos extraídos — revisa y confirma';\s*\n\s*aiBox/.test(script));
 
 // ── 2. Verificación del respaldo ─────────────────────────────────────────────

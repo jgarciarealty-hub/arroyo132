@@ -2004,6 +2004,7 @@ function toggleManual(){
 }
 
 function resetRegistrar(){
+  { const nr=document.getElementById('recorte-nota'); if(nr) nr.style.display='none'; }
   const btnG=document.getElementById('btn-guardar-gasto');
   if(btnG){ btnG.disabled=false; btnG.textContent='💾 Guardar Gasto'; }
   if(_fotoDataUrl&&String(_fotoDataUrl).startsWith('blob:')){ try{ URL.revokeObjectURL(_fotoDataUrl); }catch(e){} }
@@ -2049,6 +2050,7 @@ async function handleUpload(e, source){
     return;
   }
   _archivoOriginal=file;
+  { const nr=document.getElementById('recorte-nota'); if(nr) nr.style.display='none'; }
   const aiBox=document.getElementById('aiBox'),aiStatus=document.getElementById('aiStatus');
   aiBox.classList.add('show');
   aiStatus.textContent='Leyendo imagen...';
@@ -2161,6 +2163,7 @@ async function handleUpload(e, source){
       if(recorte&&recorte.ok){ variante='recortada'; bloqueUsado={type:'image',source:{type:'base64',media_type:'image/jpeg',data:recorte.base64}}; aiStatus.textContent='Recibo detectado y recortado — leyendo con IA...'; }
     }
     let res=await llamarIA(tokenIA,bloqueUsado);
+    if(!res.ok && variante==='recortada'){ res=await llamarIA(tokenIA,contentBlock); variante='completa'; }   // el recorte nunca debe empeorar un caso que antes funcionaba
     if(!res.ok){
       let motivo='';
       try{ motivo=(await res.json()).error||''; }catch(e){}
@@ -2193,7 +2196,7 @@ async function handleUpload(e, source){
     guardarUltimaLecturaIA(diag,text);
     // Solo se cachea una lectura utilizable: una respuesta vacía o ilegible no debe "reutilizarse"
     // después como si fuera un resultado bueno.
-    if(lectura.estado!=='vacia') guardarEnCacheIA(huella, ext);
+    if(lectura.estado==='completa' || (lectura.estado!=='vacia' && variante==='completa')) guardarEnCacheIA(huella, ext);   // una lectura parcial sobre el recorte no se cachea
     precrellenarConIA(ext);
     aiStatus.textContent=lectura.estado==='vacia' ? '⚠️ '+diag.mensaje+' — ingresa los datos manualmente' : textoEstadoExtraccion(lectura);
     aiBox.querySelector('.spinner').style.display='none';
