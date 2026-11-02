@@ -31,6 +31,7 @@ const drive = { archivos: new Map(), n: 1, modo: 'ok', llamadas: [] };
 const respuesta = (st, obj) => ({ ok: st >= 200 && st < 300, status: st, json: async () => obj });
 function vista(f) { return { id: f.id, name: f.name, size: String(f.datos.length), md5Checksum: crypto.createHash('md5').update(f.datos).digest('hex'), webViewLink: 'https://drive.google.com/file/d/' + f.id + '/view', appProperties: f.appProperties }; }
 async function fetchFalso(url, opts = {}) {
+  if (drive.retardo) await new Promise(r => setTimeout(r, drive.retardo));
   const u = new URL(url); const m = opts.method || 'GET'; drive.llamadas.push(m + ' ' + u.pathname);
   if (drive.modo === 'caido') throw new Error('sin conexión');
   if (m === 'POST' && u.pathname === '/upload/drive/v3/files') {
@@ -96,9 +97,9 @@ const ctx = vm.createContext({
 const nombres = ['md5Hex', 'sha256Hex', 'extensionDe', 'verificarCargaOriginal', 'driveCarpetaRecibos', 'driveSubirOriginal', 'procesarColaOriginales', 'refrescarPanelRespaldo', 'registrarOriginalNuevo',
   'textoEstadoOriginal', 'textoEstadoOriginalBase', 'leerRecibos', 'leerRecibosPend', 'guardarRecibos', 'guardarRecibosPend', 'escribirVerificado', 'actualizarPend', 'escHtml', 'fetchConTiempo', 'limpiarRecibos',
   'docRefValido', 'listarDocumentos', 'sinHistorico', 'aplicarReferencia', 'gastoDeClave', 'clavesPendDeGasto', 'documentosDeGasto',
-  'tokensProveedor', 'proveedorContenido', 'distanciaLev', 'similitudProveedor', 'diasEntreFechas', 'buscarGastoCoincidente', 'asociarOriginalAGasto', '_btnCoinc', '_lineaGasto', 'cerrarCoincidencia', 'mostrarCoincidencia', 'terminarAsociacion',
+  'tokensProveedor', 'proveedorContenido', 'distanciaLev', 'similitudProveedor', 'diasEntreFechas', 'buscarGastoCoincidente', 'asociarOriginalAGasto', '_btnCoinc', '_esperar', '_estadoAsociacion', 'vigilarAsociacion', '_btnUnico', '_lineaGasto', 'cerrarCoincidencia', 'mostrarCoincidencia', 'terminarAsociacion',
   'verReciboOriginal', 'pintarOtrosDocumentos', 'eliminarGasto', 'textoSinOriginal', 'adjuntarReciboFicha', 'showGastoDetail'];
-vm.runInContext("const RECIBOS_KEY='a132_recibos', RECIBOS_PEND_KEY='a132_recibos_pend', RECIBOS_CARPETA_KEY='a132_recibos_carpeta', RECIBOS_CARPETA_NOMBRE='Arroyo 132 — Recibos originales'; const DRIVE_CAMPOS_ARCHIVO='id,name,size,md5Checksum,webViewLink,appProperties'; var _archivoOriginal=null; var _colaOriginalesEnCurso=false;\n"
+vm.runInContext("const RECIBOS_KEY='a132_recibos', RECIBOS_PEND_KEY='a132_recibos_pend', RECIBOS_CARPETA_KEY='a132_recibos_carpeta', RECIBOS_CARPETA_NOMBRE='Arroyo 132 — Recibos originales'; const DRIVE_CAMPOS_ARCHIVO='id,name,size,md5Checksum,webViewLink,appProperties'; var _archivoOriginal=null; var _colaOriginalesEnCurso=false; " + script.match(/^var _esperaColaMs=.*;$/m)[0] + " var _adjuntando={};\n"
   + constante('PROV_RUIDO') + '\n' + constante('_cents') + '\n' + nombres.map(extraer).join('\n'), ctx);
 const R = n => vm.runInContext(n, ctx);
 const archivo = (bytes, name = 'r.jpg', type = 'image/jpeg') => new File([bytes], name, { type });
@@ -123,6 +124,7 @@ const ids = r => r.candidatos.map(c => c.gasto.id);
 
 (async () => {
   reiniciar();
+  const esperaPorDefecto = Number(R('_esperaColaMs'));
   const foto = Buffer.alloc(5000, 7), foto2 = Buffer.alloc(3000, 9);
   const entrada = f => ({ files: [f], value: 'x' });
   const gAntes = () => JSON.stringify(ctx.gastos);
@@ -162,22 +164,60 @@ const ids = r => r.candidatos.map(c => c.gasto.id);
   await boton(box, 'Añadir otro').onclick();
   const r2 = R('leerRecibos')()[700010];
   test('D3: «Añadir» conserva el principal y suma el adicional', r2.sha256 === sha(foto2) && r2.adicionales && r2.adicionales.length === 1 && r2.adicionales[0].sha256 === sha(foto), r2);
-  test('D4: el código ya no afirma «✅ … se asoció» antes de que Drive confirme', !/alert\('✅ El recibo original se asoció/.test(script) && /subiendo a Drive, se confirma al terminar/.test(script));
+  test('D4: el código ya no afirma «✅ … se asoció» antes de que Drive confirme', !/alert\('✅ El recibo original se asoció/.test(script) && /subiendo a Drive.*se confirma al terminar/.test(script));
+
+  // ── Doble clic ────────────────────────────────────────────────────────────────
+  reiniciar(); alertas.length = 0;
+  const subidas = () => drive.llamadas.filter(l => l === 'POST /upload/drive/v3/files').length;
+  await Promise.all([R('adjuntarReciboFicha')(700010, entrada(archivo(foto2, 'c.jpg'))), R('adjuntarReciboFicha')(700010, entrada(archivo(foto2, 'c.jpg')))]);
+  test('Doble selección/clic en adjuntar (gasto sin documento): una sola asociación, una sola subida, un solo aviso', subidas() === 1 && alertas.length === 1 && Object.keys(R('leerRecibos')()).join() === '700010' && !R('leerRecibos')()[700010].adicionales, { s: subidas(), a: alertas });
+  alertas.length = 0;
+  await R('adjuntarReciboFicha')(700010, entrada(archivo(foto, 'c2.jpg')));
+  const bx = dom['adjuntar-estado-700010'], bAn = boton(bx, 'Añadir otro'), bAc = boton(bx, 'Actualizar');
+  const p1 = bAn.onclick(), p2 = bAn.onclick(), p3 = bAc.onclick();
+  test('Doble clic en Añadir/Actualizar: se deshabilitan todos los botones al primer clic', bAn.disabled === true && bAc.disabled === true && botones(bx).every(b => b.disabled));
+  await Promise.all([p1, p2, p3]);
+  const rr = R('leerRecibos')()[700010];
+  test('Doble clic: Añadir + Añadir + Actualizar seguidos → un solo adicional, ninguna actualización cruzada, un solo aviso', rr.adicionales.length === 1 && !rr.reemplazados && subidas() === 2 && alertas.length === 1 && /^✅/.test(alertas[0]), { rr, s: subidas(), a: alertas });
+  // ── Espera larga de la cola (> tiempo de espera) y estado final sin quedar obsoleto ────────────
+  reiniciar(); alertas.length = 0;
+  R('_esperaColaMs=250; _sondeoColaMs=20'); drive.retardo = 150;
+  await R('adjuntarReciboFicha')(700010, entrada(archivo(foto2, 'l.jpg')));
+  const el7 = dom['adjuntar-estado-700010'];
+  test('Cola aún subiendo tras la espera: estado «sigue subiendo», sin ✅ ni ⚠️ definitivos y sin alert', /Sigue subiendo/.test(el7.textContent) && !/✅/.test(el7.textContent) && alertas.length === 0, [el7.textContent, alertas]);
+  for (let i = 0; i < 150 && !/✅|⚠️/.test(el7.textContent); i++) await espera(40);
+  test('Al terminar más tarde la ficha se actualiza sola: ✅ solo con la referencia verificada', /^✅/.test(el7.textContent) && R('leerRecibos')()[700010] && R('leerRecibos')()[700010].sha256 === sha(foto2) && !/Sigue subiendo/.test(el7.textContent), el7.textContent);
+  reiniciar(); alertas.length = 0; drive.retardo = 150;
+  await R('adjuntarReciboFicha')(QID, entrada(archivo(foto2, 'm.jpg')));
+  drive.modo = 'caido';
+  const el8 = dom['adjuntar-estado-' + QID];
+  for (let i = 0; i < 150 && !/✅|⚠️/.test(el8.textContent); i++) await espera(40);
+  test('Si la subida tardía FALLA la ficha queda en ⚠️ (nunca ✅) y sin estado obsoleto «sigue subiendo»', /^⚠️/.test(el8.textContent) && !/✅|Sigue subiendo/.test(el8.textContent), el8.textContent);
+  drive.retardo = 0; drive.modo = 'ok';
+  R('_esperaColaMs=300000; _sondeoColaMs=500');
+  test('La espera por defecto es de al menos 240 s y el mensaje neutro avisa que puede tardar', esperaPorDefecto >= 240000 && /puede tardar/.test(script));
 
   console.log(`\n${pass} pasaron, ${fail} fallaron`);
   if (process.env.A132_MUTANTE) process.exit(fail ? 1 : 0);
   const mutaciones = [
-    ['D4: «✅» sin esperar a Drive', "const verificado=pend.length===0 && documentosDeGasto(gastoId).docs.length>0;", "const verificado=true;"],
-    ['D4: no se espera la cola de subida', "  await procesarColaOriginales();\n  for(let i=0;i<60 && _colaOriginalesEnCurso;i++) await new Promise(res=>setTimeout(res,500));\n", ""],
+    ['D4: «✅» sin esperar a Drive', "if(pend.length===0 && documentosDeGasto(gastoId).docs.length>0) return {verificado:true", "if(true) return {verificado:true"],
+    ['D4: no se espera la cola de subida', "  await procesarColaOriginales();\n  const limite=Date.now()+_esperaColaMs;\n  while(_colaOriginalesEnCurso && Date.now()<limite) await _esperar(_sondeoColaMs);\n  if(_colaOriginalesEnCurso){", "  if(false){"],
     ['D3: adjuntar desde la ficha pasa por el formulario de Registrar (resetRegistrar)', "if(!desdeFicha){ cerrarCoincidencia(); resetRegistrar(); }", "{ cerrarCoincidencia(); resetRegistrar(); }"],
-    ['D3: gasto con documento se sobrescribe sin elegir', "if(!documentosDeGasto(id).tiene) return terminarAsociacion(id,'nuevo',f,idEstado);", "terminarAsociacion(id,'nuevo',f,idEstado); return;"],
+    ['D3: gasto con documento se sobrescribe sin elegir', "if(!documentosDeGasto(id).tiene) return ejecutar('nuevo');", "return ejecutar('nuevo');"],
     ['D3: el viaje también muestra el botón', "${g.tipo!=='viaje'?`<div style=\"margin-top:8px\">", "${true?`<div style=\"margin-top:8px\">"],
+    ['doble clic: los botones no se bloquean', "grupo.btns.forEach(x=>{ x.disabled=true; });", ""],
+    ['doble clic: la decisión se puede ejecutar dos veces', ["if(grupo.ocupado) return; grupo.ocupado=true;", "grupo.ocupado=true;"], ["if(_adjuntando[id]) return; _adjuntando[id]=true;", "_adjuntando[id]=true;"]],
+    ['doble clic: sin indicador de reentrada en adjuntar', ["if(_adjuntando[id]) return; _adjuntando[id]=true;", "_adjuntando[id]=true;"], ["  if(_adjuntando[id]) return;\n  const idEstado", "  const idEstado"]],
+    ['espera de la cola de solo 30 s', "var _esperaColaMs=300000", "var _esperaColaMs=30000"],
+    ['la ficha no se actualiza al terminar una subida tardía', "if(desdeFicha){ const el=document.getElementById(idEstado); if(el) el.textContent=aviso; vigilarAsociacion(gastoId,idEstado); }", "if(desdeFicha){ const el=document.getElementById(idEstado); if(el) el.textContent=aviso; }"],
     ['D1: el texto no distingue metadatos de original', "el recibo original NO está vinculado a este gasto.", "Sin recibo."],
   ];
   let vivos = 0;
   mutaciones.forEach(([nombre, de, a]) => {
-    if (html.split(de).length < 2) { console.log('FAIL: mutación no aplicable (texto no encontrado):', nombre); vivos++; return; }
-    const f = path.join(fs.mkdtempSync(path.join(os.tmpdir(), 'mutF-')), 'index.html'); fs.writeFileSync(f, html.replace(de, () => a));
+    const des = Array.isArray(a) ? [de, a] : [[de, a]]; let mh = html, aplicable = true;
+    des.forEach(([x, y]) => { if (mh.split(x).length < 2) aplicable = false; else mh = mh.replace(x, () => y); });
+    if (!aplicable) { console.log('FAIL: mutación no aplicable (texto no encontrado):', nombre); vivos++; return; }
+    const f = path.join(fs.mkdtempSync(path.join(os.tmpdir(), 'mutF-')), 'index.html'); fs.writeFileSync(f, mh);
     const s = spawnSync(process.execPath, [__filename], { env: Object.assign({}, process.env, { A132_HTML: f, A132_MUTANTE: '1' }), encoding: 'utf8', timeout: 120000 });
     const muerto = s.status !== 0; if (!muerto) vivos++;
     console.log((muerto ? 'PASS' : 'FAIL') + ': mutación detectada — ' + nombre + (muerto ? '' : ' (SOBREVIVIÓ)'));

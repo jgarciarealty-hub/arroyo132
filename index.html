@@ -2824,7 +2824,7 @@ function similitudProveedor(a,b){
 }
 // Nombre corto contenido en el largo («QUALITY iS» dentro de «Quality iS (Herramientas PR)»): todos los tokens significativos del más corto están en el otro.
 function proveedorContenido(a,b){
-  if(/^s*sin especificars*$/i.test(String(a||'')) || /^s*sin especificars*$/i.test(String(b||''))) return false;
+  if(/^\s*sin especificar\s*$/i.test(String(a||'')) || /^\s*sin especificar\s*$/i.test(String(b||''))) return false;
   const A=new Set(tokensProveedor(a)), B=new Set(tokensProveedor(b));
   if(!A.size || !B.size) return false;
   const [c,l]=A.size<=B.size?[A,B]:[B,A];
@@ -2909,60 +2909,100 @@ function mostrarCoincidencia(res){
     box.textContent='';
     const t=document.createElement('div'); t.style.cssText='font-size:13px;color:var(--light);margin-bottom:8px';
     t.textContent='El gasto «'+_lineaGasto(g)+'» ya tiene documento ('+(est.docs.length+est.pendientes.length)+'). ¿Qué hacemos con este recibo nuevo?'; box.appendChild(t);
-    box.appendChild(_btnCoinc('Conservar el actual (no subir nada)', ()=>{ cerrarCoincidencia(); resetRegistrar(); alert('No se subió nada: el gasto conserva su documento actual.'); }));
-    box.appendChild(_btnCoinc('Añadir otro documento', ()=>terminarAsociacion(g.id,'anadir'), true));
-    box.appendChild(_btnCoinc('Actualizar (el nuevo pasa a ser el principal; el anterior se conserva como histórico)', ()=>terminarAsociacion(g.id,'actualizar'), true));
+    const gp={ocupado:false,btns:[]};
+    box.appendChild(_btnUnico(gp,'Conservar el actual (no subir nada)', ()=>{ cerrarCoincidencia(); resetRegistrar(); alert('No se subió nada: el gasto conserva su documento actual.'); }));
+    box.appendChild(_btnUnico(gp,'Añadir otro documento', ()=>terminarAsociacion(g.id,'anadir'), true));
+    box.appendChild(_btnUnico(gp,'Actualizar (el nuevo pasa a ser el principal; el anterior se conserva como histórico)', ()=>terminarAsociacion(g.id,'actualizar'), true));
   };
   if(res.nivel==='ALTA'){
     const g=res.candidatos[0].gasto;
     titulo.textContent='Este recibo parece ser el gasto «'+_lineaGasto(g)+'». ¿Lo asociamos en vez de crear un gasto nuevo?'; box.appendChild(titulo);
     const mt=document.createElement('div'); mt.style.cssText='font-size:11px;color:var(--gray)'; mt.textContent='Motivos: '+res.candidatos[0].motivos.join('; '); box.appendChild(mt);
-    box.appendChild(_btnCoinc('Asociar el recibo a ese gasto', ()=>elegir(g)));
+    const gpA={ocupado:false,btns:[]};
+    box.appendChild(_btnUnico(gpA,'Asociar el recibo a ese gasto', ()=>elegir(g)));
     box.appendChild(_btnCoinc('Es un gasto distinto', esDistinto, true));
   } else {
     titulo.textContent=(res.ambiguo?'Hay varios gastos que podrían ser este recibo.':'Puede que este recibo ya esté registrado, pero no estoy seguro.')+' Confirma explícitamente cuál (o ninguno):'; box.appendChild(titulo);
+    const gpI={ocupado:false,btns:[]};
     res.candidatos.forEach(c=>{
       const fila=document.createElement('div'); fila.style.cssText='margin:8px 0;padding:8px;border:1px dashed rgba(201,168,76,0.3);border-radius:8px';
       const l=document.createElement('div'); l.style.cssText='font-size:12px;color:var(--light)'; l.textContent=_lineaGasto(c.gasto); fila.appendChild(l);
       const m=document.createElement('div'); m.style.cssText='font-size:11px;color:var(--gray)'; m.textContent='Por qué: '+c.motivos.join('; '); fila.appendChild(m);
-      fila.appendChild(_btnCoinc('Es este gasto: asociar el recibo', ()=>elegir(c.gasto)));
+      fila.appendChild(_btnUnico(gpI,'Es este gasto: asociar el recibo', ()=>elegir(c.gasto)));
       box.appendChild(fila);
     });
     box.appendChild(_btnCoinc('Es un gasto distinto', esDistinto, true));
   }
   return true;
 }
+// Espera de la cola: una subida puede tardar hasta 240 s (driveSubirOriginal); se espera más que eso y, si aun así sigue, la ficha se actualiza sola al terminar.
+var _esperaColaMs=300000, _sondeoColaMs=500, _vigilaColaMs=1800000;
+function _esperar(ms){ return new Promise(res=>setTimeout(res,ms)); }
+// Estado REAL de un gasto tras intentar asociar: «✅» solo si no queda nada pendiente y hay documento verificado.
+function _estadoAsociacion(gastoId){
+  const pend=clavesPendDeGasto(gastoId).map(k=>leerRecibosPend()[k]).filter(Boolean);
+  if(pend.length===0 && documentosDeGasto(gastoId).docs.length>0) return {verificado:true, msg:'✅ El recibo original quedó verificado en Drive y asociado al gasto existente. No se creó un gasto nuevo ni se cambió ningún dato del gasto.'};
+  const e=pend.find(q=>q.estado==='error'||q.ultimoError);
+  return {verificado:false, msg:'⚠️ El recibo quedó guardado en este dispositivo, pero NO se pudo confirmar la subida a Drive'+(e&&e.ultimoError?': '+e.ultimoError:' todavía')+'. Se reintenta desde el panel de respaldo. No se creó un gasto nuevo ni se cambió ningún dato del gasto.'};
+}
+// Si la cola sigue subiendo tras la espera, la ficha queda con el estado neutro y esto lo reemplaza por el final (✅ solo verificado; ⚠️ si falló). Acotado: no se cuelga.
+async function vigilarAsociacion(gastoId, idEstado){
+  const limite=Date.now()+_vigilaColaMs;
+  while(_colaOriginalesEnCurso && Date.now()<limite) await _esperar(_sondeoColaMs);
+  const el=document.getElementById(idEstado); if(el) el.textContent=_estadoAsociacion(gastoId).msg;
+}
 // archivo/idEstado opcionales: desde la ficha del gasto el archivo llega directo (no toca el formulario de Registrar) y el estado se muestra en idEstado.
-// El «✅» solo aparece cuando Drive confirmó la subida; mientras tanto el texto es neutral, y un fallo es el estado visible.
+// El «✅» solo aparece cuando Drive confirmó la subida; mientras tanto el texto es neutral, y un fallo es el estado visible. Devuelve false si no se asoció nada.
 async function terminarAsociacion(gastoId, modo, archivo, idEstado){
   const desdeFicha=!!archivo;
   const r=await asociarOriginalAGasto(gastoId, desdeFicha?archivo:_archivoOriginal, modo);
-  if(!r.ok){ alert('⚠️ No se asoció el recibo: '+r.motivo); return; }
-  const neutro='📎 Recibo guardado en este dispositivo; subiendo a Drive, se confirma al terminar…';
+  if(!r.ok){ alert('⚠️ No se asoció el recibo: '+r.motivo); return false; }
+  const neutro='📎 Recibo guardado en este dispositivo; subiendo a Drive (puede tardar unos minutos con red lenta o archivos grandes); se confirma al terminar…';
   const elEstado=idEstado?document.getElementById(idEstado):document.getElementById('coincidencia-box');
   if(elEstado){ elEstado.textContent=neutro; elEstado.style.display='block'; }
   await procesarColaOriginales();
-  for(let i=0;i<60 && _colaOriginalesEnCurso;i++) await new Promise(res=>setTimeout(res,500));
-  const pend=clavesPendDeGasto(gastoId).map(k=>leerRecibosPend()[k]).filter(Boolean);
-  const verificado=pend.length===0 && documentosDeGasto(gastoId).docs.length>0;
+  const limite=Date.now()+_esperaColaMs;
+  while(_colaOriginalesEnCurso && Date.now()<limite) await _esperar(_sondeoColaMs);
+  if(_colaOriginalesEnCurso){   // sigue subiendo: sin «✅» ni «⚠️» definitivos todavía
+    const aviso='📎 Sigue subiendo a Drive; el estado final se actualiza al terminar (también se ve en el panel de respaldo).';
+    if(desdeFicha){ const el=document.getElementById(idEstado); if(el) el.textContent=aviso; vigilarAsociacion(gastoId,idEstado); }
+    else { cerrarCoincidencia(); resetRegistrar(); alert(aviso); }
+    return true;
+  }
+  const est=_estadoAsociacion(gastoId);
   if(!desdeFicha){ cerrarCoincidencia(); resetRegistrar(); }   // NO se guarda ningún gasto nuevo; el gasto existente queda intacto
-  let msg;
-  if(verificado) msg='✅ El recibo original quedó verificado en Drive y asociado al gasto existente. No se creó un gasto nuevo ni se cambió ningún dato del gasto.';
-  else { const e=pend.find(q=>q.estado==='error'||q.ultimoError); msg='⚠️ El recibo quedó guardado en este dispositivo, pero NO se pudo confirmar la subida a Drive'+(e&&e.ultimoError?': '+e.ultimoError:' todavía')+'. Se reintenta desde el panel de respaldo. No se creó un gasto nuevo ni se cambió ningún dato del gasto.'; }
-  if(desdeFicha){ const el=document.getElementById(idEstado); if(el) el.textContent=msg; }
-  alert(msg);
+  if(desdeFicha){ const el=document.getElementById(idEstado); if(el) el.textContent=est.msg; }
+  alert(est.msg);
+  return true;
 }
+// Botones de una misma decisión: al primer clic todos se deshabilitan y se ignora la reentrada hasta que termine el await (si no se asoció nada, se rehabilitan).
+function _btnUnico(grupo, texto, fn, ghost){
+  const b=_btnCoinc(texto, async()=>{
+    if(grupo.ocupado) return; grupo.ocupado=true; grupo.btns.forEach(x=>{ x.disabled=true; });
+    let ok; try{ ok=await fn(); } finally{ if(ok===false){ grupo.ocupado=false; grupo.btns.forEach(x=>{ x.disabled=false; }); } }
+  }, ghost);
+  grupo.btns.push(b); return b;
+}
+var _adjuntando={};   // ids con una asociación en curso desde la ficha (evita reentrada)
 // Ficha del gasto: adjunta un original a un gasto ya registrado, sin lectura IA ni cambios de monto/fecha/proveedor.
-function adjuntarReciboFicha(id, input){
+async function adjuntarReciboFicha(id, input){
   const f=input && input.files && input.files[0]; if(input) input.value=''; if(!f) return;
+  if(_adjuntando[id]) return;
   const idEstado='adjuntar-estado-'+id, cont=document.getElementById(idEstado);
-  if(!documentosDeGasto(id).tiene) return terminarAsociacion(id,'nuevo',f,idEstado);
+  const ejecutar=async(modo)=>{
+    if(_adjuntando[id]) return; _adjuntando[id]=true;
+    const bt=document.getElementById('adj-btn-'+id); if(bt) bt.disabled=true;
+    try{ return await terminarAsociacion(id,modo,f,idEstado); }
+    finally{ _adjuntando[id]=false; if(bt) bt.disabled=false; }
+  };
+  if(!documentosDeGasto(id).tiene) return ejecutar('nuevo');
   if(!cont) return;
   cont.textContent=''; cont.style.display='block';
   const t=document.createElement('div'); t.style.cssText='font-size:12px;color:var(--light);margin-bottom:6px'; t.textContent='Este gasto ya tiene documento. ¿Qué hacemos con «'+String(f.name||'archivo').slice(0,50)+'»?'; cont.appendChild(t);
-  cont.appendChild(_btnCoinc('Conservar el actual (no subir nada)', ()=>{ cont.textContent='No se subió nada: el gasto conserva su documento actual.'; }));
-  cont.appendChild(_btnCoinc('Añadir otro documento', ()=>terminarAsociacion(id,'anadir',f,idEstado), true));
-  cont.appendChild(_btnCoinc('Actualizar (el anterior se conserva como histórico)', ()=>terminarAsociacion(id,'actualizar',f,idEstado), true));
+  const gp={ocupado:false,btns:[]};
+  cont.appendChild(_btnUnico(gp,'Conservar el actual (no subir nada)', ()=>{ cont.textContent='No se subió nada: el gasto conserva su documento actual.'; }));
+  cont.appendChild(_btnUnico(gp,'Añadir otro documento', ()=>ejecutar('anadir'), true));
+  cont.appendChild(_btnUnico(gp,'Actualizar (el anterior se conserva como histórico)', ()=>ejecutar('actualizar'), true));
 }
 
 

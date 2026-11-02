@@ -96,9 +96,9 @@ const ctx = vm.createContext({
 const nombres = ['md5Hex', 'sha256Hex', 'extensionDe', 'verificarCargaOriginal', 'driveCarpetaRecibos', 'driveSubirOriginal', 'procesarColaOriginales', 'refrescarPanelRespaldo', 'registrarOriginalNuevo',
   'textoEstadoOriginal', 'textoEstadoOriginalBase', 'leerRecibos', 'leerRecibosPend', 'guardarRecibos', 'guardarRecibosPend', 'escribirVerificado', 'actualizarPend', 'escHtml', 'fetchConTiempo', 'limpiarRecibos',
   'docRefValido', 'listarDocumentos', 'sinHistorico', 'aplicarReferencia', 'gastoDeClave', 'clavesPendDeGasto', 'documentosDeGasto',
-  'tokensProveedor', 'proveedorContenido', 'distanciaLev', 'similitudProveedor', 'diasEntreFechas', 'buscarGastoCoincidente', 'asociarOriginalAGasto', '_btnCoinc', '_lineaGasto', 'cerrarCoincidencia', 'mostrarCoincidencia', 'terminarAsociacion',
+  '_esperar', '_estadoAsociacion', 'vigilarAsociacion', '_btnUnico', 'tokensProveedor', 'proveedorContenido', 'distanciaLev', 'similitudProveedor', 'diasEntreFechas', 'buscarGastoCoincidente', 'asociarOriginalAGasto', '_btnCoinc', '_lineaGasto', 'cerrarCoincidencia', 'mostrarCoincidencia', 'terminarAsociacion',
   'verReciboOriginal', 'pintarOtrosDocumentos', 'eliminarGasto'];
-vm.runInContext("const RECIBOS_KEY='a132_recibos', RECIBOS_PEND_KEY='a132_recibos_pend', RECIBOS_CARPETA_KEY='a132_recibos_carpeta', RECIBOS_CARPETA_NOMBRE='Arroyo 132 — Recibos originales'; const DRIVE_CAMPOS_ARCHIVO='id,name,size,md5Checksum,webViewLink,appProperties'; var _archivoOriginal=null; var _colaOriginalesEnCurso=false;\n"
+vm.runInContext("const RECIBOS_KEY='a132_recibos', RECIBOS_PEND_KEY='a132_recibos_pend', RECIBOS_CARPETA_KEY='a132_recibos_carpeta', RECIBOS_CARPETA_NOMBRE='Arroyo 132 — Recibos originales'; const DRIVE_CAMPOS_ARCHIVO='id,name,size,md5Checksum,webViewLink,appProperties'; var _archivoOriginal=null; var _colaOriginalesEnCurso=false; " + script.match(/^var _esperaColaMs=.*;$/m)[0] + " var _adjuntando={};\n"
   + constante('PROV_RUIDO') + '\n' + constante('_cents') + '\n' + nombres.map(extraer).join('\n'), ctx);
 const R = n => vm.runInContext(n, ctx);
 const archivo = (bytes, name = 'r.jpg', type = 'image/jpeg') => new File([bytes], name, { type });
@@ -298,6 +298,15 @@ const ids = r => r.candidatos.map(c => c.gasto.id);
   test('D2: sin fecha jamás es ALTA aunque proveedor e importe sean exactos', r.nivel === 'INCIERTA', r.nivel);
   r = nivel({ monto: 25.06, contratista: 'Sin especificar' });
   test('D2: «Sin especificar» sin fecha con importe exacto → NINGUNA', r.nivel === 'NINGUNA', r);
+  // Revisión independiente: el placeholder «Sin especificar» (también con espacios alrededor) nunca debe emparejar por sí solo.
+  {
+    const lst = [{ id: 1, fecha: '2026-06-01', contratista: 'Sin especificar', categoria: 'Otros', monto: 25.06 }, { id: 2, fecha: '2026-06-01', contratista: '  Sin especificar  ', categoria: 'Otros', monto: 25.06 }];
+    r = nivel({ monto: 25.06, contratista: 'Sin especificar' }, lst);
+    test('D2: «Sin especificar» vs «Sin especificar» con importe exacto y sin fecha → NO INCIERTA', r.nivel === 'NINGUNA', r);
+    r = nivel({ monto: 25.06, contratista: ' Sin especificar ' }, lst);
+    test('D2: «Sin especificar» con espacios alrededor, importe exacto, sin fecha → NO INCIERTA', r.nivel === 'NINGUNA', r);
+    test('D2: proveedorContenido excluye el placeholder también con espacios', R('proveedorContenido')(' Sin especificar ', 'Sin especificar') === false && R('proveedorContenido')('Sin especificar', '  sin especificar') === false && R('proveedorContenido')('Otro proveedor sin especificar', '  Sin especificar  ') === false);
+  }
   test('handleUpload busca coincidencia tras la lectura (ruta normal y ruta de caché)', script.includes('mostrarCoincidencia(buscarGastoCoincidente(ext,gastos))') && script.includes('mostrarCoincidencia(buscarGastoCoincidente(cacheIA,gastos))'));
   test('la lectura vacía no dispara la búsqueda (solo campos válidos)', /if\(lectura\.estado!=='vacia'\) mostrarCoincidencia/.test(script));
   test('el HTML tiene la caja de coincidencia y resetRegistrar la limpia', html.includes('id="coincidencia-box"') && /_archivoOriginal=null;\n  \{ const cb=document\.getElementById\('coincidencia-box'\)/.test(script));
@@ -321,6 +330,8 @@ const ids = r => r.candidatos.map(c => c.gasto.id);
     ['Conservar sube el archivo', "cerrarCoincidencia(); resetRegistrar(); alert('No se subió nada", "terminarAsociacion(g.id,'anadir'); alert('No se subió nada"],
     ['asociar guarda un gasto nuevo', 'if(!desdeFicha){ cerrarCoincidencia(); resetRegistrar(); }   // NO se guarda', 'guardarGasto(); if(!desdeFicha){ cerrarCoincidencia(); resetRegistrar(); }   // NO se guarda'],
     ['sin fecha basta el importe con cualquier proveedor (D2)', '(pDud || proveedorContenido(c.contratista,g.contratista))', 'true'],
+    ['proveedorContenido pierde las barras invertidas del placeholder (D2)', "|| /^\\s*sin especificar\\s*$/i.test(String(b||''))) return false;", "|| /^s*sin especificars*$/i.test(String(b||''))) return false;"],
+    ['proveedorContenido no excluye el placeholder (D2)', "if(/^\\s*sin especificar\\s*$/i.test(String(a||'')) || /^\\s*sin especificar\\s*$/i.test(String(b||''))) return false;", ''],
     ['sin fecha se promueve a ALTA (D2)', "nivel='INCIERTA'; motivos.push('la lectura no trae fecha", "nivel='ALTA'; motivos.push('la lectura no trae fecha"],
     ['sin deduplicar el mismo documento', 'if(listarDocumentos(actual).some(x=>x.doc.driveId===nueva.driveId && x.doc.sha256===nueva.sha256)) return actual;', ''],
     ['eliminar gasto no limpia pendientes compuestos', 'ks.forEach(k=>origBorrar(k)); ', ''],
