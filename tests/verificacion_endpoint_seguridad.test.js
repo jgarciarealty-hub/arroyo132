@@ -444,8 +444,40 @@ test('el modelo va fijado en el servidor y no se acepta uno del cliente', async 
   const res = await ejecutar({ auth: firmar(payloadValido()), body });
   assert.equal(res.statusCode, 200);
   assert.equal(ultimaLlamadaAnthropic.model, I.MODELO_DEFECTO);
-  assert.equal(ultimaLlamadaAnthropic.max_tokens, 600);
+  assert.equal(ultimaLlamadaAnthropic.max_tokens, I.TOKENS_DEFECTO);
   assert.equal(ultimaLlamadaAnthropic.system, undefined);
+});
+
+// 2026-11-02: Haiku 5.5 piensa por defecto y esos tokens cuentan contra max_tokens; con 600 una foto
+// difícil podía gastar todo pensando y devolver 200 con texto vacío.
+async function llamadaConEnv(env) {
+  const guardado = {}; for (const k of Object.keys(env)) { guardado[k] = process.env[k]; if (env[k] === null) delete process.env[k]; else process.env[k] = env[k]; }
+  try {
+    reiniciar();
+    const res = await ejecutar({ auth: firmar(payloadValido()), body: cuerpoValido() });
+    assert.equal(res.statusCode, 200);
+    return JSON.parse(JSON.stringify(ultimaLlamadaAnthropic));
+  } finally { for (const k of Object.keys(guardado)) { if (guardado[k] === undefined) delete process.env[k]; else process.env[k] = guardado[k]; } }
+}
+
+test('con el modelo por defecto se pide esfuerzo bajo y margen de tokens para el pensamiento', async () => {
+  const l = await llamadaConEnv({ A132_MODEL: null, A132_EFFORT: null, A132_MAX_TOKENS: null });
+  assert.deepEqual(l.output_config, { effort: 'low' });
+  assert.ok(l.max_tokens >= 1000, 'max_tokens=' + l.max_tokens);
+});
+
+test('una variable A132_MAX_TOKENS vieja (600) no reintroduce el problema: hay un piso', async () => {
+  const l = await llamadaConEnv({ A132_MAX_TOKENS: '600' });
+  assert.equal(l.max_tokens, I.MIN_TOKENS_LECTURA);
+  const alto = await llamadaConEnv({ A132_MAX_TOKENS: '2500' });
+  assert.equal(alto.max_tokens, 2500);
+});
+
+test('con otro modelo configurado no se envía esfuerzo salvo que se pida; A132_EFFORT manda siempre', async () => {
+  const otro = await llamadaConEnv({ A132_MODEL: 'claude-sonnet-5-5', A132_EFFORT: null });
+  assert.equal(otro.output_config, undefined);
+  const pedido = await llamadaConEnv({ A132_MODEL: null, A132_EFFORT: 'medium' });
+  assert.deepEqual(pedido.output_config, { effort: 'medium' });
 });
 
 test('un fallo de Anthropic no filtra su mensaje interno al cliente', async () => {

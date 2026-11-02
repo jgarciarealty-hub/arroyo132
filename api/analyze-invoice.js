@@ -34,12 +34,12 @@
 //   A132_DAILY_BUDGET        Máximo de llamadas al día en total (por defecto 200).
 //   A132_MAX_BODY_BYTES      Tamaño máximo del cuerpo en bytes (por defecto 4.2 MB: el límite
 //                            real de cuerpo de una función serverless de Vercel es 4.5 MB).
-//   A132_MAX_TOKENS          max_tokens hacia Anthropic (por defecto 600).
+//   A132_MAX_TOKENS          max_tokens hacia Anthropic (por defecto 1500; nunca menos de 1000, ver MIN_TOKENS_LECTURA).
 //   A132_MODEL               Modelo de lectura de recibos. Por defecto `claude-haiku-5-5`
 //                            ($0.10/$0.50 por millón de tokens, 10x más barato que
 //                            `claude-haiku-4-5`; ambos soportan imágenes y PDF, verificado).
-//   A132_EFFORT              Opcional (`low`/`medium`/`high`). Solo lo entienden los modelos
-//                            nuevos; si no se pone, no se envía y funciona con cualquiera.
+//   A132_EFFORT              `low`/`medium`/`high`. Con el modelo por defecto (Haiku 5.5) se envía `low`
+//                            si no se configura (ver MIN_TOKENS_LECTURA); con otro modelo solo se envía si se pone.
 // ─────────────────────────────────────────────────────────────────────────────
 'use strict';
 
@@ -56,6 +56,15 @@ const ORIGENES_DEFECTO = 'https://arroyo132.vercel.app';
 // modelo no puede meter un dato malo sin que alguien lo vea. Se puede volver al anterior (o
 // probar otro) sin tocar código: variable de entorno `A132_MODEL`.
 const MODELO_DEFECTO = 'claude-haiku-5-5';
+// CORRECCIÓN 2026-11-02 (hipótesis a confirmar con una lectura real). Claude Haiku 5.5 usa pensamiento
+// adaptativo ACTIVADO por defecto (esfuerzo por defecto `medium`) y los tokens de pensamiento cuentan
+// contra `max_tokens`. Con max_tokens=600 una foto difícil puede gastar los 600 pensando y devolver
+// `stop_reason: max_tokens` con texto vacío: HTTP 200, sin datos — exactamente el síntoma de «No se pudo
+// leer el recibo». Un PDF limpio necesita poco pensamiento y cabía. Leer un recibo no necesita razonar
+// largo: esfuerzo `low` y más margen de tokens. El piso evita que una variable de entorno vieja (600)
+// reintroduzca el problema.
+const MIN_TOKENS_LECTURA = 1000;
+const TOKENS_DEFECTO = 1500;
 const TIPOS_MEDIA_PERMITIDOS = new Set(['image/jpeg', 'image/png', 'image/webp', 'image/gif', 'application/pdf']);
 const GOOGLE_JWKS_URL = 'https://www.googleapis.com/oauth2/v3/certs';
 const EMISORES_VALIDOS = new Set(['accounts.google.com', 'https://accounts.google.com']);
@@ -416,12 +425,12 @@ async function handler(req, res) {
   try {
     const cuerpoAnthropic = {
       model: process.env.A132_MODEL || MODELO_DEFECTO,
-      max_tokens: enteroEnv('A132_MAX_TOKENS', 600),
+      max_tokens: Math.max(MIN_TOKENS_LECTURA, enteroEnv('A132_MAX_TOKENS', TOKENS_DEFECTO)),
       messages: [{ role: 'user', content: validado.bloque }],
     };
     // `effort` (opcional) solo lo entienden los modelos nuevos. Si no está configurado no se
     // envía nada, para que el mismo código funcione con cualquier modelo.
-    const esfuerzo = process.env.A132_EFFORT;
+    const esfuerzo = process.env.A132_EFFORT || (process.env.A132_MODEL ? '' : 'low');
     if (esfuerzo) cuerpoAnthropic.output_config = { effort: esfuerzo };
 
     const respuesta = await fetch('https://api.anthropic.com/v1/messages', {
@@ -460,6 +469,8 @@ module.exports._internals = {
   _reiniciar: () => { _ventanas.clear(); _presupuesto = { dia: '', usadas: 0 }; _tokensVistos.clear(); },
   _ponerJwks: (llaves) => { _jwks = llaves; _jwksExpira = Date.now() + 3600 * 1000; },
   MODELO_DEFECTO,
+  MIN_TOKENS_LECTURA,
+  TOKENS_DEFECTO,
   CLIENT_ID_DEFECTO,
   ORIGENES_DEFECTO,
   GOOGLE_TOKENINFO_URL,
