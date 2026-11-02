@@ -16,6 +16,7 @@
 <script src="https://accounts.google.com/gsi/client" async defer></script>
 <script src="central/estado_central.js"></script>
 <script src="central/almacen_drive.js"></script>
+<script src="central/recorte_recibo.js"></script>
 <style>
 :root {
   --navy:#08152a; --navy2:#0f2040; --navy3:#162d52;
@@ -2151,18 +2152,15 @@ async function handleUpload(e, source){
       return;
     }
 
-    const res=await fetch('/api/analyze-invoice',{
-      method:'POST',
-      headers:{'Content-Type':'application/json','Authorization':'Bearer '+tokenIA},
-      body:JSON.stringify({
-        messages:[{role:'user',content:[
-          contentBlock,
-          {type:'text',text:`Analiza esta factura de construcción/remodelación en Puerto Rico. Responde SOLO con JSON puro sin backticks ni markdown:
-{"fecha":"YYYY-MM-DD","monto":0.00,"ivu":0.00,"contratista":"nombre empresa o persona","categoria":"una de: Techo|Electricidad|Plomería|Albañilería / Estructura|Pintura|Ventanas / Puertas|Baños|Cocina|Limpieza / Excavación|Materiales|Permisos / ARPE|Agrimensura / Segregación|Abogado / Notaría|Otros","descripcion":"descripción breve del trabajo o materiales comprados"}
-"monto" es el TOTAL pagado tal como aparece; "ivu" es el impuesto impreso en el recibo (0 si no aparece). Si no encuentras algún dato, usa "" para texto y 0 para monto. No inventes ni estimes valores. Hoy: ${new Date().toISOString().split('T')[0]}`}
-        ]}]
-      })
-    });
+    // RECORTE (2026-11-02): se lee primero una COPIA recortada y enderezada del recibo (si se detecta con
+    // claridad); el original NUNCA se modifica (se guarda aparte, completo). Si esa lectura sale vacía,
+    // se reintenta una vez con la foto completa.
+    let variante='completa', bloqueUsado=contentBlock, recorte=null;
+    if(!esPDF){
+      recorte=await recortarParaIA(base64,file.type);
+      if(recorte&&recorte.ok){ variante='recortada'; bloqueUsado={type:'image',source:{type:'base64',media_type:'image/jpeg',data:recorte.base64}}; aiStatus.textContent='Recibo detectado y recortado — leyendo con IA...'; }
+    }
+    let res=await llamarIA(tokenIA,bloqueUsado);
     if(!res.ok){
       let motivo='';
       try{ motivo=(await res.json()).error||''; }catch(e){}
@@ -2170,6 +2168,9 @@ async function handleUpload(e, source){
       else if(res.status===429) motivo='Demasiadas lecturas seguidas. Espera un minuto.';
       else if(res.status===413) motivo='El archivo es demasiado grande para la IA (el original se guarda completo igual).';
       else if(res.status===503) motivo='El servicio de lectura no está disponible o no está configurado.';
+      else if(!motivo) motivo='error '+res.status;
+      else motivo=motivo+' (error '+res.status+')';
+      guardarUltimaLecturaIA({causa:'http_'+res.status,stop:'',tipos:[],chars:0,uso:null},'');
       aiStatus.textContent='⚠️ No se pudo leer con IA'+(motivo?` — ${motivo}`:'')+'. Ingresa los datos manualmente.';
       aiBox.querySelector('.spinner').style.display='none';
       document.getElementById('reg-form').style.display='block';
@@ -2178,27 +2179,37 @@ async function handleUpload(e, source){
       pw1.style.display='block';pi1.src=_fotoDataUrl||'';
       return;
     }
-    const data=await res.json();
-    const text=data.content?.map(c=>c.text||'').join('')||'';
-    const lectura=interpretarExtraccion(text);
+    let data=await res.json();
+    let text=data.content?.map(c=>c.text||'').join('')||'';
+    let lectura=interpretarExtraccion(text);
+    if(lectura.estado==='vacia' && variante==='recortada'){
+      guardarUltimaLecturaIA(diagnosticarLectura(data,text,lectura),text);   // queda registrado por qué falló el recorte
+      aiStatus.textContent='Lectura vacía con el recorte — reintentando con la foto completa...';
+      const res2=await llamarIA(tokenIA,contentBlock);
+      if(res2.ok){ data=await res2.json(); text=data.content?.map(c=>c.text||'').join('')||''; lectura=interpretarExtraccion(text); variante='completa'; }
+    }
     const ext=lectura.campos;
+    const diag=diagnosticarLectura(data,text,lectura);
+    guardarUltimaLecturaIA(diag,text);
     // Solo se cachea una lectura utilizable: una respuesta vacía o ilegible no debe "reutilizarse"
     // después como si fuera un resultado bueno.
     if(lectura.estado!=='vacia') guardarEnCacheIA(huella, ext);
     precrellenarConIA(ext);
-    aiStatus.textContent=textoEstadoExtraccion(lectura);
+    aiStatus.textContent=lectura.estado==='vacia' ? '⚠️ '+diag.mensaje+' — ingresa los datos manualmente' : textoEstadoExtraccion(lectura);
     aiBox.querySelector('.spinner').style.display='none';
     // mostrar formulario de confirmación
     const form=document.getElementById('reg-form');
     form.style.display='block';
     const pw=document.getElementById('reg-preview-wrap'),pi=document.getElementById('reg-preview-img');
     pw.style.display='block';pi.src=_fotoDataUrl||'';
+    mostrarVistaPreviaRecorte(variante==='recortada'?recorte:null);
     if(lectura.estado!=='vacia') mostrarCoincidencia(buscarGastoCoincidente(ext,gastos));   // ¿ya existe este gasto? decide la persona
   }catch(err){
-    aiStatus.textContent='⚠️ No pude leer — ingresa los datos manualmente.';
+    aiStatus.textContent='⚠️ No pude leer — '+(err&&err.message?('fallo técnico: '+String(err.message).slice(0,120)):'fallo técnico')+'. Ingresa los datos manualmente.';
     aiBox.querySelector('.spinner').style.display='none';
     document.getElementById('reg-form').style.display='block';
     document.getElementById('f-fecha').value=new Date().toISOString().split('T')[0];
+    guardarUltimaLecturaIA({causa:'excepcion_cliente',stop:'',tipos:[],chars:0,uso:null},String(err&&err.message||''));
     console.error(err);
   }
 }
@@ -2645,6 +2656,51 @@ async function reducirParaIA(base64, tipoMime){
   }catch(e){ return base64.length<=IA_MAX_BASE64 ? {base64:base64, mediaType:tipo} : {base64:null, mediaType:tipo, demasiado:true}; }
 }
 
+const PROMPT_LECTURA_IA=`Analiza esta factura de construcción/remodelación en Puerto Rico. Responde SOLO con JSON puro sin backticks ni markdown:
+{"fecha":"YYYY-MM-DD","monto":0.00,"ivu":0.00,"contratista":"nombre empresa o persona","categoria":"una de: Techo|Electricidad|Plomería|Albañilería / Estructura|Pintura|Ventanas / Puertas|Baños|Cocina|Limpieza / Excavación|Materiales|Permisos / ARPE|Agrimensura / Segregación|Abogado / Notaría|Otros","descripcion":"descripción breve del trabajo o materiales comprados"}
+"monto" es el TOTAL pagado tal como aparece; "ivu" es el impuesto impreso en el recibo (0 si no aparece). Si no encuentras algún dato, usa "" para texto y 0 para monto. No inventes ni estimes valores. Hoy: __HOY__`;
+function llamarIA(tokenIA,bloque){
+  return fetch('/api/analyze-invoice',{
+    method:'POST',
+    headers:{'Content-Type':'application/json','Authorization':'Bearer '+tokenIA},
+    body:JSON.stringify({messages:[{role:'user',content:[bloque,{type:'text',text:PROMPT_LECTURA_IA.replace('__HOY__',new Date().toISOString().split('T')[0])}]}]})
+  });
+}
+
+// Recorta y endereza el recibo en una COPIA (canvas nuevo); la foto original no se toca. Devuelve
+// {ok,base64,dataUrl,detalle} o null si algo falla (entonces se usa la foto completa como siempre).
+async function recortarParaIA(base64,tipoMime){
+  try{
+    if(typeof A132Recorte==='undefined') return null;
+    const tipo=(tipoMime||'').startsWith('image/')?tipoMime:'image/jpeg';
+    const img=new Image();
+    await new Promise((res,rej)=>{ img.onload=res; img.onerror=rej; img.src='data:'+tipo+';base64,'+base64; });
+    const lado=Math.max(img.width||1,img.height||1), esc=Math.min(1,1600/lado);
+    const cv=document.createElement('canvas'); cv.width=Math.max(1,Math.round(img.width*esc)); cv.height=Math.max(1,Math.round(img.height*esc));
+    const cx=cv.getContext('2d'); cx.drawImage(img,0,0,cv.width,cv.height);
+    const px=cx.getImageData(0,0,cv.width,cv.height);
+    const p=A132Recorte.prepararRecibo(px.data,cv.width,cv.height,{maxLado:1600});
+    if(!p.ok) return {ok:false,detalle:p.detalle};
+    const out=document.createElement('canvas'); out.width=p.recortado.w; out.height=p.recortado.h;
+    out.getContext('2d').putImageData(new ImageData(new Uint8ClampedArray(p.recortado.rgba),p.recortado.w,p.recortado.h),0,0);
+    const dataUrl=out.toDataURL('image/jpeg',0.88), b64=dataUrl.split(',')[1];
+    if(!b64 || b64.length>IA_MAX_BASE64) return {ok:false,detalle:{motivo:'recorte demasiado grande'}};
+    return {ok:true,base64:b64,dataUrl,detalle:p.detalle};
+  }catch(e){ return null; }
+}
+// Vista previa del recorte antes de confirmar: se muestra el recorte con un botón para ver la foto completa.
+function mostrarVistaPreviaRecorte(recorte){
+  const pi=document.getElementById('reg-preview-img'); if(!pi) return;
+  let nota=document.getElementById('recorte-nota');
+  if(!recorte||!recorte.ok){ if(nota) nota.style.display='none'; return; }
+  const completa=pi.src;
+  pi.src=recorte.dataUrl;
+  if(!nota){ nota=document.createElement('div'); nota.id='recorte-nota'; nota.style.cssText='font-size:12px;color:var(--gray);margin-top:6px;text-align:center'; pi.parentNode.appendChild(nota); }
+  nota.style.display='block'; nota.innerHTML='✂️ Recorte automático (solo para leer). El original se guarda completo. <button type="button" class="btn btn-xs btn-ghost" id="btn-ver-completa">Ver foto completa</button>';
+  let verCompleta=false;
+  document.getElementById('btn-ver-completa').onclick=()=>{ verCompleta=!verCompleta; pi.src=verCompleta?completa:recorte.dataUrl; document.getElementById('btn-ver-completa').textContent=verCompleta?'Ver recorte':'Ver foto completa'; };
+}
+
 // Interpreta la respuesta de texto de la IA y dice con honestidad qué se leyó (2026-11-01).
 // estado: 'completa' (fecha, monto y comercio válidos) | 'parcial' (algo útil, falta algo) | 'vacia' (nada útil).
 // Antes la app mostraba "Datos extraídos" aunque la respuesta viniera vacía o ilegible.
@@ -2674,6 +2730,32 @@ function interpretarExtraccion(texto){
   const faltan=['fecha','monto','contratista'].filter(k=>campos[k]===undefined);
   const estado = faltan.length===0 ? 'completa' : (faltan.length===3 ? 'vacia' : 'parcial');
   return {estado, campos, faltan};
+}
+// Dice con honestidad POR QUÉ una lectura salió vacía (2026-11-02). Antes todos los casos —la IA no
+// respondió texto, se quedó sin espacio, respondió sin JSON, o respondió con todo vacío porque no
+// veía el recibo— terminaban en el mismo mensaje y no se podía saber cuál era.
+function diagnosticarLectura(data,texto,lectura){
+  const stop=(data&&data.stop_reason)||'';
+  const tipos=(data&&Array.isArray(data.content)?data.content:[]).map(c=>(c&&c.type)||'?');
+  const t=String(texto||'').trim();
+  const base={stop, tipos, chars:t.length, uso:(data&&data.usage)||null};
+  if(lectura && lectura.estado!=='vacia') return Object.assign(base,{causa:'ok',mensaje:''});
+  if(!tipos.length) return Object.assign(base,{causa:'sin_contenido',mensaje:'La IA respondió sin contenido'});
+  if(!t) return Object.assign(base,stop==='max_tokens'
+    ? {causa:'sin_texto_max_tokens',mensaje:'La IA agotó su espacio de respuesta antes de escribir los datos'}
+    : {causa:'sin_texto',mensaje:'La IA respondió sin texto ('+(stop||'sin motivo')+')'});
+  const a=t.indexOf('{'), b=t.lastIndexOf('}');
+  if(a<0) return Object.assign(base,{causa:'sin_json',mensaje:'La IA respondió, pero no con el formato esperado'});
+  let ok=false; try{ JSON.parse(t.slice(a,b+1)); ok=true; }catch(e){}
+  if(!ok) return Object.assign(base,{causa:stop==='max_tokens'?'json_truncado':'json_invalido',mensaje:stop==='max_tokens'?'La respuesta de la IA se cortó antes de terminar':'La IA respondió con un JSON que no se pudo interpretar'});
+  return Object.assign(base,{causa:'sin_datos',mensaje:'La IA recibió la imagen pero no encontró fecha, monto ni comercio legibles (acerca la cámara al recibo, mejora la luz o usa Galería/PDF)'});
+}
+// Guarda en este dispositivo la última lectura (sin imagen) para poder revisar qué pasó. No sale del dispositivo.
+function guardarUltimaLecturaIA(diag,texto){
+  try{
+    localStorage.setItem('a132_ultima_lectura_ia',JSON.stringify({fecha:new Date().toISOString(),causa:diag.causa,stop:diag.stop,tipos:diag.tipos,chars:diag.chars,uso:diag.uso,texto:String(texto||'').slice(0,600)}));
+  }catch(e){}
+  try{ console.info('[lectura IA]',diag.causa,'stop='+diag.stop,'bloques='+(diag.tipos||[]).join(','),'chars='+diag.chars); }catch(e){}
 }
 function textoEstadoExtraccion(l){
   if(l.estado==='completa') return '✅ Datos extraídos — revisa y confirma';
