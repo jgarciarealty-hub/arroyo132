@@ -1657,7 +1657,8 @@ let docs = JSON.parse(localStorage.getItem('a132_docs')||'null') || [
 let _modoCentralAlArrancar=false; try{ _modoCentralAlArrancar=localStorage.getItem('a132_central')==='1'; }catch(e){}
 if(gastos.length===0 && !_modoCentralAlArrancar){
   gastos.push({id:Date.now(),fecha:'2025-04-20',contratista:'Operador Excavadora',tel:'',categoria:'Limpieza / Excavación',lote:'Compartido',metodo:'efectivo',monto:1500,descripcion:'Limpieza de terreno con excavadora (digger)',tipo:'manual'});
-  save();
+  // Si no se puede persistir, no se deja el sembrado solo en memoria: se reintenta al arrancar.
+  if(!save()) gastos.pop();
 }
 
 function save(){
@@ -1668,15 +1669,47 @@ function save(){
     const prev=localStorage.getItem('a132_gastos');
     if(prev&&prev!=='[]'&&prev!=='null') localStorage.setItem('a132_backup_gastos',prev);
   }catch(e){}
-  localStorage.setItem('a132_gastos',JSON.stringify(gastos));
-  localStorage.setItem('a132_servicios',JSON.stringify(servicios));
-  localStorage.setItem('a132_cont',JSON.stringify(contratistas));
-  localStorage.setItem('a132_tl',JSON.stringify(timeline));
-  localStorage.setItem('a132_docs',JSON.stringify(docs));
-  try{ localStorage.setItem('a132_fotos',JSON.stringify(fotos)); }catch(e){ console.warn('Fotos no guardadas (storage lleno)'); }
+  // Cuota llena: NO se propaga la excepción. Devuelve false para que el llamador no
+  // anuncie un guardado que no ocurrió ni deje el botón bloqueado en «Guardando…».
+  // El guardado es transaccional por clave: si una escritura falla, se restauran las claves
+  // YA escritas a su valor anterior. Sin esto, un fallo en `a132_gastos` dejaría persistidos
+  // servicios/contratistas/timeline/docs nuevos mientras el llamador revierte solo la memoria.
+  const claves=[
+    ['a132_servicios',()=>JSON.stringify(servicios)],
+    ['a132_cont',()=>JSON.stringify(contratistas)],
+    ['a132_tl',()=>JSON.stringify(timeline)],
+    ['a132_docs',()=>JSON.stringify(docs)],
+    ['a132_gastos',()=>JSON.stringify(gastos)],
+  ];
+  const previos=[];
+  claves.forEach(([k])=>{ try{ previos.push([k,localStorage.getItem(k)]); }catch(e){ previos.push([k,null]); } });
+  const escritas=[];
+  try{
+    claves.forEach(([k,valor])=>{ localStorage.setItem(k,valor()); escritas.push(k); });
+  }catch(e){
+    // Restaurar SOLO las claves que ya se escribieron; las no escritas no se tocan.
+    // El valor anterior ya cabía en localStorage, así que la restauración debería caber.
+    escritas.forEach(k=>{
+      const prev=previos.find(p=>p[0]===k);
+      try{ if(prev && prev[1]!==null) localStorage.setItem(k,prev[1]); else localStorage.removeItem(k); }catch(e2){}
+    });
+    // NO se borra a132_fotos para "liberar espacio": son datos históricos del usuario.
+    console.warn('Estado no guardado (storage lleno); claves ya escritas restauradas');
+    return false;
+  }
+  // Las miniaturas NO se escriben en localStorage: la copia permanente es Drive y la temporal,
+  // IndexedDB. `fotos` queda solo en memoria para la vista previa y la detección de duplicados.
   // Backup automático a Google Drive si está conectado
   if(typeof backupToDrive==='function') backupToDrive(false);
   if(typeof modoCentral==='function' && modoCentral()) centralProgramar();
+  return true;
+}
+// Guardado de usuario con aviso honesto. Todos los flujos que muestran «✅» o cierran un modal
+// deben usarlo: save() devuelve false (no lanza) cuando la cuota impide persistir.
+function guardarConAviso(){
+  if(save()) return true;
+  alert('⚠️ No se pudo guardar: el almacenamiento del dispositivo está lleno. Los cambios NO quedaron registrados. Libera espacio con «🧹 Liberar miniaturas históricas» en el panel de respaldo y vuelve a intentarlo.');
+  return false;
 }
 
 // ============ UTILS ============
@@ -1845,10 +1878,25 @@ function encontrarGastoDuplicado(contratista,fecha,monto){
 // generada -- suficiente para detectar "la misma foto subida dos veces", con el límite
 // honesto de que 2 fotos distintas que produzcan una miniatura idéntica byte a byte
 // (extremadamente improbable en la práctica) no se distinguirían.
+// Huellas de miniaturas (2026-11-03): no se guarda la imagen, solo una huella corta por gasto.
+// Permite detectar la misma foto tras recargar sin mantener un almacén de miniaturas.
+function fotoHashLeer(){ try{ const o=JSON.parse(localStorage.getItem('a132_foto_hashes')||'{}'); return (o&&typeof o==='object'&&!Array.isArray(o))?o:{}; }catch(e){ return {}; } }
+function fotoHashGuardar(id,h){ if(!h) return; try{ const o=fotoHashLeer(); o[String(id)]=String(h); localStorage.setItem('a132_foto_hashes',JSON.stringify(o)); }catch(e){} }
+function fotoHashBorrar(id){ try{ const o=fotoHashLeer(); if(Object.prototype.hasOwnProperty.call(o,String(id))){ delete o[String(id)]; localStorage.setItem('a132_foto_hashes',JSON.stringify(o)); } }catch(e){} }
 function fotoYaExiste(fotoDataUrl){
   if(!fotoDataUrl) return null;
+  // 1) Miniaturas históricas que aún viven en memoria/localStorage.
   for(const [id,f] of Object.entries(fotos)){
     if(f===fotoDataUrl) return gastos.find(g=>String(g.id)===String(id))||null;
+  }
+  // 2) Huella persistida; no requiere que la miniatura siga en el dispositivo.
+  // Se recorre todo el mapa: una huella puede apuntar a un gasto ya eliminado; en ese caso
+  // hay que seguir buscando otra coincidencia válida antes de rendirse.
+  const h=huellaImagen(fotoDataUrl), mapa=fotoHashLeer();
+  for(const id of Object.keys(mapa)){
+    if(mapa[id]!==h) continue;
+    const g=gastos.find(x=>String(x.id)===String(id));
+    if(g) return g;
   }
   return null;
 }
@@ -1875,9 +1923,17 @@ function calcIVU(){
 // ---- Presupuesto por categoria (recuperado 2026-10-09 de fc0a54e, adaptado a la seccion ROI actual) ----
 let presupuesto = {};
 try { presupuesto = JSON.parse(localStorage.getItem('a132_presupuesto')||'{}') || {}; } catch(e) { presupuesto = {}; }
-function guardarPresupuesto(){
-  try { localStorage.setItem('a132_presupuesto', JSON.stringify(presupuesto)); } catch(e) {}
-  alert('Presupuestos guardados');
+function guardarPresupuesto(silencioso){
+  try{
+    const s=JSON.stringify(presupuesto);
+    localStorage.setItem('a132_presupuesto',s);
+    if(localStorage.getItem('a132_presupuesto')!==s) throw new Error('no se pudo verificar');
+  }catch(e){
+    if(!silencioso) alert('⚠️ No se pudo guardar el presupuesto: el almacenamiento del dispositivo está lleno. Los cambios NO quedaron registrados.');
+    return false;
+  }
+  if(!silencioso) alert('Presupuestos guardados');
+  return true;
 }
 function renderPresupuesto(){
   const cats={};
@@ -1977,9 +2033,20 @@ function guardarGasto(btn){
     cuenta:esAbono?(cuentaNombre||document.getElementById('f-cont').value.trim()):'',
     monto_total:esAbono?montoTotal:0
   });
-  if(_fotoSmall) fotos[nuevoId]=_fotoSmall;
+  if(_fotoSmall){ fotos[nuevoId]=_fotoSmall; if(typeof FOTOS_IDB_ACTIVO!=='undefined' && FOTOS_IDB_ACTIVO && typeof fotosGuardar==='function') fotosGuardar(nuevoId,_fotoSmall); }
+  // El gasto solo cuenta como guardado si la persistencia local tuvo éxito. Si la cuota
+  // está llena se revierte la memoria, se reactiva el botón y se conserva el formulario
+  // para reintentar; el original NO se registra para un gasto que no quedó guardado.
+  if(!save()){
+    try{ gastos.pop(); }catch(e){}
+    try{ delete fotos[nuevoId]; if(typeof FOTOS_IDB_ACTIVO!=='undefined' && FOTOS_IDB_ACTIVO && typeof fotosBorrar==='function') fotosBorrar(nuevoId); }catch(e){}
+    reactivarBoton();
+    alert('⚠️ No se pudo guardar el gasto: el almacenamiento del dispositivo está lleno. El gasto NO quedó registrado. Libera espacio con «🧹 Liberar miniaturas históricas» en el panel de respaldo, vuelve a intentarlo y conserva estos datos del formulario.');
+    return;
+  }
+  if(_fotoSmall) fotoHashGuardar(nuevoId, huellaImagen(_fotoSmall));   // huella, no la imagen
   if(_archivoOriginal) registrarOriginalNuevo(nuevoId,_archivoOriginal);   // original completo → Drive (temporal local hasta verificar)
-  save();resetRegistrar();
+  resetRegistrar();
   alert('✅ Gasto guardado. ¡Que Dios bendiga cada inversión!');
 }
 
@@ -2131,11 +2198,11 @@ async function handleUpload(e, source){
     if(cacheIA){
       aiStatus.textContent='♻️ Este recibo ya se había leído — se reutiliza sin gastar una lectura nueva.';
       aiBox.querySelector('.spinner').style.display='none';
-      precrellenarConIA(cacheIA);
+      precrellenarConIA(cacheIA.datos);
       document.getElementById('reg-form').style.display='block';
       const pwC=document.getElementById('reg-preview-wrap'),piC=document.getElementById('reg-preview-img');
       pwC.style.display='block';piC.src=_fotoDataUrl||'';
-      mostrarCoincidencia(buscarGastoCoincidente(cacheIA,gastos));
+      mostrarCoincidencia(buscarGastoCoincidente(cacheIA.datos,gastos));
       return;
     }
 
@@ -2219,6 +2286,75 @@ async function handleUpload(e, source){
   }
 }
 
+// ── Miniaturas en IndexedDB (2026-11-03) ───────────────────────────────────────────────
+// Las miniaturas en base64 eran el mayor consumidor de localStorage (~5 MB) y provocaban
+// QuotaExceededError al guardar gastos. Se mueven a IndexedDB (misma tecnología que los
+// originales; base SEPARADA para no cambiar la versión de su almacén). Migración al arrancar:
+// se escribe todo y SOLO después se borra la clave de localStorage; si algo falla, se conserva.
+// Decisión 2026-11-03: sin almacén independiente de miniaturas. El bloque queda INACTIVO
+// (no se migra, no se escribe, no se borra nada); las miniaturas antiguas de a132_fotos se
+// conservan y solo se leen. Drive es el almacén permanente del original; IndexedDB, la
+// recuperación temporal. Retirar el código muerto requiere autorización (el clasificador
+// bloqueó su eliminación).
+const FOTOS_IDB_ACTIVO=false;
+const FOTOS_DB='a132_fotos_db', FOTOS_STORE='fotos';
+function fotosAbrir(){
+  return new Promise((res,rej)=>{
+    if(typeof indexedDB==='undefined'){ rej(new Error('sin IndexedDB')); return; }
+    const rq=indexedDB.open(FOTOS_DB,1);
+    rq.onupgradeneeded=()=>{ const db=rq.result; if(!db.objectStoreNames.contains(FOTOS_STORE)) db.createObjectStore(FOTOS_STORE); };
+    rq.onsuccess=()=>res(rq.result);
+    rq.onerror=()=>rej(rq.error||new Error('no se pudo abrir'));
+  });
+}
+async function fotosGuardar(id,dataUrl){
+  try{
+    const db=await fotosAbrir();
+    await new Promise((res,rej)=>{ const tx=db.transaction(FOTOS_STORE,'readwrite'); tx.objectStore(FOTOS_STORE).put(dataUrl,String(id)); tx.oncomplete=()=>res(); tx.onerror=()=>rej(tx.error); tx.onabort=()=>rej(tx.error||new Error('abortada')); });
+    db.close(); return true;
+  }catch(e){ console.warn('Miniatura no guardada en IndexedDB', e&&e.message); return false; }
+}
+async function fotosBorrar(id){
+  try{
+    const db=await fotosAbrir();
+    await new Promise((res,rej)=>{ const tx=db.transaction(FOTOS_STORE,'readwrite'); tx.objectStore(FOTOS_STORE).delete(String(id)); tx.oncomplete=()=>res(); tx.onerror=()=>rej(tx.error); });
+    db.close(); return true;
+  }catch(e){ return false; }
+}
+async function fotosLeerTodas(){
+  try{
+    const db=await fotosAbrir();
+    const pares=await new Promise((res,rej)=>{
+      const st=db.transaction(FOTOS_STORE,'readonly').objectStore(FOTOS_STORE);
+      const ks=st.getAllKeys(), vs=st.getAll(); let k=null,v=null;
+      const fin=()=>{ if(k&&v) res({keys:k,vals:v}); };
+      ks.onsuccess=()=>{ k=ks.result||[]; fin(); }; vs.onsuccess=()=>{ v=vs.result||[]; fin(); };
+      st.transaction.onerror=()=>rej(st.transaction.error);
+    });
+    db.close();
+    const obj={}; pares.keys.forEach((k2,i)=>{ obj[String(k2)]=pares.vals[i]; }); return obj;
+  }catch(e){ return null; }
+}
+async function fotosVolcar(obj){ const o=obj||{}; for(const id of Object.keys(o)){ await fotosGuardar(id,o[id]); } }
+async function fotosMigrar(){
+  try{
+    const raw=localStorage.getItem('a132_fotos'); if(!raw) return;
+    const obj=JSON.parse(raw)||{}; const ids=Object.keys(obj);
+    if(!ids.length){ localStorage.removeItem('a132_fotos'); return; }
+    const db=await fotosAbrir();
+    await new Promise((res,rej)=>{
+      const tx=db.transaction(FOTOS_STORE,'readwrite'); const st=tx.objectStore(FOTOS_STORE);
+      ids.forEach(id=>st.put(obj[id],String(id)));
+      tx.oncomplete=()=>res(); tx.onerror=()=>rej(tx.error); tx.onabort=()=>rej(tx.error);
+    });
+    db.close();
+    Object.assign(fotos,obj);
+    localStorage.removeItem('a132_fotos');   // solo tras escribir todas
+    console.warn('Miniaturas migradas a IndexedDB ('+ids.length+')');
+  }catch(e){ console.warn('Migracion de miniaturas no completada; se conserva localStorage', e&&e.message); }
+}
+if(FOTOS_IDB_ACTIVO) setTimeout(async()=>{ try{ await fotosMigrar(); const t=await fotosLeerTodas(); if(t){ Object.assign(fotos,t); try{ if(typeof render==='function') render(); }catch(e){} } }catch(e){} },0);
+
 // ── Recibo original (2026-11-01) ───────────────────────────────────────────────────────
 // Antes solo se guardaba una miniatura de 320 px (ilegible) y los PDF no se guardaban. Ahora el
 // archivo ORIGINAL (foto o PDF) se guarda en IndexedDB de este dispositivo, ligado al id del gasto.
@@ -2288,12 +2424,30 @@ function docRefValido(v){ return !!(v && typeof v==='object' && ((typeof v.drive
 // Una referencia puede llevar `adicionales[]` (documentos extra) y `reemplazados[]` (histórico de principales anteriores): se conservan siempre; lo que no sea una referencia válida se descarta.
 function limpiarRecibos(o){ const s={}; if(o && typeof o==='object' && !Array.isArray(o)) Object.keys(o).forEach(k=>{ const v=o[k]; if(docRefValido(v)){ if(v.adicionales===undefined && v.reemplazados===undefined){ s[k]=v; return; } const c=Object.assign({},v); ['adicionales','reemplazados'].forEach(f=>{ if(c[f]!==undefined){ if(Array.isArray(c[f])) c[f]=c[f].filter(docRefValido); else delete c[f]; } }); s[k]=c; } }); return s; }
 function leerRecibos(){ try{ const o=JSON.parse(localStorage.getItem(RECIBOS_KEY)||'{}'); return (o&&typeof o==='object')?o:{}; }catch(e){ return {}; } }
-function leerRecibosPend(){ try{ const o=JSON.parse(localStorage.getItem(RECIBOS_PEND_KEY)||'{}'); return (o&&typeof o==='object')?o:{}; }catch(e){ return {}; } }
+let _pendMemoria={}, _pendMemoriaAutoritativa=false;
+function leerRecibosPend(){
+  // Si la última escritura de la cola falló por cuota, `_pendMemoria` es la copia completa
+  // más reciente (incluye las bajas). Mientras sea autoritativa, NO se mezcla con la copia
+  // vieja de localStorage: si no, una entrada borrada reaparecería y podría marcar como
+  // «sin_copia» un recibo que ya está verificado en Drive.
+  if(_pendMemoriaAutoritativa) return Object.assign({}, _pendMemoria);
+  const m=(typeof _pendMemoria!=='undefined')?_pendMemoria:{};
+  try{ const o=JSON.parse(localStorage.getItem(RECIBOS_PEND_KEY)||'{}'); return Object.assign({}, (o&&typeof o==='object')?o:{}, m); }catch(e){ return Object.assign({}, m); }
+}
 function escribirVerificado(k,o){ try{ const s=JSON.stringify(o); localStorage.setItem(k,s); return localStorage.getItem(k)===s; }catch(e){ return false; } }
 function guardarRecibos(o){ return escribirVerificado(RECIBOS_KEY,o); }
-function guardarRecibosPend(o){ return escribirVerificado(RECIBOS_PEND_KEY,o); }
+function guardarRecibosPend(o){
+  // La cola es una caché: la fuente de recuperación son los ORIGINALES de IndexedDB. Si la
+  // cuota impide escribirla, se conserva en memoria (reemplazo completo, para representar
+  // también los borrados) y se reconstruye al arrancar. Todos los llamadores pasan la cola
+  // completa, así que reemplazar es seguro.
+  const ok=escribirVerificado(RECIBOS_PEND_KEY,o);
+  if(ok){ _pendMemoria={}; _pendMemoriaAutoritativa=false; }
+  else { _pendMemoria=Object.assign({}, o); _pendMemoriaAutoritativa=true; }
+  return ok;
+}
 // Lectura-modificación-escritura por id: una escritura nunca pisa las entradas de otros gastos (B-1).
-function actualizarPend(id, valor){ const p=leerRecibosPend(); if(valor===null) delete p[id]; else p[id]=valor; return guardarRecibosPend(p); }
+function actualizarPend(id, valor){ const p=leerRecibosPend(); if(valor===null){ delete p[id]; try{ if(typeof _pendMemoria!=='undefined') delete _pendMemoria[id]; }catch(e){} } else p[id]=valor; return guardarRecibosPend(p); }
 // ── Varios documentos por gasto (2026-11-01) ───────────────────────────────────────────
 // Forma de la referencia: la principal conserva su forma de siempre ({driveId,sha256,...} o {origen:'externo',docs}) y puede
 // llevar `adicionales[]` (documentos extra) y `reemplazados[]` (principales anteriores). NADA se borra, ni de Drive ni de la referencia.
@@ -2440,18 +2594,37 @@ let _colaOriginalesEnCurso=false;
 // la cola trabaja no se pierde; el bucle repite hasta que no queden pendientes sin intentar.
 async function procesarColaOriginales(){
   if(_colaOriginalesEnCurso) return; _colaOriginalesEnCurso=true;
-  try{
+  const ejecutar=async()=>{
     // Reconciliación: una copia temporal sin pendiente ni referencia (p. ej. falló la escritura de la cola) se vuelve a encolar.
     if(typeof origClaves==='function' && typeof gastos!=='undefined'){
       const ks=await origClaves();
-      if(ks) ks.forEach(k=>{ const comp=k.includes('~'); if((comp || !leerRecibos()[k]) && !leerRecibosPend()[k] && gastos.some(g=>String(g.id)===gastoDeClave(k))) actualizarPend(k,Object.assign({estado:'pendiente', nombre:'', tipo:'', bytes:0, intentos:0, recuperado:true, fecha:new Date().toISOString()}, comp?{modo:'anadir'}:{})); });
+      if(ks){
+        // Una sola lectura/escritura de la cola para toda la reconciliación: antes se
+        // reescribía la cola completa una vez por cada clave de IndexedDB (O(n²) con
+        // muchas copias huérfanas, justo en el escenario de cuota llena).
+        const pend=leerRecibosPend(), refs=leerRecibos(); let cambio=false;
+        ks.forEach(k=>{
+          const comp=k.includes('~'), prev=pend[k];
+          // Una entrada `sin_copia` con la copia presente es recuperable: se reencola. Cualquier
+          // otra entrada existente se respeta (no se pisan estados ni intentos).
+          if(prev && prev.estado!=='sin_copia') return;
+          if((comp || !refs[k]) && gastos.some(g=>String(g.id)===gastoDeClave(k))){
+            pend[k]=Object.assign({estado:'pendiente', nombre:'', tipo:'', bytes:0, intentos:0, recuperado:true, fecha:new Date().toISOString()}, comp?{modo:'anadir'}:{});
+            cambio=true;
+          }
+        });
+        if(cambio) guardarRecibosPend(pend);
+      }
     }
     const intentados=new Set();
     for(;;){
       const ids=Object.keys(leerRecibosPend()).filter(id=>{ const p=leerRecibosPend()[id]; return !intentados.has(id) && p && typeof p==='object' && p.estado!=='sin_copia' && (p.intentos||0)<5; });
       if(!ids.length) break;
       let token=localStorage.getItem(DRIVE_TOKEN_KEY);
-      if(!driveTokenValid()) token=await asegurarTokenDrive(false);
+      // Sin token previo NO se intenta OAuth silencioso desde un arranque en segundo plano:
+      // abriría una ventana de Google y no hay consentimiento que renovar. Se marca el
+      // pendiente como «no conectado» y se reintenta cuando el usuario conecte Drive.
+      if(!driveTokenValid() && token) token=await asegurarTokenDrive(false);
       if(!token){
         ids.forEach(id=>{ const p=leerRecibosPend()[id]; if(p) actualizarPend(id,Object.assign({},p,{estado:'pendiente',ultimoError:'Google Drive no conectado'})); });
         break;
@@ -2461,7 +2634,22 @@ async function procesarColaOriginales(){
         try{
           const r=await origLeer(id);
           if(r===undefined) throw new Error('no se pudo leer la copia temporal (error de IndexedDB); se reintenta');
-          if(!r||!r.blob){ const p=leerRecibosPend()[id]; if(p) actualizarPend(id,Object.assign({},p,{estado:'sin_copia',ultimoError:'la copia temporal ya no está en este dispositivo'})); continue; }
+          if(!r||!r.blob){
+            const p=leerRecibosPend()[id];
+            if(p){
+              const gid=gastoDeClave(id), comp=id.includes('~'), ref=leerRecibos()[gid];
+              // La clave base ya tiene referencia verificada: la entrada de cola es vieja
+              // (su borrado no se pudo persistir). Se limpia en vez de marcar «sin_copia».
+              if(ref && !comp){ actualizarPend(id,null); continue; }
+              // Clave compuesta: si la referencia contiene un documento del mismo tamaño,
+              // la subida ya se verificó y la entrada de cola también es vieja.
+              if(ref && comp && Number(p.bytes)>0 && listarDocumentos(ref).some(x=>Number(x.doc && x.doc.bytes)===Number(p.bytes))){
+                actualizarPend(id,null); continue;
+              }
+              actualizarPend(id,Object.assign({},p,{estado:'sin_copia',ultimoError:'la copia temporal ya no está en este dispositivo'}));
+            }
+            continue;
+          }
           const gid=gastoDeClave(id), modoP=(leerRecibosPend()[id]||{}).modo;
           const ref=await driveSubirOriginal(gid, r.blob, token);
           const refs=leerRecibos();
@@ -2477,6 +2665,17 @@ async function procesarColaOriginales(){
         }
       }
     }
+  };
+  try{
+    // Bloqueo entre pestañas: dos pestañas del mismo origen pueden compartir la cola y
+    // subir el mismo original a la vez. Web Locks serializa la cola completa; si el
+    // navegador no lo soporta, se mantiene el guard de una sola pestaña (_colaOriginalesEnCurso)
+    // y la deduplicación por sha256/driveId como segunda barrera.
+    if(typeof navigator!=='undefined' && navigator.locks && typeof navigator.locks.request==='function'){
+      await navigator.locks.request('a132_recibos_cola', {mode:'exclusive'}, ejecutar);
+    } else {
+      await ejecutar();
+    }
   } finally { _colaOriginalesEnCurso=false; refrescarPanelRespaldo(); }
 }
 async function reintentarOriginalesManual(){
@@ -2491,15 +2690,45 @@ async function reintentarOriginalesManual(){
 function refrescarPanelRespaldo(){
   const el=document.getElementById('respaldo-estado'); if(el) el.innerHTML=estadoRespaldoTexto();
 }
+// Liberación MANUAL y confirmada de las miniaturas históricas (2026-11-03).
+// No toca gastos, referencias, originales de Drive ni copias temporales de IndexedDB.
+// Existe para que el aviso de «almacenamiento lleno» tenga una salida real dentro de la app.
+async function liberarMiniaturasHistoricas(){
+  let base=null; try{ base=JSON.parse(localStorage.getItem('a132_fotos')||'null'); }catch(e){}
+  if(!base || typeof base!=='object' || Array.isArray(base)) base=(fotos&&typeof fotos==='object')?Object.assign({},fotos):{};
+  const claves=Object.keys(base);
+  if(!claves.length){ alert('No hay miniaturas históricas que liberar en este dispositivo.'); return; }
+  // Solo se borran las miniaturas que tienen un original verificado en Drive o una copia
+  // temporal en IndexedDB. Las de gastos antiguos sin original son la ÚNICA copia y se
+  // conservan: borrarlas sería una pérdida irreversible.
+  const refs=leerRecibos(), conOriginal=new Set(Object.keys(refs||{}).map(String));
+  try{ const ks=await origClaves(); if(Array.isArray(ks)) ks.forEach(k=>conOriginal.add(gastoDeClave(k))); }catch(e){}
+  const seguras=claves.filter(id=>conOriginal.has(String(id)));
+  const protegidas=claves.filter(id=>!conOriginal.has(String(id)));
+  if(!seguras.length){
+    alert('⚠️ No se liberó nada: las '+protegidas.length+' miniaturas de este dispositivo no tienen un recibo original en Drive/IndexedDB y son la única copia. Exporta un respaldo antes de borrarlas.');
+    return;
+  }
+  if(!confirm('🧹 Liberar miniaturas históricas\n\nSe borrarán '+seguras.length+' miniaturas que SÍ tienen recibo original en Drive/IndexedDB.\nSe conservarán '+protegidas.length+' miniaturas que no tienen original (son la única copia).\nLos gastos y los recibos originales NO se tocan.\n\n¿Continuar?')) return;
+  const rest={}; protegidas.forEach(id=>{ rest[id]=base[id]; });
+  try{
+    if(protegidas.length) localStorage.setItem('a132_fotos', JSON.stringify(rest));
+    else localStorage.removeItem('a132_fotos');
+  }catch(e){ alert('⚠️ No se pudo reescribir la lista de miniaturas; no se borró nada.'); return; }
+  try{ for(const k of Object.keys(fotos)) delete fotos[k]; Object.assign(fotos, rest); }catch(e){}
+  try{ refrescarPanelRespaldo(); }catch(e){}
+  try{ renderHistorial(); }catch(e){}
+  alert('✅ Se liberaron '+seguras.length+' miniaturas. Se conservaron '+protegidas.length+' que no tienen original (única copia).');
+}
 // Registra un original nuevo: primero queda en el dispositivo (temporal) y visible como pendiente; luego sube.
 // opciones.modo 'anadir'|'actualizar' (gasto que YA tiene documento): se guarda con clave propia `id~suf`, así no pisa la copia temporal ni la referencia previas.
 async function registrarOriginalNuevo(gastoId, archivo, opciones){
   const modo=opciones && (opciones.modo==='anadir'||opciones.modo==='actualizar') ? opciones.modo : null;
   const clave=modo ? String(gastoId)+'~'+Date.now().toString(36)+Math.random().toString(36).slice(2,5) : gastoId;
   const ok=await origGuardar(clave, archivo);
-  if(!ok){ alert('⚠️ El gasto se guardó, pero el recibo original NO se pudo guardar (ni siquiera de forma temporal). Solo quedó la miniatura. Guarda la foto o el PDF por tu cuenta si lo necesitas; puedes adjuntarlo después desde la ficha del gasto («📎 Adjuntar recibo original»).'); return; }
+  if(!ok){ alert('⚠️ El gasto se guardó, pero el recibo original NO se pudo guardar (ni siquiera de forma temporal). La miniatura es solo una vista previa de esta sesión y NO se conservará al recargar. Guarda la foto o el PDF por tu cuenta si lo necesitas; puedes adjuntarlo después desde la ficha del gasto («📎 Adjuntar recibo original»).'); return; }
   const encolado=actualizarPend(clave,Object.assign({estado:'pendiente', nombre:String(archivo.name||'').slice(0,100), tipo:archivo.type||'', bytes:archivo.size||0, intentos:0, fecha:new Date().toISOString()}, modo?{modo}:{}));
-  if(!encolado) alert('⚠️ El recibo original está guardado temporalmente en este dispositivo, pero no se pudo registrar su subida a Drive (almacenamiento lleno). Libera espacio y pulsa «Reintentar subida de recibos» en el panel de respaldo; no cierres la app sin hacerlo.');
+  if(!encolado) alert('⚠️ El recibo original está guardado temporalmente en este dispositivo, pero no se pudo registrar su subida a Drive (almacenamiento lleno). Libera espacio con «🧹 Liberar miniaturas históricas» en el panel de respaldo, pulsa «Reintentar subida de recibos» y no cierres la app sin hacerlo.');
   refrescarPanelRespaldo();
   procesarColaOriginales();
   return true;
@@ -3052,6 +3281,11 @@ function renderHistorial(){
   }
 
   if(!filtered.length){tbody.innerHTML='<tr><td colspan="7"><div class="empty"><div class="empty-icon">📋</div>'+(gastos.length===0?'No hay datos cargados':'Ningún resultado con estos filtros')+'</div></td></tr>';document.getElementById('tabla-total').textContent='';return;}
+  // El marcador 📷 ya no depende solo de la miniatura en memoria: también cuenta una
+  // referencia de recibo verificada o un pendiente en la cola (la copia está en Drive/IDB).
+  const idsConRecibo=new Set(), colaRecibos=leerRecibosPend();
+  Object.keys(leerRecibos()).forEach(id=>idsConRecibo.add(String(id)));
+  Object.keys(colaRecibos).forEach(k=>{ const q=colaRecibos[k]; if(q && q.estado!=='sin_copia') idsConRecibo.add(gastoDeClave(k)); });
   tbody.innerHTML=filtered.map(g=>`<tr>
     <td class="mono" style="font-size:12px">${escHtml(g.fecha)}</td>
     <td>${escHtml(g.categoria)}</td>
@@ -3059,7 +3293,7 @@ function renderHistorial(){
     <td><span class="badge badge-${g.lote==='132A'?'A':g.lote==='132B'?'B':'C'}">${escHtml(g.lote)}</span></td>
     <td><span class="badge badge-${g.metodo==='efectivo'?'green':'blue'}">${escHtml(g.metodo)}</span></td>
     <td class="mono">${fmt(g.monto)}</td>
-    <td><button class="btn btn-xs btn-ghost" onclick="showGastoDetail(${g.id})">${fotos[g.id]?'📷 ':''}Ver</button></td>
+    <td><button class="btn btn-xs btn-ghost" onclick="showGastoDetail(${g.id})">${(fotos[g.id]||idsConRecibo.has(String(g.id)))?'📷 ':''}Ver</button></td>
   </tr>`).join('');
   const tot=filtered.reduce((s,g)=>s+g.monto,0);
   document.getElementById('tabla-total').textContent='Total: '+fmt(tot);
@@ -3091,10 +3325,14 @@ function showGastoDetail(id){
 function eliminarGasto(id){
   if(!confirm('¿Eliminar este gasto?'))return;
   if(clavesPendDeGasto(id).some(k=>{ const q=leerRecibosPend()[k]; return q && q.estado!=='sin_copia'; }) && !confirm('⚠️ El recibo original de este gasto AÚN NO se ha subido a Drive; si lo eliminas se pierde. ¿Eliminar de todas formas?'))return;
+  const antes=gastos.slice();
   gastos=gastos.filter(g=>g.id!==id);
-  delete fotos[id];
+  // Primero se persiste el borrado del gasto. Si la cuota lo impide, no se toca ningún
+  // original local ni la cola: el usuario puede liberar espacio y reintentar.
+  if(!guardarConAviso()){ gastos=antes; return; }
+  delete fotos[id]; fotoHashBorrar(id); if(typeof FOTOS_IDB_ACTIVO!=='undefined' && FOTOS_IDB_ACTIVO && typeof fotosBorrar==='function') fotosBorrar(id);
   { const p=leerRecibosPend(), ks=clavesPendDeGasto(id); ks.forEach(k=>origBorrar(k)); origBorrar(id); ks.forEach(k=>{ delete p[k]; }); if(ks.length) guardarRecibosPend(p); }   // Drive no se toca
-  save();closeModal();renderHistorial();renderDashboard();
+  closeModal();renderHistorial();renderDashboard();
 }
 
 // Editar gasto ya guardado -- recuperado del parche manual de julio 2026
@@ -3153,6 +3391,7 @@ function asegurarOpcionSelect(selId,valor){
 }
 function guardarEdicionGasto(id){
   const g=gastos.find(x=>x.id===id);if(!g)return;
+  const antes=Object.assign({},g);
   const fecha=document.getElementById('e-fecha').value;
   const monto=parseFloat(document.getElementById('e-monto').value);
   if(!fecha||!monto||monto<=0){alert('⚠️ Fecha y monto son requeridos.');return;}
@@ -3169,7 +3408,8 @@ function guardarEdicionGasto(id){
   if(monto!==g.monto) g.monto=monto;
   const descNueva=document.getElementById('e-desc').value.trim();
   if(descNueva!==String(g.descripcion||'').trim()) g.descripcion=descNueva;
-  save();closeModal();renderHistorial();renderDashboard();
+  if(!guardarConAviso()){ Object.assign(g,antes); return; }
+  closeModal();renderHistorial();renderDashboard();
   alert('✅ Gasto actualizado.');
 }
 
@@ -3236,10 +3476,12 @@ function editServicio(lote,tipo,id){
 }
 function saveServicio(lote,tipo,id){
   const arr=servicios[lote][tipo];
-  const idx=arr.findIndex(x=>x.id===id);
+  const idx=arr.findIndex(x=>x.id===id); if(idx<0) return;
+  const antes=Object.assign({},arr[idx]);
   arr[idx].monto=parseFloat(document.getElementById('se-monto').value)||0;
   arr[idx].estado=document.getElementById('se-estado').value;
-  save();closeModal();renderServicios();
+  if(!guardarConAviso()){ Object.assign(arr[idx],antes); return; }
+  closeModal();renderServicios();
 }
 function showServicioModal(lote){
   openModal(`Añadir Cargo — Lote ${lote}`,`
@@ -3265,7 +3507,8 @@ function addServicio(lote){
   const estado=document.getElementById('ns-estado').value;
   if(!concepto)return;
   servicios[lote][tipo].push({id:Date.now(),concepto,monto,estado});
-  save();closeModal();renderServicios();
+  if(!guardarConAviso()){ servicios[lote][tipo].pop(); return; }
+  closeModal();renderServicios();
 }
 
 // ============ ROI ============
@@ -3472,9 +3715,16 @@ function addContratista(){
   const nombre=document.getElementById('nc-nombre').value.trim();
   if(!nombre)return;
   contratistas.push({id:Date.now(),nombre,especialidad:document.getElementById('nc-esp').value,tel:document.getElementById('nc-tel').value.trim(),notas:document.getElementById('nc-notas').value.trim(),montoContrato:parseFloat(document.getElementById('nc-contrato').value)||0,pagado:0});
-  save();closeModal();renderContratistas();
+  if(!guardarConAviso()){ contratistas.pop(); return; }
+  closeModal();renderContratistas();
 }
-function eliminarContratista(id){if(!confirm('¿Eliminar?'))return;contratistas=contratistas.filter(c=>c.id!==id);save();renderContratistas();}
+function eliminarContratista(id){
+  if(!confirm('¿Eliminar?'))return;
+  const antes=contratistas.slice();
+  contratistas=contratistas.filter(c=>c.id!==id);
+  if(!guardarConAviso()){ contratistas=antes; return; }
+  renderContratistas();
+}
 
 function editarContratista(id){
   const c=contratistas.find(x=>x.id===id);if(!c)return;
@@ -3493,12 +3743,14 @@ function editarContratista(id){
 }
 function guardarEdicionCont(id){
   const c=contratistas.find(x=>x.id===id);if(!c)return;
+  const antes=Object.assign({},c);
   c.nombre=document.getElementById('ec-nombre').value.trim()||c.nombre;
   c.tel=document.getElementById('ec-tel').value.trim();
   c.montoContrato=parseFloat(document.getElementById('ec-contrato').value)||0;
   c.pagado=parseFloat(document.getElementById('ec-pagado').value)||0;
   c.notas=document.getElementById('ec-notas').value.trim();
-  save();closeModal();renderContratistas();
+  if(!guardarConAviso()){ Object.assign(c,antes); return; }
+  closeModal();renderContratistas();
 }
 
 function registrarPagoCont(id){
@@ -3527,6 +3779,8 @@ function confirmarPagoCont(id){
   const monto=parseFloat(document.getElementById('cp-monto').value)||0;
   if(monto<=0){alert('⚠️ Ingresa un monto válido.');return;}
   const c=contratistas.find(x=>x.id===id);if(!c)return;
+  const pagadoAntes=c.pagado;
+  const gastosAntes=gastos.length;
   c.pagado=(c.pagado||0)+monto;
   const notas=document.getElementById('cp-notas').value.trim();
   const fecha=document.getElementById('cp-fecha').value||new Date().toISOString().split('T')[0];
@@ -3539,7 +3793,8 @@ function confirmarPagoCont(id){
     descripcion:notas||`Pago contrato — ${c.nombre}`,
     tipo:'pago_contratista'
   });
-  save();closeModal();renderContratistas();renderDashboard();
+  if(!guardarConAviso()){ c.pagado=pagadoAntes; gastos.length=gastosAntes; return; }
+  closeModal();renderContratistas();renderDashboard();
   alert(`✅ Pago de ${fmt(monto)} registrado para ${c.nombre}`);
 }
 
@@ -3569,9 +3824,11 @@ function showAddTimeline(){
   `);
 }
 function addTimeline(){
+  const antes=timeline.slice();
   timeline.push({id:Date.now(),fecha:document.getElementById('nt-fecha').value,titulo:document.getElementById('nt-titulo').value,desc:document.getElementById('nt-desc').value,estado:document.getElementById('nt-estado').value});
   timeline.sort((a,b)=>new Date(a.fecha)-new Date(b.fecha));
-  save();closeModal();renderTimeline();
+  if(!guardarConAviso()){ timeline.length=0; timeline.push(...antes); return; }
+  closeModal();renderTimeline();
 }
 
 // ============ DOCS ============
@@ -3657,6 +3914,7 @@ function renderDocs(){
         <button class="btn btn-sm btn-gold" onclick="restaurarDesdeDrive()">☁️ Traer datos desde Google Drive</button>
         <button class="btn btn-sm btn-outline" onclick="reintentarOriginalesManual()">🔁 Reintentar subida de recibos</button>
         ${((typeof location!=='undefined'&&/[?&]central=1/.test(location.search))||(typeof modoCentral==='function'&&modoCentral()))?`<button class="btn btn-sm btn-gold" onclick="centralActivar()">🗂️ Activar fuente central</button><button class="btn btn-sm btn-outline" onclick="centralSincronizar()">🔄 Sincronizar ahora</button><button class="btn btn-sm btn-ghost" onclick="centralRevertir()">↩️ Volver a la copia previa</button>`:''}${typeof centralBotonesExtra==='function'?centralBotonesExtra():''}
+        <button class="btn btn-sm btn-outline" onclick="liberarMiniaturasHistoricas()">🧹 Liberar miniaturas históricas</button>
         <button class="btn btn-sm btn-outline" onclick="exportarBackup()">⬇️ Exportar respaldo (archivo)</button>
         <button class="btn btn-sm btn-outline" onclick="importarBackup()">⬆️ Importar respaldo (archivo)</button>
       </div>
@@ -3682,7 +3940,7 @@ function estadoRespaldoTexto(){
   let monto=0; try{ monto=gastos.reduce((s,g)=>s+(Number(g.monto)||0),0); }catch(e){}
   const nRefs=Object.keys(leerRecibos()).length, colaR=leerRecibosPend(), nPend=Object.values(colaR).filter(p=>p&&p.estado!=='error'&&p.estado!=='sin_copia').length, nErr=Object.values(colaR).filter(p=>p&&p.estado==='error').length;
   partes.push('Gastos: en este dispositivo ('+gastos.length+', $'+monto.toFixed(2)+') y en el respaldo de Drive ('+DRIVE_FILE_NAME+')');
-  partes.push('Recibos originales: en Google Drive, carpeta «'+RECIBOS_CARPETA_NOMBRE+'» ('+nRefs+' verificados'+(nPend?', '+nPend+' pendientes de subir':'')+(nErr?', ⚠️ '+nErr+' con error':'')+'); miniaturas de 320 px: '+Object.keys(fotos||{}).length+' en el respaldo');
+  partes.push('Recibos originales: en Google Drive, carpeta «'+RECIBOS_CARPETA_NOMBRE+'» ('+nRefs+' verificados'+(nPend?', '+nPend+' pendientes de subir':'')+(nErr?', ⚠️ '+nErr+' con error':'')+'); miniaturas históricas: '+Object.keys(fotos||{}).length+' solo como vista previa (no se guardan como almacén independiente)');
   if(typeof centralTexto==='function') partes.push(centralTexto());
   let v=null; try{ v=JSON.parse(localStorage.getItem(DRIVE_VERIF_KEY)||'null'); }catch(e){}
   partes.push(v&&v.fecha ? ('Drive verificado por relectura: '+v.gastos+' gastos ($'+Number(v.monto).toFixed(2)+') el '+String(v.fecha).slice(0,16).replace('T',' ')+' en '+v.archivo) : 'Drive: sin verificación por relectura todavía');
@@ -3690,11 +3948,17 @@ function estadoRespaldoTexto(){
 }
 
 function updateDoc(id,estado){
-  docs.find(d=>d.id===id).estado=estado;save();renderDocs();
+  const d=docs.find(x=>x.id===id); if(!d) return;
+  const antes=d.estado; d.estado=estado;
+  if(!guardarConAviso()){ d.estado=antes; return; }
+  renderDocs();
 }
 function eliminarDoc(id){
   if(!confirm('¿Eliminar este documento del listado?'))return;
-  docs=docs.filter(d=>d.id!==id);save();renderDocs();
+  const antes=docs.slice();
+  docs=docs.filter(d=>d.id!==id);
+  if(!guardarConAviso()){ docs=antes; return; }
+  renderDocs();
 }
 function uploadDocDrive(id){
   const d=docs.find(x=>x.id===id);if(!d)return;
@@ -3712,9 +3976,11 @@ function uploadDocDrive(id){
 function saveDriveId(id){
   const driveId=document.getElementById('ud-id').value.trim();
   if(!driveId)return;
-  const d=docs.find(x=>x.id===id);
+  const d=docs.find(x=>x.id===id); if(!d) return;
+  const antes={driveId:d.driveId,estado:d.estado};
   d.driveId=driveId;d.estado='listo';
-  save();closeModal();renderDocs();
+  if(!guardarConAviso()){ Object.assign(d,antes); return; }
+  closeModal();renderDocs();
 }
 function showAddDoc(){
   openModal('Añadir Documento',`
@@ -3738,7 +4004,8 @@ function addDoc(){
   if(!nombre)return;
   const driveId=document.getElementById('nd-drive').value.trim();
   docs.push({id:Date.now(),nombre,lote:document.getElementById('nd-lote').value,estado:driveId?'listo':'pendiente',driveId,tipo:'pdf',prioridad:document.getElementById('nd-prio').value});
-  save();closeModal();renderDocs();
+  if(!guardarConAviso()){ docs.pop(); return; }
+  closeModal();renderDocs();
 }
 
 // ============ MODAL ============
@@ -3771,7 +4038,15 @@ let tuCoop = JSON.parse(localStorage.getItem('a132_tucoop')||'null') || {
   intereses: []
 };
 
-function saveTuCoop(){ localStorage.setItem('a132_tucoop', JSON.stringify(tuCoop)); }
+function saveTuCoop(){
+  try{ const s=JSON.stringify(tuCoop); localStorage.setItem('a132_tucoop',s); return localStorage.getItem('a132_tucoop')===s; }
+  catch(e){ return false; }
+}
+function guardarTuCoopConAviso(){
+  if(saveTuCoop()) return true;
+  alert('⚠️ No se pudo guardar el financiamiento: el almacenamiento del dispositivo está lleno. Los cambios NO quedaron registrados.');
+  return false;
+}
 
 function renderFinanciamiento(){
   // Llenar campos
@@ -3820,7 +4095,7 @@ function calcTuCoop(){
   tuCoop.fechaAct = document.getElementById('tc-fecha-act')?.value||'';
   tuCoop.balance = parseFloat(document.getElementById('tc-balance')?.value)||0;
   tuCoop.pagoMensual = parseFloat(document.getElementById('tc-pago-mensual')?.value)||0;
-  saveTuCoop();
+  if(!guardarTuCoopConAviso()) return;
   if(!tuCoop.balance||!tuCoop.tasa) return;
   const intMensual = tuCoop.balance * (tuCoop.tasa/100/12);
   let meses = 0;
@@ -3848,8 +4123,11 @@ function editActivacion(id){
     </div>`);
 }
 function saveActivacion(id){
-  tuCoop.activacion.find(x=>x.id===id).monto = parseFloat(document.getElementById('ea-monto').value)||0;
-  saveTuCoop();closeModal();renderFinanciamiento();
+  const item=tuCoop.activacion.find(x=>x.id===id); if(!item) return;
+  const antes=item.monto;
+  item.monto = parseFloat(document.getElementById('ea-monto').value)||0;
+  if(!guardarTuCoopConAviso()){ item.monto=antes; return; }
+  closeModal();renderFinanciamiento();
 }
 
 function showAddActivacion(){
@@ -3866,7 +4144,8 @@ function addActivacion(){
   const concepto=document.getElementById('na-concepto').value.trim();
   if(!concepto)return;
   tuCoop.activacion.push({id:Date.now(),concepto,monto:parseFloat(document.getElementById('na-monto').value)||0});
-  saveTuCoop();closeModal();renderFinanciamiento();
+  if(!guardarTuCoopConAviso()){ tuCoop.activacion.pop(); return; }
+  closeModal();renderFinanciamiento();
 }
 
 function showAddInteres(){
@@ -3885,21 +4164,32 @@ function showAddInteres(){
     </div>`);
 }
 function addInteres(){
+  const antes=tuCoop.intereses.slice();
   tuCoop.intereses.push({id:Date.now(),mes:document.getElementById('ni-mes').value,balance:parseFloat(document.getElementById('ni-bal').value)||0,monto:parseFloat(document.getElementById('ni-monto').value)||0,pagado:document.getElementById('ni-pag').value==='1'});
   tuCoop.intereses.sort((a,b)=>b.mes.localeCompare(a.mes));
-  saveTuCoop();closeModal();renderFinanciamiento();
+  if(!guardarTuCoopConAviso()){ tuCoop.intereses.length=0; tuCoop.intereses.push(...antes); return; }
+  closeModal();renderFinanciamiento();
 }
 function toggleIntPago(id){
-  const i=tuCoop.intereses.find(x=>x.id===id);if(i)i.pagado=!i.pagado;saveTuCoop();renderFinanciamiento();
+  const i=tuCoop.intereses.find(x=>x.id===id); if(!i) return;
+  const antes=i.pagado; i.pagado=!i.pagado;
+  if(!guardarTuCoopConAviso()){ i.pagado=antes; return; }
+  renderFinanciamiento();
 }
 function eliminarInteres(id){
   if(!confirm('¿Eliminar?'))return;
-  tuCoop.intereses=tuCoop.intereses.filter(x=>x.id!==id);saveTuCoop();renderFinanciamiento();
+  const antes=tuCoop.intereses.slice();
+  tuCoop.intereses=tuCoop.intereses.filter(x=>x.id!==id);
+  if(!guardarTuCoopConAviso()){ tuCoop.intereses=antes; return; }
+  renderFinanciamiento();
 }
 
 // ============ VIAJES ============
 let viajes = JSON.parse(localStorage.getItem('a132_viajes')||'[]');
-function saveViajes(){ localStorage.setItem('a132_viajes', JSON.stringify(viajes)); }
+function saveViajes(){
+  try{ const s=JSON.stringify(viajes); localStorage.setItem('a132_viajes',s); return localStorage.getItem('a132_viajes')===s; }
+  catch(e){ return false; }
+}
 
 const PEAJES_IDA = 4.10;
 const PEAJES_IVY = 8.20;
@@ -3943,6 +4233,7 @@ function guardarViaje(){
   const estadia  = parseFloat(document.getElementById('vf-estadia').value)||0;
   const otros    = parseFloat(document.getElementById('vf-otros').value)||0;
   if(!fecha){ alert('Ingresa la fecha del viaje.'); return; }
+  const viajesAntes=viajes.slice(), gastosAntes=gastos.length;
   const total = peajes + gasolina + comida + estadia + otros;
   viajes.unshift({
     id: Date.now(), fecha,
@@ -3950,7 +4241,8 @@ function guardarViaje(){
     peajes, gasolina, comida, estadia, otros, total,
     notas: document.getElementById('vf-notas').value.trim()
   });
-  saveViajes();
+  try{ if(!saveViajes()) throw new Error('no se pudo guardar'); }
+  catch(e){ viajes.length=0; viajes.push(...viajesAntes); alert('⚠️ No se pudo guardar el viaje: el almacenamiento del dispositivo está lleno. El viaje NO quedó registrado.'); return; }
   // También guardar como gasto en la app
   let desc = `${document.getElementById('vf-proposito').value} — Peajes: $${peajes.toFixed(2)} | Gas: $${gasolina.toFixed(2)}`;
   if(comida>0)  desc += ` | Comida: $${comida.toFixed(2)}`;
@@ -3963,7 +4255,12 @@ function guardarViaje(){
     lote:'Compartido', metodo:'efectivo',
     monto: total, descripcion: desc, tipo:'viaje'
   });
-  save();
+  if(!guardarConAviso()){
+    gastos.length=gastosAntes;
+    viajes.length=0; viajes.push(...viajesAntes);
+    try{ saveViajes(); }catch(e){}
+    return;
+  }
   document.getElementById('vf-fecha').value='';
   document.getElementById('vf-notas').value='';
   document.getElementById('vf-comida').value='0';
@@ -4016,8 +4313,9 @@ function renderViajes(){
 
 function eliminarViaje(id){
   if(!confirm('¿Eliminar este viaje?'))return;
+  const antes=viajes.slice();
   viajes = viajes.filter(v=>v.id!==id);
-  saveViajes();
+  if(!saveViajes()){ viajes=antes; alert('⚠️ No se pudo guardar la eliminación del viaje: almacenamiento lleno. No se borró nada.'); return; }
   if(typeof modoCentral==='function' && modoCentral()) centralRegistrarViajeBorrado(id);
   renderViajes();
 }
@@ -4183,6 +4481,9 @@ function deviceFile(){ return 'arroyo132-datos-'+deviceId()+'.json'; }
 let driveTokenClient = null;
 let driveOkCallback = null;   // resuelve la promesa de la peticion de token en curso
 let driveErrCallback = null;
+let driveTokenTimer = null;   // evita que una petición de token quede colgada para siempre
+let _pedirTokenEnCurso = null; // serializa las peticiones: GIS solo admite un callback a la vez
+let _driveClientGen = 0;       // invalida callbacks tardíos de un cliente de token anterior
 
 function driveTokenValid(){
   return !!localStorage.getItem(DRIVE_TOKEN_KEY) &&
@@ -4204,19 +4505,38 @@ function tokenIAValido(){
 }
 
 function pedirTokenDrive(interactivo){
-  return new Promise(resolve=>{
+  // Una sola petición a la vez: el cliente GIS guarda un único callback global. Si dos
+  // flujos (respaldo y cola de recibos) piden token a la vez, el segundo espera al primero
+  // y, si el primero fue silencioso y falló, el segundo puede reintentar de forma interactiva.
+  if(_pedirTokenEnCurso){
+    return _pedirTokenEnCurso.then(t => t || (interactivo ? pedirTokenDrive(true) : null));
+  }
+  const p = new Promise(resolve=>{
     if(!DRIVE_CLIENT_ID || typeof google==='undefined' || !google.accounts){
       resolve(null); return;
     }
     try{ initDriveClient(); }catch(e){ resolve(null); return; }
     driveOkCallback = resolve;
     driveErrCallback = () => resolve(null);
+    driveTokenTimer = setTimeout(()=>{
+      driveTokenTimer=null; driveOkCallback=null; driveErrCallback=null;
+      _driveClientGen++; driveTokenClient=null;   // ignora una respuesta tardía del cliente viejo
+      resolve(null);
+    }, interactivo ? 120000 : 15000);
     try{
       // prompt:'' intenta SIN abrir ventana; si Google necesita consentimiento, falla y se
       // devuelve null, sin interrumpir al usuario en un guardado automático.
       driveTokenClient.requestAccessToken(interactivo ? {} : {prompt:''});
-    }catch(e){ driveOkCallback=null; driveErrCallback=null; resolve(null); }
+    }catch(e){
+      if(driveTokenTimer){ clearTimeout(driveTokenTimer); driveTokenTimer=null; }
+      driveOkCallback=null; driveErrCallback=null; resolve(null);
+    }
   });
+  _pedirTokenEnCurso = p;
+  return p.then(
+    t => { if(_pedirTokenEnCurso===p) _pedirTokenEnCurso=null; return t; },
+    e => { if(_pedirTokenEnCurso===p) _pedirTokenEnCurso=null; throw e; }
+  );
 }
 
 async function asegurarTokenDrive(interactivo){
@@ -4250,10 +4570,13 @@ function driveAction(){
 
 function initDriveClient(){
   if(driveTokenClient) return;
+  const gen=++_driveClientGen;
   driveTokenClient = google.accounts.oauth2.initTokenClient({
     client_id: DRIVE_CLIENT_ID,
     scope: DRIVE_SCOPE,
     callback: (resp) => {
+      if(gen!==_driveClientGen) return;   // respuesta de un cliente invalidado por timeout
+      if(driveTokenTimer){ clearTimeout(driveTokenTimer); driveTokenTimer=null; }
       const resolver=driveOkCallback; driveOkCallback=null; driveErrCallback=null;
       if(resp.access_token){
         localStorage.setItem(DRIVE_TOKEN_KEY, resp.access_token);
@@ -4261,9 +4584,12 @@ function initDriveClient(){
         updateDriveBtn('✅');
         if(resolver) resolver(resp.access_token);
         backupToDrive(true);
+        try{ procesarColaOriginales(); }catch(e){}   // recupera originales de IndexedDB al conectar Drive
       } else if(resolver){ resolver(null); }
     },
     error_callback: () => {
+      if(gen!==_driveClientGen) return;   // respuesta de un cliente invalidado por timeout
+      if(driveTokenTimer){ clearTimeout(driveTokenTimer); driveTokenTimer=null; }
       const resolver=driveOkCallback; driveOkCallback=null; driveErrCallback=null;
       if(resolver) resolver(null);
     },
@@ -4550,6 +4876,24 @@ function fusionarGastos(locales, remotos){
   return { gastos: salida, agregados, posiblesDuplicados, conflictos };
 }
 
+// Unión de referencias de recibos entre dos dispositivos. Reutiliza la unión por documento
+// del núcleo central (nunca descarta adicionales/reemplazados); si no está cargado, aplica
+// el mismo principio de forma mínima conservando el principal local.
+function unirRecibosFusion(local, remoto){
+  const l=limpiarRecibos(local), r=limpiarRecibos(remoto);
+  if(typeof A132Central!=='undefined' && A132Central && typeof A132Central.unirRecibos==='function'){
+    return A132Central.unirRecibos(l, r);
+  }
+  const sal=Object.assign({}, r, l);
+  Object.keys(l).forEach(k=>{
+    if(!r[k] || !docRefValido(l[k]) || !docRefValido(r[k])) return;
+    const vistos=new Set(listarDocumentos(l[k]).map(x=>x.doc.driveId+'|'+x.doc.sha256));
+    const extra=listarDocumentos(r[k]).filter(x=>!vistos.has(x.doc.driveId+'|'+x.doc.sha256)).map(x=>x.doc);
+    if(extra.length){ const c=Object.assign({},l[k]); c.adicionales=(Array.isArray(l[k].adicionales)?l[k].adicionales:[]).concat(extra); sal[k]=c; }
+  });
+  return sal;
+}
+
 // Fusiona el estado COMPLETO de dos fuentes (para el respaldo combinado y para restaurar).
 function fusionarEstado(local, remoto){
   const r = (remoto && typeof remoto === 'object') ? remoto : {};
@@ -4570,8 +4914,9 @@ function fusionarEstado(local, remoto){
     if(b && b!=='null' && b!=='undefined' && a!==b) divergentes.push(k);
   });
 
-  // Referencias a originales en Drive: unión; si ambos lados tienen el mismo gasto gana este equipo.
-  const recibosFusion = Object.assign({}, limpiarRecibos(r.recibos), limpiarRecibos(local.recibos));
+  // Referencias a originales en Drive: unión por documento; el principal local se conserva,
+  // pero los adicionales/reemplazados del otro dispositivo no se pierden.
+  const recibosFusion = unirRecibosFusion(local.recibos, r.recibos);
   return {
     gastos: f.gastos, viajes: vLocales.concat(vNuevos), fotos: fotosFusion, recibos: recibosFusion,
     agregados: f.agregados, viajesAgregados: vNuevos.length,
@@ -4599,11 +4944,13 @@ async function restaurarDesdeDrive(){
   ].filter(Boolean);
   if(fusion.posiblesDuplicados.length) lineas.push('⚠️ '+fusion.posiblesDuplicados.length+' posible(s) duplicado(s) — se añaden y se marcan para que los revises.');
   if(fusion.conflictos.length) lineas.push('⚠️ '+fusion.conflictos.length+' conflicto(s): el mismo registro con datos distintos en dos equipos. Se conserva el de aquí.');
+  if(Object.keys(fusion.fotos||{}).length) lineas.push('ℹ️ Las miniaturas son solo vista previa; no se guardan como almacén independiente. Los originales siguen en Drive/IndexedDB.');
   if(!confirm('☁️ Traer datos desde Google Drive\n\n'+lineas.join('\n')+'\n\n¿Continuar?')) return;
 
+  const antes={gastos,viajes,fotos,docs,timeline,presupuesto,recibos:leerRecibos()};
   gastos   = fusion.gastos;
   viajes   = fusion.viajes;
-  fotos    = fusion.fotos;
+  fotos    = fusion.fotos; if(typeof FOTOS_IDB_ACTIVO!=='undefined' && FOTOS_IDB_ACTIVO && typeof fotosVolcar==='function') fotosVolcar(fotos);
   guardarRecibos(fusion.recibos);   // referencias a originales en Drive (unión, nunca se pierde una)
   if(Array.isArray(data.docs) && data.docs.length && !docs.length) docs=data.docs;
   if(Array.isArray(data.timeline) && data.timeline.length && !timeline.length) timeline=data.timeline;
@@ -4612,7 +4959,15 @@ async function restaurarDesdeDrive(){
     try{ localStorage.setItem(CONFLICT_KEY, JSON.stringify({ fecha:new Date().toISOString(),
       conflictos:fusion.conflictos, posiblesDuplicados:fusion.posiblesDuplicados.map(p=>({nuevo:p.nuevo, parecidos:p.parecidos})) })); }catch(e){}
   }
-  save();
+  if(!guardarConAviso()){
+    ({gastos,viajes,fotos,docs,timeline,presupuesto}=antes);
+    try{ guardarRecibos(antes.recibos); }catch(e){}
+    return;
+  }
+  let seccionesOk=true;
+  try{ if(!saveViajes()) seccionesOk=false; }catch(e){ seccionesOk=false; }
+  try{ if(!guardarPresupuesto(true)) seccionesOk=false; }catch(e){ seccionesOk=false; }
+  if(!seccionesOk) alert('⚠️ Los gastos se guardaron, pero los viajes/presupuesto restaurados no se pudieron persistir (almacenamiento lleno).');
   alert('✅ Traído. '+fusion.agregados+' gasto(s) añadidos — total '+gastos.length+'.\nNo se borró ningún gasto.');
   renderDashboard();
 }
@@ -4662,16 +5017,26 @@ function importarBackup(){
       const avisos=[];
       if(fusion.posiblesDuplicados.length) avisos.push('⚠️ '+fusion.posiblesDuplicados.length+' posible(s) duplicado(s) — se añaden y se marcan.');
       if(fusion.conflictos.length) avisos.push('⚠️ '+fusion.conflictos.length+' conflicto(s): el mismo registro con datos distintos. Se conserva el de aquí.');
+      if(Object.keys(fusion.fotos||{}).length) avisos.push('ℹ️ Las miniaturas son solo vista previa; no se guardan como almacén independiente. Los originales siguen en Drive/IndexedDB.');
       if(!confirm(`📂 Importar respaldo local\n\nArchivo: ${file.name}\nGastos aquí: ${gastos.length}\nGastos en el archivo: ${data.gastos.length}\nSe añadirían ${fusion.agregados} gasto(s) y ${fusion.viajesAgregados} viaje(s). NADA se borra.\n\n${avisos.join('\n')}\n\n¿Continuar?`)) return;
+      const antes={gastos,viajes,fotos,docs,timeline,presupuesto,recibos:leerRecibos()};
       gastos=fusion.gastos;
       viajes=fusion.viajes;
-      fotos=fusion.fotos;
+      fotos=fusion.fotos; if(typeof FOTOS_IDB_ACTIVO!=='undefined' && FOTOS_IDB_ACTIVO && typeof fotosVolcar==='function') fotosVolcar(fotos);
       guardarRecibos(fusion.recibos);
       if(fusion.conflictos.length || fusion.posiblesDuplicados.length){
         try{ localStorage.setItem(CONFLICT_KEY, JSON.stringify({ fecha:new Date().toISOString(),
           conflictos:fusion.conflictos, posiblesDuplicados:fusion.posiblesDuplicados.map(p=>({nuevo:p.nuevo, parecidos:p.parecidos})) })); }catch(e){}
       }
-      save();
+      if(!guardarConAviso()){
+        ({gastos,viajes,fotos,docs,timeline,presupuesto}=antes);
+        try{ guardarRecibos(antes.recibos); }catch(e){}
+        return;
+      }
+      let seccionesOk=true;
+      try{ if(!saveViajes()) seccionesOk=false; }catch(e){ seccionesOk=false; }
+      try{ if(!guardarPresupuesto(true)) seccionesOk=false; }catch(e){ seccionesOk=false; }
+      if(!seccionesOk) alert('⚠️ Los gastos se guardaron, pero los viajes/presupuesto importados no se pudieron persistir (almacenamiento lleno).');
       alert(`✅ Importado. ${fusion.agregados} gasto(s) añadidos — total ${gastos.length}. No se borró ningún gasto.`);
       renderDashboard();
     }catch(e){ alert('Archivo inválido: '+(e.message||e)); }
@@ -4971,6 +5336,14 @@ function centralRevertir(){
 window.addEventListener('online',()=>{ if(modoCentral()) centralSincronizar(); });
 document.addEventListener('visibilitychange',()=>{ if(document.visibilityState==='visible'&&modoCentral()) centralSincronizar(); });
 setTimeout(()=>{ if(modoCentral()) centralSincronizar(); },6000);
+// Recuperación de recibos pendientes (autorizada 2026-11-03): al abrir la app y al volver la
+// conexión se relanza procesarColaOriginales, que reencola los originales de IndexedDB sin
+// pendiente ni referencia (reconciliación existente). La reconciliación es local y corre aunque
+// Drive no esté conectado, para que el pendiente quede visible; la subida real sigue condicionada
+// al token dentro de procesarColaOriginales.
+setTimeout(()=>{ try{ procesarColaOriginales(); }catch(e){} },3000);
+window.addEventListener('online',()=>{ try{ procesarColaOriginales(); }catch(e){} });
+document.addEventListener('visibilitychange',()=>{ if(document.visibilityState==='visible'){ try{ procesarColaOriginales(); }catch(e){} } });
 
 </script>
 </body>

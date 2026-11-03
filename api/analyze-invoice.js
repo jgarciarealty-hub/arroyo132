@@ -315,6 +315,12 @@ function dentroDePresupuesto(maxDiario) {
 // Impide que el endpoint se use como "cualquier prompt contra Anthropic": solo pasa una
 // petición con forma de análisis de UN recibo.
 
+// Prompt fijo del servidor: el texto del cliente NO se reenvía. Así el endpoint no puede
+// usarse como proxy de prompts arbitrarios aunque la cuenta esté autorizada.
+const PROMPT_LECTURA_SERVIDOR = `Analiza esta factura de construcción/remodelación en Puerto Rico. Responde SOLO con JSON puro sin backticks ni markdown:
+{"fecha":"YYYY-MM-DD","monto":0.00,"ivu":0.00,"contratista":"nombre empresa o persona","categoria":"una de: Techo|Electricidad|Plomería|Albañilería / Estructura|Pintura|Ventanas / Puertas|Baños|Cocina|Limpieza / Excavación|Materiales|Permisos / ARPE|Agrimensura / Segregación|Abogado / Notaría|Otros","descripcion":"descripción breve del trabajo o materiales comprados"}
+"monto" es el TOTAL pagado tal como aparece; "ivu" es el impuesto impreso en el recibo (0 si no aparece). Si no encuentras algún dato, usa "" para texto y 0 para monto. No inventes ni estimes valores. Hoy: __HOY__`;
+
 function validarCuerpo(body, maxTexto) {
   if (!body || typeof body !== 'object') return { ok: false, error: 'Cuerpo inválido' };
   const mensajes = body.messages;
@@ -354,7 +360,7 @@ function validarCuerpo(body, maxTexto) {
       textos++;
       const t = String(b.text || '');
       if (t.length > maxTexto) return { ok: false, error: 'Texto demasiado largo' };
-      bloques.push({ type: 'text', text: t });
+      // El texto del cliente se valida por tamaño, pero NO se reenvía: el prompt es fijo.
       continue;
     }
 
@@ -362,7 +368,7 @@ function validarCuerpo(body, maxTexto) {
   }
 
   if (imagenes !== 1 || textos > 1) return { ok: false, error: 'Se requiere exactamente un recibo' };
-  if (!bloques.some(b => b.type === 'text')) bloques.push({ type: 'text', text: 'Analiza este recibo.' });
+  bloques.push({ type: 'text', text: PROMPT_LECTURA_SERVIDOR.replace('__HOY__', new Date().toISOString().slice(0, 10)) });
 
   return { ok: true, bloque: bloques };
 }
@@ -390,6 +396,13 @@ async function handler(req, res) {
     });
   }
 
+  // (3) Límite por minuto ANTES de autenticar. Verificar un token opaco hace una llamada
+  // de red a Google; sin este límite, un atacante no autenticado podría generar peticiones
+  // y coste sin tope simplemente enviando tokens aleatorios distintos.
+  if (!dentroDeLimite(ipDe(req), enteroEnv('A132_RATE_PER_MIN', 6))) {
+    return res.status(429).json({ error: 'Demasiadas solicitudes, intenta en un minuto.' });
+  }
+
   // (2) AUTENTICACIÓN REAL.
   const cabecera = String((req.headers && req.headers.authorization) || '');
   const token = cabecera.startsWith('Bearer ') ? cabecera.slice(7).trim() : '';
@@ -397,14 +410,6 @@ async function handler(req, res) {
 
   const verificado = await verificarCredencial(token, { emails });
   if (!verificado.ok) return res.status(401).json({ error: 'No autorizado' });
-
-  // (3) Límites de consumo.
-  if (!dentroDeLimite(ipDe(req), enteroEnv('A132_RATE_PER_MIN', 6))) {
-    return res.status(429).json({ error: 'Demasiadas solicitudes, intenta en un minuto.' });
-  }
-  if (!dentroDePresupuesto(enteroEnv('A132_DAILY_BUDGET', 200))) {
-    return res.status(429).json({ error: 'Presupuesto diario de IA alcanzado.' });
-  }
 
   const ANTHROPIC_KEY = process.env.ANTHROPIC_API_KEY;
   if (!ANTHROPIC_KEY) return res.status(500).json({ error: 'API key no configurada en Vercel' });
@@ -422,6 +427,12 @@ async function handler(req, res) {
 
   const validado = validarCuerpo(cuerpo, enteroEnv('A132_MAX_TEXT_CHARS', 2000));
   if (!validado.ok) return res.status(400).json({ error: validado.error });
+
+  // (5) Presupuesto diario DESPUÉS de validar: un cuerpo inválido o un 400/413 no debe
+  // consumir el presupuesto de IA del día. Solo las lecturas que van a Anthropic cuentan.
+  if (!dentroDePresupuesto(enteroEnv('A132_DAILY_BUDGET', 200))) {
+    return res.status(429).json({ error: 'Presupuesto diario de IA alcanzado.' });
+  }
 
   try {
     const cuerpoAnthropic = {

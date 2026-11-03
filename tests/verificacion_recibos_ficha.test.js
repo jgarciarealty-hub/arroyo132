@@ -99,7 +99,7 @@ const nombres = ['md5Hex', 'sha256Hex', 'extensionDe', 'verificarCargaOriginal',
   'docRefValido', 'listarDocumentos', 'sinHistorico', 'aplicarReferencia', 'gastoDeClave', 'clavesPendDeGasto', 'documentosDeGasto',
   'tokensProveedor', 'proveedorContenido', 'distanciaLev', 'similitudProveedor', 'diasEntreFechas', 'buscarGastoCoincidente', 'asociarOriginalAGasto', '_btnCoinc', '_esperar', '_estadoAsociacion', 'vigilarAsociacion', '_btnUnico', '_lineaGasto', 'cerrarCoincidencia', 'mostrarCoincidencia', 'terminarAsociacion',
   'verReciboOriginal', 'pintarOtrosDocumentos', 'eliminarGasto', 'textoSinOriginal', 'adjuntarReciboFicha', 'showGastoDetail'];
-vm.runInContext("const RECIBOS_KEY='a132_recibos', RECIBOS_PEND_KEY='a132_recibos_pend', RECIBOS_CARPETA_KEY='a132_recibos_carpeta', RECIBOS_CARPETA_NOMBRE='Arroyo 132 — Recibos originales'; const DRIVE_CAMPOS_ARCHIVO='id,name,size,md5Checksum,webViewLink,appProperties'; var _archivoOriginal=null; var _colaOriginalesEnCurso=false; " + script.match(/^var _esperaColaMs=.*;$/m)[0] + " var _adjuntando={};\n"
+vm.runInContext("const RECIBOS_KEY='a132_recibos', RECIBOS_PEND_KEY='a132_recibos_pend', RECIBOS_CARPETA_KEY='a132_recibos_carpeta', RECIBOS_CARPETA_NOMBRE='Arroyo 132 — Recibos originales'; const DRIVE_CAMPOS_ARCHIVO='id,name,size,md5Checksum,webViewLink,appProperties'; var _archivoOriginal=null; var _colaOriginalesEnCurso=false; var _pendMemoria={}; var _pendMemoriaAutoritativa=false; " + script.match(/^var _esperaColaMs=.*;$/m)[0] + " var _adjuntando={};\n"
   + constante('PROV_RUIDO') + '\n' + constante('_cents') + '\n' + nombres.map(extraer).join('\n'), ctx);
 const R = n => vm.runInContext(n, ctx);
 const archivo = (bytes, name = 'r.jpg', type = 'image/jpeg') => new File([bytes], name, { type });

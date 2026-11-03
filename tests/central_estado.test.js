@@ -42,7 +42,10 @@ const bufPC = leer('Downloads__arroyo132-datos__copia.json');
   if (bufPC) {
     const aig = informe.conflictosMismoId.find((c) => c.id === '700002');
     test('real: AIG se registra (central 33.69 vs semilla 30.22) sin modificar el importe', !!aig && aig.central === 33.69 && aig.local === 30.22 && trasPC.gastos['700002'].monto === 33.69, aig);
-    test('real: 700010/700011 de la semilla se reconocen como duplicados de otros ids del celular', informe.duplicadosOtroId.some((d) => d.idLocal === '700010') && informe.duplicadosOtroId.some((d) => d.idLocal === '700011'), informe.duplicadosOtroId);
+    // 2026-11-03: el mismo id con contenido distinto se registra como conflicto visible
+    // ANTES de mirar duplicados por contenido. Así una edición local no se descarta en
+    // silencio cuando el central tiene otro registro con el mismo id.
+    test('real: 700010/700011 con id del central y contenido distinto se registran como conflicto visible', informe.conflictosMismoId.some((c) => c.id === '700010') && informe.conflictosMismoId.some((c) => c.id === '700011') && !informe.duplicadosOtroId.some((d) => d.idLocal === '700010' || d.idLocal === '700011'), informe);
   }
   const trasPC2 = C.incorporarPerfilLocal(trasPC, pc, { origen: 'computadora' });
   test('perfil antiguo: repetir la incorporación no cambia nada (idempotente)', JSON.stringify(C.resumen(trasPC2.estado)) === JSON.stringify(r2) && trasPC2.informe.anadidos.length === 0);

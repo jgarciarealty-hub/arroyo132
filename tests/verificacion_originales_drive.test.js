@@ -78,7 +78,7 @@ const ctx = vm.createContext({
   origGuardar: async (id, a) => { idb.set(String(id), { blob: a, tipo: a.type }); return true; },
 });
 const nombres = ['md5Hex', 'sha256Hex', 'extensionDe', 'verificarCargaOriginal', 'driveCarpetaRecibos', 'driveSubirOriginal', 'procesarColaOriginales', 'refrescarPanelRespaldo', 'registrarOriginalNuevo', 'textoEstadoOriginal', 'leerRecibos', 'leerRecibosPend', 'guardarRecibos', 'guardarRecibosPend', 'escribirVerificado', 'actualizarPend', 'escHtml', 'fetchConTiempo', 'limpiarRecibos', 'docRefValido', 'listarDocumentos', 'sinHistorico', 'aplicarReferencia', 'gastoDeClave', 'clavesPendDeGasto', 'documentosDeGasto', 'textoEstadoOriginalBase'];
-vm.runInContext("const RECIBOS_KEY='a132_recibos', RECIBOS_PEND_KEY='a132_recibos_pend', RECIBOS_CARPETA_KEY='a132_recibos_carpeta', RECIBOS_CARPETA_NOMBRE='Arroyo 132 — Recibos originales'; const DRIVE_CAMPOS_ARCHIVO='id,name,size,md5Checksum,webViewLink,appProperties'; let _colaOriginalesEnCurso=false;\n" + nombres.map(extraer).join('\n'), ctx);
+vm.runInContext("const RECIBOS_KEY='a132_recibos', RECIBOS_PEND_KEY='a132_recibos_pend', RECIBOS_CARPETA_KEY='a132_recibos_carpeta', RECIBOS_CARPETA_NOMBRE='Arroyo 132 — Recibos originales'; const DRIVE_CAMPOS_ARCHIVO='id,name,size,md5Checksum,webViewLink,appProperties'; let _colaOriginalesEnCurso=false; let _pendMemoriaAutoritativa=false;\n" + nombres.map(extraer).join('\n'), ctx);
 const R = n => vm.runInContext(n, ctx);
 const fotoFalsa = (bytes, name = 'r.jpg', type = 'image/jpeg') => new File([bytes], name, { type });
 

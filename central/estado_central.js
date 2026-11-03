@@ -62,12 +62,19 @@
     // Pasada 2: el resto.
     for (const g of pendientes) {
       const id = String(g.id), existente = sal.gastos[id], k = claveContenido(g);
-      if (quedan(k) > 0) { usar(k); informe.duplicadosOtroId.push({ idLocal: id, idCentral: String(idCentral(k)) }); continue; }
+      // El mismo id con contenido distinto es un conflicto visible; debe comprobarse ANTES
+      // del duplicado por contenido. Si no, una edición local puede descartarse en silencio
+      // como «ya existe con otro id» cuando el central tiene dos gastos idénticos legítimos.
       if (existente) {
         sal.conflictos.push({ tipo: 'mismo_id_distinto_contenido', id, central: existente, local: g, fecha: ahora });
         informe.conflictosMismoId.push({ id, central: Number(existente.monto), local: Number(g.monto) });
+        // El registro conflictivo cuenta para el multiconjunto local aunque no se añada:
+        // si hay una copia central de su contenido, se consume para que otro registro
+        // local idéntico (más adelante) no se descarte como duplicado por error.
+        if (quedan(k) > 0) usar(k);
         continue;
       }
+      if (quedan(k) > 0) { usar(k); informe.duplicadosOtroId.push({ idLocal: id, idCentral: String(idCentral(k)) }); continue; }
       sal.gastos[id] = Object.assign({}, g, { _v: 1, _t: ahora, _o: origen });
       informe.anadidos.push(id);
     }

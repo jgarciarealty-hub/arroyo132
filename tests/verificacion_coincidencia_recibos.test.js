@@ -91,14 +91,14 @@ const ctx = vm.createContext({
   origGuardar: async (id, a) => { idb.set(String(id), { blob: a, tipo: a.type, bytes: a.size }); return true; },
   alert: m => alertas.push(String(m)), confirm: () => true,
   resetRegistrar: () => { cont.reset++; }, guardarGasto: () => { cont.guardarGasto++; },
-  save() {}, closeModal() {}, renderHistorial() {}, renderDashboard() {},
+  save() {}, guardarConAviso: () => true, fotoHashBorrar: () => {}, closeModal() {}, renderHistorial() {}, renderDashboard() {},
 });
 const nombres = ['md5Hex', 'sha256Hex', 'extensionDe', 'verificarCargaOriginal', 'driveCarpetaRecibos', 'driveSubirOriginal', 'procesarColaOriginales', 'refrescarPanelRespaldo', 'registrarOriginalNuevo',
   'textoEstadoOriginal', 'textoEstadoOriginalBase', 'leerRecibos', 'leerRecibosPend', 'guardarRecibos', 'guardarRecibosPend', 'escribirVerificado', 'actualizarPend', 'escHtml', 'fetchConTiempo', 'limpiarRecibos',
   'docRefValido', 'listarDocumentos', 'sinHistorico', 'aplicarReferencia', 'gastoDeClave', 'clavesPendDeGasto', 'documentosDeGasto',
   '_esperar', '_estadoAsociacion', 'vigilarAsociacion', '_btnUnico', 'tokensProveedor', 'proveedorContenido', 'distanciaLev', 'similitudProveedor', 'diasEntreFechas', 'buscarGastoCoincidente', 'asociarOriginalAGasto', '_btnCoinc', '_lineaGasto', 'cerrarCoincidencia', 'mostrarCoincidencia', 'terminarAsociacion',
   'verReciboOriginal', 'pintarOtrosDocumentos', 'eliminarGasto'];
-vm.runInContext("const RECIBOS_KEY='a132_recibos', RECIBOS_PEND_KEY='a132_recibos_pend', RECIBOS_CARPETA_KEY='a132_recibos_carpeta', RECIBOS_CARPETA_NOMBRE='Arroyo 132 — Recibos originales'; const DRIVE_CAMPOS_ARCHIVO='id,name,size,md5Checksum,webViewLink,appProperties'; var _archivoOriginal=null; var _colaOriginalesEnCurso=false; " + script.match(/^var _esperaColaMs=.*;$/m)[0] + " var _adjuntando={};\n"
+vm.runInContext("const RECIBOS_KEY='a132_recibos', RECIBOS_PEND_KEY='a132_recibos_pend', RECIBOS_CARPETA_KEY='a132_recibos_carpeta', RECIBOS_CARPETA_NOMBRE='Arroyo 132 — Recibos originales'; const DRIVE_CAMPOS_ARCHIVO='id,name,size,md5Checksum,webViewLink,appProperties'; var _archivoOriginal=null; var _colaOriginalesEnCurso=false; var _pendMemoria={}; var _pendMemoriaAutoritativa=false; " + script.match(/^var _esperaColaMs=.*;$/m)[0] + " var _adjuntando={};\n"
   + constante('PROV_RUIDO') + '\n' + constante('_cents') + '\n' + nombres.map(extraer).join('\n'), ctx);
 const R = n => vm.runInContext(n, ctx);
 const archivo = (bytes, name = 'r.jpg', type = 'image/jpeg') => new File([bytes], name, { type });
@@ -307,7 +307,7 @@ const ids = r => r.candidatos.map(c => c.gasto.id);
     test('D2: «Sin especificar» con espacios alrededor, importe exacto, sin fecha → NO INCIERTA', r.nivel === 'NINGUNA', r);
     test('D2: proveedorContenido excluye el placeholder también con espacios', R('proveedorContenido')(' Sin especificar ', 'Sin especificar') === false && R('proveedorContenido')('Sin especificar', '  sin especificar') === false && R('proveedorContenido')('Otro proveedor sin especificar', '  Sin especificar  ') === false);
   }
-  test('handleUpload busca coincidencia tras la lectura (ruta normal y ruta de caché)', script.includes('mostrarCoincidencia(buscarGastoCoincidente(ext,gastos))') && script.includes('mostrarCoincidencia(buscarGastoCoincidente(cacheIA,gastos))'));
+  test('handleUpload busca coincidencia tras la lectura (ruta normal y ruta de caché)', script.includes('mostrarCoincidencia(buscarGastoCoincidente(ext,gastos))') && script.includes('mostrarCoincidencia(buscarGastoCoincidente(cacheIA.datos,gastos))'));
   test('la lectura vacía no dispara la búsqueda (solo campos válidos)', /if\(lectura\.estado!=='vacia'\) mostrarCoincidencia/.test(script));
   test('el HTML tiene la caja de coincidencia y resetRegistrar la limpia', html.includes('id="coincidencia-box"') && /_archivoOriginal=null;\n  \{ const cb=document\.getElementById\('coincidencia-box'\)/.test(script));
   test('la asociación no toca los campos del gasto (asociarOriginalAGasto no escribe en gastos)', !/gastos\.(push|splice)|gastos\s*=|\.monto\s*=|\.fecha\s*=|\.contratista\s*=/.test(extraer('asociarOriginalAGasto') + extraer('terminarAsociacion') + extraer('mostrarCoincidencia')));

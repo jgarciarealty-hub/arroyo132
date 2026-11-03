@@ -87,16 +87,40 @@
         await subir(fileId, texto);
         const revs = await revisiones(fileId);
         const metaTras = await buscar();
-        const cabeza = (metaTras && revs.find((r) => r.id === metaTras.headRevisionId)) || revs[revs.length - 1];
+        const headId = metaTras && metaTras.headRevisionId;
+        // Drive no documenta el orden de `revisions`: se ordena por modifiedTime (ascendente)
+        // antes de elegir la cabeza y calcular posiciones. Si la respuesta no trae modifiedTime,
+        // se detecta el sentido por la posición de la cabeza y de la revisión esperada.
+        let revsOrd = revs.slice();
+        if (revs.length && revs.every((r) => r && r.modifiedTime)) {
+          // Date.parse, no localeCompare: las cadenas RFC3339 con y sin fracción de segundo
+          // se ordenan mal con localeCompare (p. ej. «...:00Z» vs «...:00.500Z»).
+          const tiempo = (r) => { const n = Date.parse(r && r.modifiedTime); return Number.isFinite(n) ? n : Number.MAX_SAFE_INTEGER; };
+          revsOrd.sort((a, b) => tiempo(a) - tiempo(b) || String(a.id).localeCompare(String(b.id)));
+        } else {
+          const idxHeadRaw = headId ? revsOrd.findIndex((r) => r.id === headId) : -1;
+          const idxEspRaw = esperado === 'ausente' ? -1 : revsOrd.findIndex((r) => r.id === esperado);
+          if (idxHeadRaw === 0 && revsOrd.length > 1) revsOrd.reverse();
+          else if (idxHeadRaw > 0 && idxEspRaw >= 0 && idxEspRaw > idxHeadRaw) revsOrd.reverse();
+        }
+        // La cabeza se elige del listado YA ordenado: si no aparece por id, la última es la
+        // más nueva (ascendente), no la última del listado crudo que podría ser la más antigua.
+        const cabeza = (headId && revsOrd.find((r) => r.id === headId)) || revsOrd[revsOrd.length - 1];
         if (!cabeza) throw new Error('el archivo central quedó sin revisiones');
-        const posCabeza = revs.findIndex((r) => r.id === cabeza.id);
+        const posCabeza = revsOrd.findIndex((r) => r.id === cabeza.id);
+        if (posCabeza < 0) throw new Error('la cabeza del archivo no está en el historial de revisiones');
         // Verificación inmutable: el contenido de NUESTRA revisión debe ser exactamente lo escrito.
         const guardado = await contenido('/drive/v3/files/' + fileId + '/revisions/' + cabeza.id + '?alt=media', 'verificación de la revisión escrita');
         if (guardado !== texto) throw new Error('la verificación de la escritura falló: Drive no guardó lo enviado');
         // ¿Se coló otro dispositivo entre la comprobación y la escritura?
-        const idxEsperado = esperado === 'ausente' ? -1 : revs.findIndex((r) => r.id === esperado);
-        if (esperado !== 'ausente' && idxEsperado < 0) throw new Error('la revisión esperada ya no existe en el historial; se reintenta con una lectura nueva');
-        const ajenas = revs.slice(idxEsperado + 1, posCabeza).filter((r) => esperado !== 'ausente' || r.id !== revs[0].id);
+        const idxEsperado = esperado === 'ausente' ? -1 : revsOrd.findIndex((r) => r.id === esperado);
+        if (esperado !== 'ausente' && idxEsperado < 0) {
+          // Ya se subió nuestra revisión, pero la revisión base desapareció (p. ej. poda).
+          // Se devuelve ok:false para que `actualizar` haga una lectura nueva y reintente;
+          // lanzar aquí se saltaría el bucle de reintentos.
+          return { ok: false };
+        }
+        const ajenas = revsOrd.slice(idxEsperado + 1, posCabeza).filter((r) => esperado !== 'ausente' || r.id !== revsOrd[0].id);
         if (!ajenas.length) return { ok: true, token: cabeza.id, estado: actual };
         // Recuperación: fusionar lo que escribieron otros y reescribir.
         let fusion = actual;

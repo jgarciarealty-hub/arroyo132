@@ -359,6 +359,46 @@ test('el presupuesto diario corta con 429', async () => {
   }
 });
 
+test('el límite por minuto se aplica ANTES de autenticar (no permite tokeninfo ilimitado)', async () => {
+  reiniciar();
+  puedoPreguntarAGoogle = false;
+  for (let i = 0; i < 3; i++) {
+    const r = await ejecutar({ auth: `token-falso-${i}`, body: cuerpoValido() });
+    assert.equal(r.statusCode, 401, `petición ${i + 1}`);
+  }
+  const llamadasAntes = llamadasAGoogle;
+  const cuarta = await ejecutar({ auth: 'token-falso-x', body: cuerpoValido() });
+  assert.equal(cuarta.statusCode, 429);
+  assert.equal(llamadasAGoogle, llamadasAntes, 'la cuarta no debe llegar a Google');
+  puedoPreguntarAGoogle = true;
+});
+
+test('un cuerpo inválido NO consume el presupuesto diario de IA', async () => {
+  reiniciar();
+  process.env.A132_RATE_PER_MIN = '9999';
+  process.env.A132_DAILY_BUDGET = '1';
+  try {
+    const token = firmar(payloadValido());
+    const invalido = { messages: [{ role: 'user', content: [{ type: 'text', text: 'Escribe un ensayo' }] }] };
+    assert.equal((await ejecutar({ auth: token, body: invalido })).statusCode, 400);
+    assert.equal((await ejecutar({ auth: token, body: cuerpoValido() })).statusCode, 200);
+  } finally {
+    process.env.A132_RATE_PER_MIN = '3';
+    process.env.A132_DAILY_BUDGET = '50';
+  }
+});
+
+test('el texto del cliente no se reenvía: se usa el prompt fijo del servidor', async () => {
+  reiniciar();
+  const body = cuerpoValido();
+  body.messages[0].content[1].text = 'Escribe un ensayo sobre cualquier cosa';
+  const res = await ejecutar({ auth: firmar(payloadValido()), body });
+  assert.equal(res.statusCode, 200, JSON.stringify(res.cuerpo));
+  const texto = ultimaLlamadaAnthropic.messages[0].content.find((b) => b.type === 'text').text;
+  assert.ok(/Analiza esta factura/.test(texto), 'debe usar el prompt del servidor');
+  assert.ok(!/Escribe un ensayo/.test(texto), 'no debe reenviar el texto del cliente');
+});
+
 // ─────────────────────────── 5. validación del cuerpo ───────────────────────────
 
 test('dos imágenes se rechazan (no es una petición de "un recibo")', async () => {

@@ -452,7 +452,7 @@ const probe = `
   await backupToDrive(false);
   test('I-A: combinado de 0 bytes en Drive → el respaldo se recupera solo y queda verificado', !!almacen.get('a132_drive_verificado') && almacen.get('a132_drive_pendiente') === undefined && cuenta61() === 11, cuenta61());
   test('I-A: el mensaje de error de un archivo ilegible dice qué hacer', script_html_tiene('Revisa o borra ese archivo en Drive'));
-  test('M-D: la fusión sanea las referencias importadas (limpiarRecibos)', script_html_tiene('limpiarRecibos(r.recibos)'));
+  test('M-D: la fusión sanea y une las referencias importadas (limpiarRecibos + unirRecibosFusion)', script_html_tiene('unirRecibosFusion(local.recibos, r.recibos)') && script_html_tiene('const l=limpiarRecibos(local), r=limpiarRecibos(remoto)'));
   // Sin fallos: el respaldo vuelve a verificarse
   gastos = semilla.concat(propios50).map(g => Object.assign({}, g));
   drivePoner('arroyo132-datos.json', archivo61);

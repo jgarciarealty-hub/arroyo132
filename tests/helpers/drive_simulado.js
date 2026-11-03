@@ -3,8 +3,9 @@
 const C = require('../../central/estado_central.js');
 const D = require('../../central/almacen_drive.js');
 function driveSimulado() {
-  const s = { archivos: new Map(), n: 1, caido: false, antesDeSubir: null, recortar: false, patch500: 0, llamadas: [] };
+  const s = { archivos: new Map(), n: 1, revSeq: 0, caido: false, antesDeSubir: null, recortar: false, patch500: 0, llamadas: [] };
   const rid = () => 'rev' + (s.n++);
+  const nuevaRev = (texto) => ({ id: rid(), text: texto, modifiedTime: new Date(1760000000000 + (s.revSeq++) * 1000).toISOString() });
   s.fetch = async (u, o = {}) => {
     if (s.caido) throw new TypeError('Failed to fetch');
     const m = o.method || 'GET'; const url = new URL(u); s.llamadas.push(m + ' ' + url.pathname);
@@ -14,15 +15,15 @@ function driveSimulado() {
       const fs_ = [...s.archivos.values()].filter((f) => f.name === nombre).sort((a, b) => a.t - b.t);
       return R(200, { files: fs_.map((f) => ({ id: f.id, createdTime: f.t, headRevisionId: f.revs[f.revs.length - 1].id })) });
     }
-    if (m === 'POST' && url.pathname === '/drive/v3/files') { const b = JSON.parse(o.body); const id = 'F' + (s.n++); s.archivos.set(id, { id, name: b.name, t: s.n, revs: [{ id: rid(), text: '' }] }); return R(200, { id }); }
+    if (m === 'POST' && url.pathname === '/drive/v3/files') { const b = JSON.parse(o.body); const id = 'F' + (s.n++); s.archivos.set(id, { id, name: b.name, t: s.n, revs: [nuevaRev('')] }); return R(200, { id }); }
     let mm;
     if (m === 'PATCH' && (mm = url.pathname.match(/^\/upload\/drive\/v3\/files\/([^/]+)$/))) {
       if (s.antesDeSubir) { const f = s.antesDeSubir; s.antesDeSubir = null; await f(); }
       if (s.patch500 > 0) { s.patch500--; return R(500, {}); }
       const f = s.archivos.get(mm[1]); let t = o.body; if (s.recortar) t = t.slice(0, t.length - 5);
-      f.revs.push({ id: rid(), text: t }); return R(200, { id: f.id });
+      f.revs.push(nuevaRev(t)); return R(200, { id: f.id });
     }
-    if (m === 'GET' && (mm = url.pathname.match(/^\/drive\/v3\/files\/([^/]+)\/revisions$/))) { const todas = s.archivos.get(mm[1]).revs.map((r) => ({ id: r.id })); if (s.revisionFantasma != null) todas.push({ id: 'revFANT' }); const tam = Math.min(Number(url.searchParams.get('pageSize') || 200), s.tamPagina || 200); const ini = Number(url.searchParams.get('pageToken') || 0); const pag = todas.slice(ini, ini + tam); return R(200, Object.assign({ revisions: pag }, ini + tam < todas.length ? { nextPageToken: String(ini + tam) } : {})); }
+    if (m === 'GET' && (mm = url.pathname.match(/^\/drive\/v3\/files\/([^/]+)\/revisions$/))) { const todas = s.archivos.get(mm[1]).revs.map((r) => ({ id: r.id, modifiedTime: r.modifiedTime })); if (s.revisionFantasma != null) todas.push({ id: 'revFANT' }); const tam = Math.min(Number(url.searchParams.get('pageSize') || 200), s.tamPagina || 200); const ini = Number(url.searchParams.get('pageToken') || 0); const pag = todas.slice(ini, ini + tam); return R(200, Object.assign({ revisions: pag }, ini + tam < todas.length ? { nextPageToken: String(ini + tam) } : {})); }
     if (m === 'GET' && s.revisionFantasma != null && /\/revisions\/revFANT$/.test(url.pathname)) return R(200, s.revisionFantasma);   // desalineación: el listado trae una revisión POSTERIOR a la cabeza del archivo
     if (m === 'GET' && (mm = url.pathname.match(/^\/drive\/v3\/files\/([^/]+)\/revisions\/([^/]+)$/))) return R(200, s.archivos.get(mm[1]).revs.find((r) => r.id === mm[2]).text);
     if (m === 'GET' && (mm = url.pathname.match(/^\/drive\/v3\/files\/([^/]+)$/)) && url.searchParams.get('alt') === 'media') { const f = s.archivos.get(mm[1]); return R(200, f.revs[f.revs.length - 1].text); }
