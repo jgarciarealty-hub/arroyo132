@@ -1850,7 +1850,7 @@ function csvCampo(v){
   return '"'+s.replace(/"/g,'""')+'"';
 }
 // Valor numérico seguro para un atributo: si no es un número finito, queda vacío.
-function valorNumero(v){ const n=Number(v); return Number.isFinite(n) ? String(n) : ''; }
+function valorNumero(v){ if(v===''||v===null||v===undefined) return ''; const n=Number(v); return Number.isFinite(n) ? String(n) : ''; }
 function totalesLote(){
   let A=0,B=0;
   gastos.forEach(g=>{

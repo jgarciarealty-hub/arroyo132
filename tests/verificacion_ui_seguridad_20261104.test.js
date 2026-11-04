@@ -172,6 +172,7 @@ const R = (c) => vm.runInContext(c, sandbox);
   test('balances: el historial lista las 62 filas', (el('tabla-gastos').innerHTML.match(/<tr>/g) || []).length === 62, (el('tabla-gastos').innerHTML.match(/<tr>/g) || []).length);
   test('CSV: una celda con fórmula se neutraliza', R('csvCampo("=1+1")') === '"\'=1+1"', R('csvCampo("=1+1")'));
   test('CSV: las comillas se duplican (no rompen la fila)', R('csvCampo(\'a"b\')') === '"a""b"', R('csvCampo(\'a"b\')'));
+  test('formulario: un valor numérico vacío queda vacío, no 0', R('valorNumero("")') === '' && R('valorNumero("12.5")') === '12.5', { vacio: R('valorNumero("")'), num: R('valorNumero("12.5")') });
 
   console.log('\n' + pass + ' pasaron, ' + fail + ' fallaron');
   process.exit(fail ? 1 : 0);
