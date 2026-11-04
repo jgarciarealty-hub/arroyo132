@@ -225,6 +225,15 @@ const refsLocales = (almacen) => { try { return JSON.parse(almacen.get('a132_rec
     test('el central sigue con sus 5 referencias', Object.keys(drive.leer('arroyo132-central-v5.json').recibos || {}).length === 5);
   }
 
+  // ── 2b. Sin token no se intenta OAuth silencioso (evita ventanas de Google/previews) ──
+  {
+    const { dev, almacen } = dispositivoConCentral({ token: false });
+    dev.R("var __oauthBackup=0; asegurarTokenDrive=async()=>{ __oauthBackup++; return null; }");
+    await dev.R('backupToDrive(false)');
+    test('SIN TOKEN: el respaldo no intenta OAuth silencioso', dev.R('__oauthBackup') === 0, dev.R('__oauthBackup'));
+    test('SIN TOKEN: queda pendiente y no escribe archivos', almacen.get('a132_drive_pendiente') === '1');
+  }
+
   // ── 3. Un respaldo que coincide con una sincronización en curso ESPERA a que termine ──
   {
     const { drive, dev, almacen } = dispositivoConCentral({ token: true });

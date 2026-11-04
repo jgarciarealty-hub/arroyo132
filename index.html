@@ -9,6 +9,7 @@
 <meta name="apple-mobile-web-app-title" content="Arroyo 132">
 <meta name="theme-color" content="#c9a84c">
 <link rel="manifest" href="/manifest.json">
+<link rel="icon" href="/icon.svg" type="image/svg+xml">
 <link rel="canonical" href="https://arroyo132.vercel.app/">
 <link rel="apple-touch-icon" href="/icon.svg">
 <title>Proyecto Arroyo 132 — JGarcía Realty</title>
@@ -1508,7 +1509,14 @@ async function processPin(){
     } else {
       if(pinBuffer===pinConfirmBuffer){
         const fuerte = await hashPinPBKDF2(pinBuffer);
-        localStorage.setItem(PIN_KEY, fuerte || hashPin(pinBuffer));
+        if(!fuerte){
+          // No se guarda un PIN débil en silencio. En file:// o HTTP no localhost no hay
+          // crypto.subtle; se pide abrir la app por HTTPS/localhost (PROBAR-LOCAL-HTTP.bat).
+          pinBuffer=''; pinConfirmBuffer=''; isSettingPin=false; updateDots('error');
+          document.getElementById('pinError').textContent='⚠️ Para crear el PIN con protección moderna, abre la app por HTTPS o localhost (no file://).';
+          return;
+        }
+        localStorage.setItem(PIN_KEY, fuerte);
         unlockApp();
       } else {
         updateDots('error');
@@ -1577,6 +1585,8 @@ function borrarSesion(){
 }
 function unlockApp(){
   guardarSesion();
+  const err=document.getElementById('pinError'); if(err) err.textContent='';
+  const hint=document.getElementById('pinHint'); if(hint) hint.textContent='';
   document.getElementById('lockScreen').style.opacity='0';
   document.getElementById('lockScreen').style.transition='opacity 0.4s';
   setTimeout(()=>{ document.getElementById('lockScreen').style.display='none'; }, 400);
@@ -1839,6 +1849,8 @@ function csvCampo(v){
   if(/^[=+\-@\t\r]/.test(s)) s="'"+s;
   return '"'+s.replace(/"/g,'""')+'"';
 }
+// Valor numérico seguro para un atributo: si no es un número finito, queda vacío.
+function valorNumero(v){ const n=Number(v); return Number.isFinite(n) ? String(n) : ''; }
 function totalesLote(){
   let A=0,B=0;
   gastos.forEach(g=>{
@@ -3494,7 +3506,7 @@ function editarGasto(id){
         <option value="transferencia" ${g.metodo==='transferencia'?'selected':''}>🏦 Transferencia</option>
       </select>
     </div>
-    <div class="form-group"><label>Monto</label><input type="number" step="0.01" id="e-monto" value="${g.monto}"></div>
+    <div class="form-group"><label>Monto</label><input type="number" step="0.01" id="e-monto" value="${valorNumero(g.monto)}"></div>
     <div class="form-group"><label>Descripción</label><textarea id="e-desc">${escHtml(g.descripcion||'')}</textarea></div>
     <div class="form-actions" style="margin-top:16px">
       <button class="btn btn-gold btn-sm" onclick="guardarEdicionGasto(${jsArg(g.id)})">💾 Guardar Cambios</button>
@@ -3590,7 +3602,7 @@ function editServicio(lote,tipo,id){
   const item=arr.find(x=>x.id===id);if(!item)return;
   openModal(`Editar — ${item.concepto}`,`
     <div class="form-grid" style="grid-template-columns:1fr;">
-      <div class="fg"><label>Monto ($)</label><input type="number" id="se-monto" value="${item.monto}" step="0.01"></div>
+      <div class="fg"><label>Monto ($)</label><input type="number" id="se-monto" value="${valorNumero(item.monto)}" step="0.01"></div>
       <div class="fg"><label>Estado</label>
         <select id="se-estado">
           <option value="pendiente" ${item.estado==='pendiente'?'selected':''}>Pendiente</option>
@@ -3862,8 +3874,8 @@ function editarContratista(id){
     <div class="form-grid" style="grid-template-columns:1fr;">
       <div class="fg"><label>Nombre</label><input type="text" id="ec-nombre" value="${escHtml(c.nombre)}"></div>
       <div class="fg"><label>Teléfono</label><input type="tel" id="ec-tel" value="${escHtml(c.tel||'')}"></div>
-      <div class="fg"><label>Monto del Contrato ($)</label><input type="number" id="ec-contrato" value="${c.montoContrato||''}" step="0.01" min="0" placeholder="0.00"></div>
-      <div class="fg"><label>Pagado hasta ahora ($)</label><input type="number" id="ec-pagado" value="${c.pagado||''}" step="0.01" min="0" placeholder="0.00"></div>
+      <div class="fg"><label>Monto del Contrato ($)</label><input type="number" id="ec-contrato" value="${valorNumero(c.montoContrato)}" step="0.01" min="0" placeholder="0.00"></div>
+      <div class="fg"><label>Pagado hasta ahora ($)</label><input type="number" id="ec-pagado" value="${valorNumero(c.pagado)}" step="0.01" min="0" placeholder="0.00"></div>
       <div class="fg"><label>Notas</label><textarea id="ec-notas">${escHtml(c.notas||'')}</textarea></div>
     </div>
     <div class="form-actions" style="margin-top:14px">
@@ -4251,7 +4263,7 @@ function calcTuCoop(){
 function editActivacion(id){
   const item = tuCoop.activacion.find(x=>x.id===id);if(!item)return;
   openModal(`Editar — ${item.concepto}`,`
-    <div class="fg"><label>Monto ($)</label><input type="number" id="ea-monto" value="${item.monto}" step="0.01"></div>
+    <div class="fg"><label>Monto ($)</label><input type="number" id="ea-monto" value="${valorNumero(item.monto)}" step="0.01"></div>
     <div class="form-actions" style="margin-top:14px">
       <button class="btn btn-gold" onclick="saveActivacion(${jsArg(id)})">Guardar</button>
     </div>`);
@@ -4287,7 +4299,7 @@ function showAddInteres(){
   openModal('Registrar Interés Mensual',`
     <div class="form-grid" style="grid-template-columns:1fr;">
       <div class="fg"><label>Mes (YYYY-MM)</label><input type="month" id="ni-mes" value="${hoy}"></div>
-      <div class="fg"><label>Balance utilizado ($)</label><input type="number" id="ni-bal" value="${tuCoop.balance||0}" step="0.01"></div>
+      <div class="fg"><label>Balance utilizado ($)</label><input type="number" id="ni-bal" value="${valorNumero(tuCoop.balance)}" step="0.01"></div>
       <div class="fg"><label>Monto de interés ($)</label><input type="number" id="ni-monto" step="0.01"></div>
       <div class="fg"><label>¿Ya pagado?</label>
         <select id="ni-pag"><option value="0">Pendiente</option><option value="1">Pagado</option></select>
@@ -4875,6 +4887,9 @@ async function backupToDrive(mostrarFeedback=false){
     // Renovación silenciosa: si el token venció (dura ~58 min) se renueva sin abrir ventana.
     let token = localStorage.getItem(DRIVE_TOKEN_KEY);
     if(!driveTokenValid()){
+      // Sin token previo NO se intenta OAuth silencioso: abriría una ventana de Google (y en
+      // previews/localhost un error de origen). El usuario conecta Drive con el icono ☁️.
+      if(!token){ marcarRespaldoPendiente('Google Drive no conectado'); return; }
       token = await asegurarTokenDrive(false);
       if(!token){ marcarRespaldoPendiente('sesión de Google vencida'); return; }
     }
@@ -5395,7 +5410,11 @@ function centralAlmacen(token){
 }
 async function centralToken(interactivo){
   let token=localStorage.getItem(DRIVE_TOKEN_KEY);
-  if(!driveTokenValid()) token=await asegurarTokenDrive(!!interactivo);
+  if(!driveTokenValid()){
+    // Igual que el respaldo: sin token previo no se abre OAuth en segundo plano.
+    if(!token && !interactivo) return null;
+    token=await asegurarTokenDrive(!!interactivo);
+  }
   return token||null;
 }
 let _centralPromesa=null;

@@ -154,6 +154,12 @@ const R = (c) => vm.runInContext(c, sandbox);
   const viajeMal = el('v-tabla').innerHTML;
   test('ids: un id malicioso de viaje no inyecta', viajeMal.includes('&quot;1);alert(1)//&quot;') && !viajeMal.includes('eliminarViaje(1);'), viajeMal.slice(0, 400));
 
+  // Un monto importado como cadena no debe romper el atributo value del formulario.
+  R("gastos=[{id:1,fecha:'2026-11-04',contratista:'X',categoria:'Otros',lote:'Compartido',metodo:'efectivo',monto:'\\\"><img src=x onerror=alert(1)>',descripcion:''}]");
+  R('editarGasto(1)');
+  const editMal = el('modal-body').innerHTML;
+  test('formulario: un monto no numérico no inyecta atributos', !editMal.includes('<img src=x') && !editMal.includes('onerror=alert(1)'), editMal.slice(0, 500));
+
   // ── 3. Balances con 62 gastos: los cálculos no lanzan y producen totales ──
   const GASTOS62 = [];
   for (let i = 1; i <= 62; i++) GASTOS62.push({ id: 700000 + i, fecha: '2026-04-' + String((i % 28) + 1).padStart(2, '0'), contratista: 'Proveedor ' + i, categoria: 'Otros', lote: 'Compartido', metodo: 'efectivo', monto: Math.round(i * 13.37 * 100) / 100, descripcion: 'gasto ' + i });

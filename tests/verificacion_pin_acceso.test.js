@@ -221,6 +221,21 @@ const en = (sandbox, code) => vm.runInContext(code, sandbox, { timeout: 20000 })
     })()`);
     s6b.__setSubtle(true);
 
+    // ---- sin crypto.subtle NO se crea un PIN débil en silencio ----
+    const s6c = cargarApp({});
+    s6c.__setSubtle(false);
+    await en(s6c, `(async () => {
+      pinBuffer = '1357'; await processPin();
+      pinBuffer = '1357'; await processPin();
+      test('sin crypto.subtle: no se guarda un PIN débil',
+        !localStorage.getItem('a132_pin_hash') && !sessionStorage.getItem('a132_session'),
+        localStorage.getItem('a132_pin_hash'));
+      test('sin crypto.subtle: se pide abrir por HTTPS/localhost',
+        /HTTPS|localhost/.test(document.getElementById('pinError').textContent),
+        document.getElementById('pinError').textContent);
+    })()`);
+    s6c.__setSubtle(true);
+
     // ---- dos dispositivos reales: escritorio (hash de main) vs celular (hash de julio) ----
     // Simula el caso reportado 2026-10-19: el escritorio entra y el celular no, con el mismo
     // PIN y la misma URL. En el celular: credencial de julio + bloqueo vencido + contador en 5.

@@ -59,7 +59,7 @@ function crearSandbox() {
   const dom = montar();
   const ctx = { document: dom.document, gastos: [], saved: 0, alert() {}, save() { ctx.saved++; return true; }, closeModal() {}, renderHistorial() {}, renderDashboard() {}, showGastoDetail() {} };
   vm.createContext(ctx);
-  vm.runInContext(['escHtml', 'jsArg', 'openModal', 'asegurarOpcionSelect', 'editarGasto', 'guardarEdicionGasto', 'guardarConAviso'].map(n => { try { return extraer(n); } catch (e) { return ''; } }).join('\n'), ctx);
+  vm.runInContext(['escHtml', 'jsArg', 'valorNumero', 'openModal', 'asegurarOpcionSelect', 'editarGasto', 'guardarEdicionGasto', 'guardarConAviso'].map(n => { try { return extraer(n); } catch (e) { return ''; } }).join('\n'), ctx);
   return ctx;
 }
 // Abre el formulario Editar y guarda, aplicando `cambios` (id de campo -> valor) entre ambos pasos.
