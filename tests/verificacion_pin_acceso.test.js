@@ -37,6 +37,7 @@ function test(n, c, d) {
 let subtleOn = true;
 function cargarApp(seed) {
   const store = Object.assign({}, seed || {});
+  const session = {};
   const registry = {};
   const almacen = {};
   function mkEl(id) {
@@ -52,8 +53,13 @@ function cargarApp(seed) {
   }
   const sandbox = {
     console, results, test,
-    __store: store, __el: mkEl, __setSubtle: (v) => { subtleOn = v; },
-    crypto: { get subtle() { return subtleOn ? nodeCrypto.webcrypto.subtle : undefined; } },
+    __store: store, __session: session, __el: mkEl, __setSubtle: (v) => { subtleOn = v; },
+    crypto: {
+      get subtle() { return subtleOn ? nodeCrypto.webcrypto.subtle : undefined; },
+      getRandomValues: (arr) => { const b = nodeCrypto.randomBytes(arr.length); for (let i = 0; i < arr.length; i++) arr[i] = b[i]; return arr; },
+    },
+    btoa: (s) => Buffer.from(s, 'binary').toString('base64'),
+    atob: (s) => Buffer.from(s, 'base64').toString('binary'),
     TextEncoder,
     document: {
       getElementById: (id) => mkEl(id), querySelectorAll: () => [],
@@ -67,6 +73,7 @@ function cargarApp(seed) {
     setInterval: () => 0, clearInterval() {}, setTimeout: () => 0, clearTimeout() {},
     alert() {}, confirm: () => true,
     localStorage: { setItem(k, v) { store[k] = String(v); }, getItem(k) { return k in store ? store[k] : null; }, removeItem(k) { delete store[k]; }, get length() { return Object.keys(store).length; }, key(i) { return Object.keys(store)[i]; } },
+    sessionStorage: { setItem(k, v) { session[k] = String(v); }, getItem(k) { return k in session ? session[k] : null; }, removeItem(k) { delete session[k]; }, get length() { return Object.keys(session).length; }, key(i) { return Object.keys(session)[i]; } },
     fetch: () => Promise.reject(new Error('sin red')),
     Date, Math, JSON, parseFloat, parseInt, String, Object, Array, Map, Promise,
   };
@@ -92,42 +99,56 @@ const en = (sandbox, code) => vm.runInContext(code, sandbox, { timeout: 20000 })
       test('acepta el formato de julio (sal + hash 8 hex)', r.ok === true, r);
       r = await verificarPin('1234', hashPin('1234'));
       test('sigue aceptando el formato actual de main', r.ok === true, r);
+      const pb = await hashPinPBKDF2('1234');
+      r = await verificarPin('1234', pb);
+      test('acepta el formato moderno PBKDF2', r.ok === true && r.formato === 'pbkdf2', r);
+      r = await verificarPin('9999', pb);
+      test('rechaza un PIN incorrecto en PBKDF2', r.ok === false, r);
+      test('el PIN moderno no contiene los dígitos en claro', !String(pb).includes('31323334') && !String(pb).includes('1234'), pb);
       r = await verificarPin('9999', fuerte);
       test('rechaza un PIN incorrecto en cualquier formato', r.ok === false, r);
       r = await verificarPin('1234', 'basura');
       test('rechaza una credencial corrupta sin lanzar excepcion', r.ok === false, r);
     })()`);
 
-    // ---- login con credencial de julio: entra y NO reescribe la credencial (version minima) ----
+    // ---- login con credencial de julio: entra y MIGRA a PBKDF2 ----
     __seedStore(s, { a132_pin_hash: legacySaltHost('1234') });
     await en(s, `(async () => {
       pinBuffer = '1234';
       await processPin();
-      test('PIN de julio correcto: entra (sesion creada)', !!localStorage.getItem('a132_session'));
-      test('al entrar NO reescribe la credencial guardada (sin migracion)',
-        localStorage.getItem('a132_pin_hash') === ${JSON.stringify(legacySaltHost('1234'))},
+      test('PIN de julio correcto: entra (sesion creada)', !!sessionStorage.getItem('a132_session'));
+      test('al entrar MIGRA la credencial a PBKDF2',
+        String(localStorage.getItem('a132_pin_hash')).startsWith('pbkdf2$'),
         localStorage.getItem('a132_pin_hash'));
       test('al entrar deja los intentos en 0 y sin bloqueo',
         localStorage.getItem('a132_attempts') === '0' && !localStorage.getItem('a132_lockuntil'));
     })()`);
 
-    // ---- login con credencial actual de main: entra sin cambiar el hash ----
+    // ---- login con credencial actual de main: entra y MIGRA a PBKDF2 ----
     __seedStore(s, {});
     const hashMain = en(s, `hashPin('1234')`);
     s.__store.a132_pin_hash = hashMain;
     await en(s, `(async () => {
       pinBuffer = '1234';
       await processPin();
-      test('PIN guardado por main: entra y NO reescribe la credencial',
-        localStorage.getItem('a132_pin_hash') === ${JSON.stringify(hashMain)} && !!localStorage.getItem('a132_session'));
+      test('PIN guardado por main: entra y MIGRA la credencial a PBKDF2',
+        String(localStorage.getItem('a132_pin_hash')).startsWith('pbkdf2$') && !!sessionStorage.getItem('a132_session'));
     })()`);
+
+    // ---- una marca antigua de localStorage NO desbloquea (sesión por pestaña) ----
+    const sSes = cargarApp({ a132_pin_hash: hashMain, a132_session: String(Date.now()) });
+    en(sSes, `
+      test('una marca de sesión en localStorage no desbloquea la app',
+        !sesionValida() && document.getElementById('pinHint').textContent.includes('Ingresa tu PIN'),
+        document.getElementById('pinHint').textContent);
+    `);
 
     // ---- PIN incorrecto: no entra, cuenta el intento ----
     __seedStore(s, { a132_pin_hash: sha256hex(PIN_SALT + '1234') });
     await en(s, `(async () => {
       pinBuffer = '9999';
       await processPin();
-      test('PIN incorrecto: NO crea sesion', !localStorage.getItem('a132_session'));
+      test('PIN incorrecto: NO crea sesion', !sessionStorage.getItem('a132_session'));
       test('PIN incorrecto: incrementa el contador a 1', localStorage.getItem('a132_attempts') === '1', localStorage.getItem('a132_attempts'));
       test('PIN incorrecto: muestra el aviso con intentos restantes',
         document.getElementById('pinError').textContent.includes('incorrecto') &&
@@ -179,11 +200,26 @@ const en = (sandbox, code) => vm.runInContext(code, sandbox, { timeout: 20000 })
       test('sin crypto.subtle: hashPinFuerte devuelve null sin lanzar', f === null, f);
       pinBuffer = '4321';
       await processPin();
-      test('sin crypto.subtle: el PIN de julio sigue entrando', !!localStorage.getItem('a132_session'));
+      test('sin crypto.subtle: el PIN de julio sigue entrando', !!sessionStorage.getItem('a132_session'));
       test('sin crypto.subtle: conserva la credencial anterior (no puede migrar)',
         localStorage.getItem('a132_pin_hash') === ${JSON.stringify(legacySaltHost('4321'))});
     })()`);
     s6.__setSubtle(true);
+
+    // ---- PBKDF2 guardado pero navegador sin crypto.subtle: mensaje claro, NO cuenta como fallo ----
+    const s6b = cargarApp({});
+    const pbGuardado = await en(s6b, `hashPinPBKDF2('4321')`);
+    s6b.__store.a132_pin_hash = pbGuardado;
+    s6b.__setSubtle(false);
+    await en(s6b, `(async () => {
+      pinBuffer = '4321';
+      await processPin();
+      test('sin crypto.subtle: un PIN PBKDF2 no se trata como PIN incorrecto',
+        /protección moderna/.test(document.getElementById('pinError').textContent) && !localStorage.getItem('a132_attempts'),
+        document.getElementById('pinError').textContent);
+      test('sin crypto.subtle: no se crea sesión con un PIN PBKDF2', !sessionStorage.getItem('a132_session'));
+    })()`);
+    s6b.__setSubtle(true);
 
     // ---- dos dispositivos reales: escritorio (hash de main) vs celular (hash de julio) ----
     // Simula el caso reportado 2026-10-19: el escritorio entra y el celular no, con el mismo
@@ -196,7 +232,7 @@ const en = (sandbox, code) => vm.runInContext(code, sandbox, { timeout: 20000 })
     await en(sEscritorio, `(async () => {
       pinBuffer = '1234'; await processPin();
       test('escritorio (hash de main): entra, como reporta el propietario',
-        !!localStorage.getItem('a132_session'));
+        !!sessionStorage.getItem('a132_session'));
     })()`);
 
     const sCelular = cargarApp({
@@ -206,7 +242,7 @@ const en = (sandbox, code) => vm.runInContext(code, sandbox, { timeout: 20000 })
     await en(sCelular, `(async () => {
       pinBuffer = '1234'; await processPin();
       test('celular (hash de julio): entra al primer intento con el parche',
-        !!localStorage.getItem('a132_session'));
+        !!sessionStorage.getItem('a132_session'));
       // El arranque añade los 11 recibos recuperados si faltan (igual que produccion hoy),
       // asi que "intactos" = ningun registro original se pierde ni se altera.
       const orig = JSON.parse(${JSON.stringify(gastosCelular)});
@@ -222,9 +258,9 @@ const en = (sandbox, code) => vm.runInContext(code, sandbox, { timeout: 20000 })
     });
     await en(sCelularViejo, `(async () => {
       pinBuffer = '1234'; await processPin();
-      test('celular (fallback de julio): entra y la credencial guardada queda intacta',
-        !!localStorage.getItem('a132_session') &&
-        localStorage.getItem('a132_pin_hash') === ${JSON.stringify(legacySaltHost('1234'))});
+      test('celular (fallback de julio): entra y migra la credencial a PBKDF2',
+        !!sessionStorage.getItem('a132_session') &&
+        String(localStorage.getItem('a132_pin_hash')).startsWith('pbkdf2$'));
       const orig = JSON.parse(${JSON.stringify(gastosCelular)});
       const act = JSON.parse(localStorage.getItem('a132_gastos'));
       test('celular (fallback): sus registros originales quedan intactos',
@@ -237,18 +273,18 @@ const en = (sandbox, code) => vm.runInContext(code, sandbox, { timeout: 20000 })
     await en(sCelularAjeno, `(async () => {
       pinBuffer = '0000'; await processPin();
       test('celular: un PIN DISTINTO sigue rechazado (no se desactiva la autenticacion)',
-        !localStorage.getItem('a132_session') && localStorage.getItem('a132_attempts') === '1');
+        !sessionStorage.getItem('a132_session') && localStorage.getItem('a132_attempts') === '1');
     })()`);
 
-    // ---- PIN nuevo: se guarda como en main (la version minima no cambia el formato de almacenamiento) ----
+    // ---- PIN nuevo: se guarda con PBKDF2 (sin dígitos en claro) ----
     const s7 = cargarApp({});
     await en(s7, `(async () => {
       pinBuffer = '5073'; await processPin();   // primer paso: pide confirmacion
       pinBuffer = '5073'; await processPin();   // confirmacion
       const g = localStorage.getItem('a132_pin_hash') || '';
-      test('PIN nuevo: se guarda en el formato actual de main (sin cambiar el almacenamiento)', g === hashPin('5073'), g);
+      test('PIN nuevo: se guarda con PBKDF2 y sin los dígitos en claro', g.startsWith('pbkdf2$') && !g.includes('35303733') && !g.includes('5073'), g);
       test('PIN nuevo: NO se guarda en SHA-256 (fuera de la version minima)', !/^[0-9a-f]{64}$/.test(g), g);
-      test('PIN nuevo: entra sin pedir intentos', !!localStorage.getItem('a132_session'));
+      test('PIN nuevo: entra sin pedir intentos', !!sessionStorage.getItem('a132_session'));
     })()`);
   } catch (e) {
     test('la suite se ejecuta sin excepciones', false, e && e.message);
@@ -260,5 +296,6 @@ const en = (sandbox, code) => vm.runInContext(code, sandbox, { timeout: 20000 })
 // Reemplaza el localStorage del contexto conservando el mismo objeto store.
 function __seedStore(sandbox, seed) {
   for (const k of Object.keys(sandbox.__store)) delete sandbox.__store[k];
+  for (const k of Object.keys(sandbox.__session)) delete sandbox.__session[k];
   Object.assign(sandbox.__store, seed);
 }

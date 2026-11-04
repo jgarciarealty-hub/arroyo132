@@ -9,6 +9,7 @@
 <meta name="apple-mobile-web-app-title" content="Arroyo 132">
 <meta name="theme-color" content="#c9a84c">
 <link rel="manifest" href="/manifest.json">
+<link rel="canonical" href="https://arroyo132.vercel.app/">
 <link rel="apple-touch-icon" href="/icon.svg">
 <title>Proyecto Arroyo 132 — JGarcía Realty</title>
 <link href="https://fonts.googleapis.com/css2?family=Cormorant+Garamond:ital,wght@0,400;0,600;0,700;1,400&family=DM+Sans:wght@300;400;500;600&family=DM+Mono:wght@400;500&display=swap" rel="stylesheet">
@@ -67,6 +68,7 @@ body{background:var(--navy);color:var(--white);font-family:'DM Sans',sans-serif;
 
 /* CARDS */
 .cards{display:grid;gap:14px;margin-bottom:20px;}
+.cards>*{min-width:0;}   /* una tarjeta con texto largo no debe ensanchar la página */
 .cards-4{grid-template-columns:repeat(4,1fr);}
 .cards-3{grid-template-columns:repeat(3,1fr);}
 .cards-2{grid-template-columns:repeat(2,1fr);}
@@ -259,6 +261,13 @@ textarea{resize:vertical;min-height:60px;}
   .topbar{padding:10px 14px;}
   .topbar-title{font-size:17px;}
   .topbar-right .btn-ghost{display:none;}
+}
+
+/* PRINT */
+/* En teléfonos estrechos las tarjetas de dos columnas se apilan: con ~170 px por tarjeta
+   el texto largo (p. ej. «Lote 132B») desbordaba la página y aparecía scroll horizontal. */
+@media(max-width:520px){
+  .cards-2{grid-template-columns:1fr;}
 }
 
 /* PRINT */
@@ -1339,6 +1348,18 @@ textarea{resize:vertical;min-height:60px;}
 </div>
 
 <script>
+// Estrategia de versiones: si esta copia se sirve desde una URL antigua conocida, se redirige a
+// la canónica. No afecta a localhost, 127.0.0.1, file:// ni a las previews de Vercel.
+const A132_HOSTS_OBSOLETOS = ['arroyo132-netlify.vercel.app', 'jgarciarealty-hub-arroyo132.vercel.app'];
+const A132_URL_CANONICA = 'https://arroyo132.vercel.app';
+function esHostObsoleto(h){ return A132_HOSTS_OBSOLETOS.indexOf(String(h||'').toLowerCase())>=0; }
+(function redirigirHostObsoleto(){
+  try{
+    if(esHostObsoleto(location.hostname)){
+      location.replace(A132_URL_CANONICA + location.pathname + location.search + location.hash);
+    }
+  }catch(e){ /* file:// o entornos sin location: se permite */ }
+})();
 // ============ SEGURIDAD ============
 const PIN_KEY = 'a132_pin_hash';
 const SESSION_KEY = 'a132_session';
@@ -1384,11 +1405,42 @@ function hashPinLegacySalt(pin){
   }
   return (h>>>0).toString(16).padStart(8,'0');
 }
+// ── Almacenamiento moderno del PIN (2026-11-04) ───────────────────────────────
+// El formato de main concatenaba el hash con los códigos hexadecimales del PIN: quien leyera
+// localStorage podía reconstruirlo. Los PIN nuevos se guardan con PBKDF2-SHA-256 y sal aleatoria,
+// y los formatos anteriores se aceptan y se MIGRAN en el primer acceso correcto.
+const PIN_PBKDF2_ITER = 150000;
+function bytesABase64(bytes){ let s=''; for(let i=0;i<bytes.length;i++) s+=String.fromCharCode(bytes[i]); return btoa(s); }
+function base64ABytes(s){ const bin=atob(s); const out=new Uint8Array(bin.length); for(let i=0;i<bin.length;i++) out[i]=bin.charCodeAt(i); return out; }
+async function hashPinPBKDF2(pin, saltB64, iter){
+  try{
+    if(!crypto || !crypto.subtle) return null;
+    const n = Number(iter)||PIN_PBKDF2_ITER;
+    const salt = saltB64 ? base64ABytes(saltB64)
+      : (crypto.getRandomValues ? crypto.getRandomValues(new Uint8Array(16)) : new Uint8Array(16).map(()=>Math.floor(Math.random()*256)));
+    const key = await crypto.subtle.importKey('raw', new TextEncoder().encode(String(pin)), 'PBKDF2', false, ['deriveBits']);
+    const bits = await crypto.subtle.deriveBits({ name:'PBKDF2', salt, iterations:n, hash:'SHA-256' }, key, 256);
+    return 'pbkdf2$'+n+'$'+bytesABase64(salt)+'$'+bytesABase64(new Uint8Array(bits));
+  }catch(e){ return null; }
+}
+async function verificarPinPBKDF2(pin, stored){
+  const s=String(stored||'');
+  if(!s.startsWith('pbkdf2$')) return null;               // no es este formato
+  const partes=s.split('$');
+  if(partes.length!==4) return false;
+  if(!crypto || !crypto.subtle) return 'sin_kdf';
+  const calc=await hashPinPBKDF2(pin, partes[2], Number(partes[1]));
+  return calc===s;
+}
 async function verificarPin(pin, stored){
-  if(hashPin(pin) === stored) return { ok:true };          // formato de main
+  const pb = await verificarPinPBKDF2(pin, stored);
+  if(pb === true) return { ok:true, formato:'pbkdf2' };
+  if(pb === 'sin_kdf') return { ok:false, motivo:'kdf_no_disponible' };
+  if(pb === false) return { ok:false };
+  if(hashPin(pin) === stored) return { ok:true, formato:'legacy' };          // formato de main
   const fuerte = await hashPinFuerte(pin);
-  if(fuerte && fuerte === stored) return { ok:true };      // SHA-256 con sal (version de julio)
-  if(hashPinLegacySalt(pin) === stored) return { ok:true }; // fallback de julio sin crypto.subtle
+  if(fuerte && fuerte === stored) return { ok:true, formato:'legacy_salt' }; // SHA-256 con sal (julio)
+  if(hashPinLegacySalt(pin) === stored) return { ok:true, formato:'legacy_salt' };
   return { ok:false };
 }
 
@@ -1438,6 +1490,11 @@ function updateDots(state='normal'){
 }
 
 async function processPin(){
+  if(!/^\d{4}$/.test(pinBuffer)){
+    pinBuffer=''; updateDots();
+    document.getElementById('pinError').textContent='El PIN debe tener exactamente 4 dígitos.';
+    return;
+  }
   const stored = localStorage.getItem(PIN_KEY);
   if(!stored){
     // Primera vez — establecer PIN
@@ -1450,7 +1507,8 @@ async function processPin(){
       document.getElementById('pinError').textContent='';
     } else {
       if(pinBuffer===pinConfirmBuffer){
-        localStorage.setItem(PIN_KEY, hashPin(pinBuffer));
+        const fuerte = await hashPinPBKDF2(pinBuffer);
+        localStorage.setItem(PIN_KEY, fuerte || hashPin(pinBuffer));
         unlockApp();
       } else {
         updateDots('error');
@@ -1462,10 +1520,21 @@ async function processPin(){
     // Verificar PIN existente (acepta el formato actual y los de la version de julio)
     const r = await verificarPin(pinBuffer, stored);
     if(r.ok){
+      // Migración transparente: un PIN de un formato anterior se re-guarda con PBKDF2 en el
+      // primer acceso correcto. Si el navegador no tiene crypto.subtle, se conserva el formato
+      // anterior (no se puede migrar sin arriesgar un bloqueo).
+      if(r.formato!=='pbkdf2'){
+        const fuerte = await hashPinPBKDF2(pinBuffer);
+        if(fuerte){ try{ localStorage.setItem(PIN_KEY, fuerte); }catch(e){} }
+      }
       pinAttempts=0;
       localStorage.setItem('a132_attempts','0');
       localStorage.removeItem('a132_lockuntil');
       unlockApp();
+    } else if(r.motivo==='kdf_no_disponible'){
+      // No se cuenta como intento fallido: no es un PIN incorrecto, es un contexto no seguro.
+      pinBuffer=''; updateDots();
+      document.getElementById('pinError').textContent='⚠️ Este PIN usa protección moderna. Abre la app por HTTPS o localhost para verificarlo.';
     } else {
       pinAttempts++;
       localStorage.setItem('a132_attempts', String(pinAttempts));
@@ -1483,8 +1552,31 @@ async function processPin(){
   }
 }
 
+// Sesión en sessionStorage (por pestaña) con token aleatorio y caducidad. La marca antigua de
+// localStorage se ignora y se borra: un valor de fecha falsificado ya no desbloquea la app.
+function sesionValida(){
+  try{
+    const raw=sessionStorage.getItem(SESSION_KEY);
+    if(!raw) return false;
+    const s=JSON.parse(raw);
+    return !!(s && typeof s.tok==='string' && Number(s.exp)>Date.now());
+  }catch(e){ return false; }
+}
+function guardarSesion(){
+  try{
+    const tok = (crypto && crypto.getRandomValues)
+      ? Array.from(crypto.getRandomValues(new Uint8Array(16))).map(b=>b.toString(16).padStart(2,'0')).join('')
+      : String(Date.now())+Math.random();
+    sessionStorage.setItem(SESSION_KEY, JSON.stringify({tok, exp:Date.now()+SESSION_TIMEOUT}));
+    localStorage.removeItem(SESSION_KEY);   // limpia la marca antigua (no se usa)
+  }catch(e){}
+}
+function borrarSesion(){
+  try{ sessionStorage.removeItem(SESSION_KEY); }catch(e){}
+  try{ localStorage.removeItem(SESSION_KEY); }catch(e){}
+}
 function unlockApp(){
-  localStorage.setItem(SESSION_KEY, String(Date.now()));
+  guardarSesion();
   document.getElementById('lockScreen').style.opacity='0';
   document.getElementById('lockScreen').style.transition='opacity 0.4s';
   setTimeout(()=>{ document.getElementById('lockScreen').style.display='none'; }, 400);
@@ -1498,6 +1590,7 @@ function startSessionTimer(){
   sessionTimer = setTimeout(()=>lockApp(), SESSION_TIMEOUT);
 }
 function resetTimer(){
+  if(sesionValida()) guardarSesion();   // renueva la caducidad de ESTA pestaña
   clearTimeout(sessionTimer);
   sessionTimer = setTimeout(()=>lockApp(), SESSION_TIMEOUT);
 }
@@ -1506,6 +1599,7 @@ document.addEventListener('click', resetTimer);
 document.addEventListener('keydown', resetTimer);
 
 function lockApp(){
+  borrarSesion();
   pinBuffer=''; updateDots();
   document.getElementById('pinError').textContent='';
   document.getElementById('pinHint').textContent='Sesión expirada. Ingresa tu PIN.';
@@ -1520,8 +1614,7 @@ function lockApp(){
   if(!stored){
     document.getElementById('pinHint').textContent='Crea un PIN de 4 dígitos para proteger la app';
   } else {
-    const lastSession = parseInt(localStorage.getItem(SESSION_KEY)||'0');
-    if(Date.now()-lastSession < SESSION_TIMEOUT){
+    if(sesionValida()){
       unlockApp(); // Sesión aún válida
     } else {
       document.getElementById('pinHint').textContent='Ingresa tu PIN para acceder';
@@ -1535,7 +1628,7 @@ function manualLock(){ lockApp(); }
 // Cambiar PIN
 function changePinFlow(){
   localStorage.removeItem(PIN_KEY);
-  localStorage.removeItem(SESSION_KEY);
+  borrarSesion();
   lockApp();
   isSettingPin=false;
   pinBuffer='';
@@ -1701,7 +1794,10 @@ function save(){
   // IndexedDB. `fotos` queda solo en memoria para la vista previa y la detección de duplicados.
   // Backup automático a Google Drive si está conectado
   if(typeof backupToDrive==='function') backupToDrive(false);
-  if(typeof modoCentral==='function' && modoCentral()) centralProgramar();
+  // El respaldo ya sincroniza el central cuando hay token (centralAsegurarAntesDeRespaldo).
+  // Programar otra vuelta aquí duplicaba lecturas/escrituras en cada guardado. Solo se programa
+  // si no hay token válido, porque en ese caso el respaldo no puede completar la sincronización.
+  if(typeof modoCentral==='function' && modoCentral() && (typeof driveTokenValid!=='function' || !driveTokenValid())) centralProgramar();
   return true;
 }
 // Guardado de usuario con aviso honesto. Todos los flujos que muestran «✅» o cierran un modal
@@ -1713,7 +1809,36 @@ function guardarConAviso(){
 }
 
 // ============ UTILS ============
+// Fechas: se GUARDAN en UTC (ISO con Z) y se MUESTRAN en la hora local del dispositivo.
+// Antes se mostraba String(fecha).slice(0,16), que es UTC: en UTC-4 «01:23Z» aparecía como
+// 01:23 cuando la hora local era 21:23 del día anterior (8 h de diferencia en UTC+8).
+// Los timestamps guardados NO se tocan: solo cambia cómo se presentan.
+function fechaHoraLocal(v){
+  if(v===null || v===undefined || v==='') return '';
+  // Una fecha sin hora (YYYY-MM-DD) no se convierte: `new Date('2026-11-04')` es medianoche UTC
+  // y en UTC-4 mostraría el día anterior. Se presenta tal como está guardada.
+  if(typeof v==='string' && /^\d{4}-\d{2}-\d{2}$/.test(v)) return v;
+  const d=(v instanceof Date)?v:new Date(v);
+  if(isNaN(d.getTime())) return String(v);
+  return d.toLocaleString('es-PR',{year:'numeric',month:'2-digit',day:'2-digit',hour:'2-digit',minute:'2-digit'});
+}
+// Fecha de HOY en el calendario local (no en UTC): después de las 20:00 en Puerto Rico,
+// toISOString() ya devuelve el día siguiente y los formularios proponían una fecha futura.
+function hoyLocalISO(){
+  const d=new Date();
+  return d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0');
+}
+function mesLocalISO(){
+  const d=new Date();
+  return d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0');
+}
 const fmt=n=>'$'+parseFloat(n||0).toLocaleString('en-US',{minimumFractionDigits:2,maximumFractionDigits:2});
+// Celda CSV: entrecomilla y neutraliza fórmulas (=, +, -, @) para que Excel/Sheets no las ejecute.
+function csvCampo(v){
+  let s=String(v==null?'':v);
+  if(/^[=+\-@\t\r]/.test(s)) s="'"+s;
+  return '"'+s.replace(/"/g,'""')+'"';
+}
 function totalesLote(){
   let A=0,B=0;
   gastos.forEach(g=>{
@@ -1756,19 +1881,20 @@ function showSectionDirect(name){
   document.getElementById('sidebarOverlay').classList.remove('show');
   // Scroll to top
   window.scrollTo(0,0);
+  // Marca la sección activa en AMBAS barras, también cuando se llama directo (p. ej. tras guardar).
+  // Sin `window.event`, que no existe en Firefox/Safari.
+  document.querySelectorAll('.nav-item').forEach(n=>{
+    const fn = n.getAttribute('onclick')||'';
+    n.classList.toggle('active', fn.includes("'"+name+"'"));
+  });
+  document.querySelectorAll('.bnav-item').forEach(b=>{
+    const fn = b.getAttribute('onclick')||'';
+    b.classList.toggle('active', fn.includes("'"+name+"'"));
+  });
 }
 
 function showSection(name){
   if(name==='roi'){ try{ renderPresupuesto(); }catch(e){} }
-  // Update sidebar active
-  document.querySelectorAll('.nav-item').forEach(n=>n.classList.remove('active'));
-  if(event && event.currentTarget) event.currentTarget.classList.add('active');
-  // Update bottom nav
-  document.querySelectorAll('.bnav-item').forEach(b=>{
-    const fn = b.getAttribute('onclick')||'';
-    if(fn.includes("'"+name+"'")) b.classList.add('active');
-    else b.classList.remove('active');
-  });
   showSectionDirect(name);
 }
 function toggleSidebar(){
@@ -1779,11 +1905,9 @@ function toggleSidebar(){
 }
 
 function bnav(name, el){
-  // Update bottom nav active state
-  document.querySelectorAll('.bnav-item').forEach(b=>b.classList.remove('active'));
-  el.classList.add('active');
-  // Trigger section change
-  showSectionDirect(name);
+  showSection(name);
+  // El elemento pulsado manda sobre la heurística por onclick (por si hay más de uno).
+  if(el){ document.querySelectorAll('.bnav-item').forEach(b=>b.classList.remove('active')); el.classList.add('active'); }
 }
 
 // ============ RESUMEN ============
@@ -1832,7 +1956,7 @@ function renderDashboard(){
   const tot=Object.values(cats).reduce((a,b)=>a+b,0);
   catDiv.innerHTML=Object.entries(cats).sort((a,b)=>b[1]-a[1]).map(([c,v])=>`
     <div style="margin-bottom:10px">
-      <div style="display:flex;justify-content:space-between;font-size:12px;margin-bottom:4px"><span>${c}</span><span class="mono">${fmt(v)}</span></div>
+      <div style="display:flex;justify-content:space-between;font-size:12px;margin-bottom:4px"><span>${escHtml(c)}</span><span class="mono">${fmt(v)}</span></div>
       <div class="prog-bar"><div class="prog-fill" style="background:var(--gold);width:${v/tot*100}%"></div></div>
     </div>`).join('');
   // recent
@@ -1857,7 +1981,7 @@ function nuevoAbono(cuentaNombre){
   document.getElementById('f-abono').checked=true;toggleAbono();
   document.getElementById('f-cuenta').value=cuentaNombre;
   document.getElementById('f-cont').value=cuentaNombre;
-  document.getElementById('f-fecha').value=new Date().toISOString().split('T')[0];
+  document.getElementById('f-fecha').value=hoyLocalISO();
   document.getElementById('f-fecha').focus();
 }
 // Detección de gasto duplicado (mismo contratista+fecha+monto±$0.50) -- recuperado del
@@ -1942,21 +2066,21 @@ function renderPresupuesto(){
   const el=document.getElementById('presupuesto-bars'); if(!el) return;
   if(!todasCats.length){ el.innerHTML='<div style="font-size:12px;color:var(--gray)">Registra gastos para ver el analisis.</div>'; return; }
   el.innerHTML=todasCats.map(cat=>{
-    const slug=cat.replace(/[^a-z0-9]/gi,'_');
-    const real=cats[cat]||0, bud=presupuesto[cat]||0;
+    const slug=String(cat).replace(/[^a-z0-9]/gi,'_');
+    const real=Number(cats[cat])||0, bud=Number(presupuesto[cat])||0;
     const pct=bud>0?Math.min(real/bud*100,100):0;
     const color=pct>=100?'var(--red)':pct>=75?'#e67e22':'var(--green)';
     const etiqueta='$'+real.toFixed(2)+(bud>0?' / $'+bud.toFixed(2):'');
     return '<div style="margin-bottom:12px">'
       +'<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:4px">'
-      +'<span style="font-size:12px">'+cat+'</span>'
+      +'<span style="font-size:12px">'+escHtml(cat)+'</span>'
       +'<span style="font-size:11px;font-family:\'DM Mono\',monospace">'+etiqueta+'</span>'
       +'</div>'
       +'<div style="background:rgba(255,255,255,0.06);border-radius:6px;height:8px;overflow:hidden">'
       +'<div style="width:'+pct+'%;height:100%;background:'+color+'"></div></div>'
-      +'<input type="number" id="pres_'+slug+'" value="'+(bud||'')+'" placeholder="Presupuesto" step="100"'
+      +'<input type="number" id="pres_'+slug+'" value="'+escHtml(String(bud||''))+'" placeholder="Presupuesto" step="100"'
       +' style="margin-top:6px;font-size:12px;width:100%;background:transparent;border:1px solid rgba(255,255,255,0.12);border-radius:6px;padding:4px 8px;color:inherit"'
-      +' oninput="presupuesto[this.dataset.cat]=parseFloat(this.value)||0;renderPresupuesto()" data-cat="'+cat+'">'
+      +' oninput="presupuesto[this.dataset.cat]=parseFloat(this.value)||0;renderPresupuesto()" data-cat="'+escHtml(cat)+'">'
       +'</div>';
   }).join('');
 }
@@ -2064,7 +2188,7 @@ function toggleManual(){
   const form=document.getElementById('reg-form');
   if(form.style.display==='none'){
     form.style.display='block';
-    document.getElementById('f-fecha').value=new Date().toISOString().split('T')[0];
+    document.getElementById('f-fecha').value=hoyLocalISO();
   } else {
     form.style.display='none';
   }
@@ -2162,7 +2286,7 @@ async function handleUpload(e, source){
       aiStatus.textContent='⚠️ El archivo es demasiado grande para leerlo con IA — llena los datos a mano. El original se guardará completo en Drive.';
       aiBox.querySelector('.spinner').style.display='none';
       document.getElementById('reg-form').style.display='block';
-      document.getElementById('f-fecha').value=new Date().toISOString().split('T')[0];
+      document.getElementById('f-fecha').value=hoyLocalISO();
       const pwG=document.getElementById('reg-preview-wrap'),piG=document.getElementById('reg-preview-img');
       pwG.style.display='block';piG.src=_fotoDataUrl||'';
       return;
@@ -2215,7 +2339,7 @@ async function handleUpload(e, source){
       aiStatus.textContent='⚠️ Conecta tu Google (ícono ☁️ arriba) para leer el recibo con IA. Mientras tanto, llena los datos a mano.';
       aiBox.querySelector('.spinner').style.display='none';
       document.getElementById('reg-form').style.display='block';
-      document.getElementById('f-fecha').value=new Date().toISOString().split('T')[0];
+      document.getElementById('f-fecha').value=hoyLocalISO();
       const pw0=document.getElementById('reg-preview-wrap'),pi0=document.getElementById('reg-preview-img');
       pw0.style.display='block';pi0.src=_fotoDataUrl||'';
       return;
@@ -2239,7 +2363,7 @@ async function handleUpload(e, source){
       aiStatus.textContent='⚠️ No se pudo leer con IA'+(motivo?` — ${motivo}`:'')+'. Ingresa los datos manualmente.';
       aiBox.querySelector('.spinner').style.display='none';
       document.getElementById('reg-form').style.display='block';
-      document.getElementById('f-fecha').value=new Date().toISOString().split('T')[0];
+      document.getElementById('f-fecha').value=hoyLocalISO();
       const pw1=document.getElementById('reg-preview-wrap'),pi1=document.getElementById('reg-preview-img');
       pw1.style.display='block';pi1.src=_fotoDataUrl||'';
       return;
@@ -2280,7 +2404,7 @@ async function handleUpload(e, source){
     aiStatus.textContent='⚠️ No pude leer — '+(err&&err.message?('fallo técnico: '+String(err.message).slice(0,120)):'fallo técnico')+'. Ingresa los datos manualmente.';
     aiBox.querySelector('.spinner').style.display='none';
     document.getElementById('reg-form').style.display='block';
-    document.getElementById('f-fecha').value=new Date().toISOString().split('T')[0];
+    document.getElementById('f-fecha').value=hoyLocalISO();
     guardarUltimaLecturaIA({causa:'excepcion_cliente',stop:'',tipos:[],chars:0,uso:null});
     console.error(err);
   }
@@ -2482,6 +2606,9 @@ function documentosDeGasto(id){
   return {tiene:docs.length>0 || pendientes.length>0, docs, pendientes};
 }
 function escHtml(s){ return String(s==null?'':s).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c])); }
+// Argumento seguro para un onclick inline: los números quedan iguales; cualquier otro valor
+// se serializa como cadena y se escapa para HTML. Evita que un id importado inyecte código.
+function jsArg(v){ return escHtml(JSON.stringify(v)); }
 // fetch con tiempo máximo: una subida colgada no puede bloquear la cola para siempre.
 async function fetchConTiempo(url, opts, ms){
   const ac=(typeof AbortController!=='undefined')?new AbortController():null;
@@ -2904,7 +3031,7 @@ function llamarIA(tokenIA,bloque){
   return fetch('/api/analyze-invoice',{
     method:'POST',
     headers:{'Content-Type':'application/json','Authorization':'Bearer '+tokenIA},
-    body:JSON.stringify({messages:[{role:'user',content:[bloque,{type:'text',text:PROMPT_LECTURA_IA.replace('__HOY__',new Date().toISOString().split('T')[0])}]}]})
+    body:JSON.stringify({messages:[{role:'user',content:[bloque,{type:'text',text:PROMPT_LECTURA_IA.replace('__HOY__',hoyLocalISO())}]}]})
   });
 }
 
@@ -3019,7 +3146,7 @@ function textoEstadoExtraccion(l){
 function precrellenarConIA(ext){
   const e = ext || {};
   if(e.fecha) document.getElementById('f-fecha').value=e.fecha;
-  else document.getElementById('f-fecha').value=new Date().toISOString().split('T')[0];
+  else document.getElementById('f-fecha').value=hoyLocalISO();
   if(e.monto) document.getElementById('f-monto').value=e.monto;
   if(e.contratista) document.getElementById('f-cont').value=e.contratista;
   if(e.descripcion) document.getElementById('f-desc').value=e.descripcion;
@@ -3264,15 +3391,15 @@ function renderHistorial(){
         const saldado=balance!==null&&balance<=0;
         return `<div style="display:flex;align-items:center;justify-content:space-between;padding:10px 14px;background:rgba(255,255,255,0.03);border-radius:8px;margin-bottom:6px;border-left:3px solid ${saldado?'var(--green)':'var(--gold)'};gap:10px;${saldado?'opacity:0.75':''}">
           <div style="flex:1">
-            <div style="font-size:13px;font-weight:500;color:var(--white)">${c.nombre}</div>
-            <div style="font-size:11px;color:var(--gray)">${c.categoria}</div>
+            <div style="font-size:13px;font-weight:500;color:var(--white)">${escHtml(c.nombre)}</div>
+            <div style="font-size:11px;color:var(--gray)">${escHtml(c.categoria)}</div>
           </div>
           <div style="text-align:right;min-width:130px">
             ${c.total>0?`<div style="font-size:10px;color:var(--gray)">Total: ${fmt(c.total)}</div>`:''}
             <div style="font-size:12px;color:var(--green)">Pagado: ${fmt(c.pagado)}</div>
             ${balance!==null?`<div style="font-size:12px;font-weight:600;color:${saldado?'var(--green)':'var(--red)'}">${saldado?'✅ Saldado':'Falta: '+fmt(balance)}</div>`:''}
           </div>
-          ${!saldado?`<button class="btn btn-xs btn-outline" onclick="nuevoAbono('${c.nombre.replace(/'/g,"\\'").replace(/"/g,'&quot;')}')">+ Abono</button>`:''}
+          ${!saldado?`<button class="btn btn-xs btn-outline" onclick="nuevoAbono(${escHtml(JSON.stringify(c.nombre))})">+ Abono</button>`:''}
         </div>`;
       }).join('');
     } else {
@@ -3293,7 +3420,7 @@ function renderHistorial(){
     <td><span class="badge badge-${g.lote==='132A'?'A':g.lote==='132B'?'B':'C'}">${escHtml(g.lote)}</span></td>
     <td><span class="badge badge-${g.metodo==='efectivo'?'green':'blue'}">${escHtml(g.metodo)}</span></td>
     <td class="mono">${fmt(g.monto)}</td>
-    <td><button class="btn btn-xs btn-ghost" onclick="showGastoDetail(${g.id})">${(fotos[g.id]||idsConRecibo.has(String(g.id)))?'📷 ':''}Ver</button></td>
+    <td><button class="btn btn-xs btn-ghost" onclick="showGastoDetail(${jsArg(g.id)})">${(fotos[g.id]||idsConRecibo.has(String(g.id)))?'📷 ':''}Ver</button></td>
   </tr>`).join('');
   const tot=filtered.reduce((s,g)=>s+g.monto,0);
   document.getElementById('tabla-total').textContent='Total: '+fmt(tot);
@@ -3301,6 +3428,9 @@ function renderHistorial(){
 
 function showGastoDetail(id){
   const g=gastos.find(x=>x.id===id);if(!g)return;
+  // Solo se pinta una miniatura que sea un data URL de imagen: un backup importado no debe
+  // poder inyectar atributos en src (XSS).
+  const fotoMini = (typeof fotos[g.id]==='string' && /^data:image\/(?:png|jpe?g|webp|gif);base64,[A-Za-z0-9+/=]+$/.test(fotos[g.id])) ? fotos[g.id] : '';
   openModal('Detalle de Gasto',`
     <div class="roi-row"><span class="roi-label">Fecha</span><span>${escHtml(g.fecha)}</span></div>
     <div class="roi-row"><span class="roi-label">Categoría</span><span>${escHtml(g.categoria)}</span></div>
@@ -3312,12 +3442,12 @@ function showGastoDetail(id){
     ${g.es_abono&&g.monto_total?`<div class="roi-row"><span class="roi-label">Total acordado</span><span>${fmt(g.monto_total)}</span></div>`:''}
     <div class="roi-row hl"><span class="roi-label"><b>Monto</b></span><span class="roi-val gold">${fmt(g.monto)}</span></div>
     ${g.descripcion?`<div style="margin-top:12px;font-size:12px;color:var(--gray);line-height:1.6">${escHtml(g.descripcion)}</div>`:''}
-    ${fotos[g.id]?`<div style="margin-top:14px"><div style="font-size:10px;color:var(--gold);text-transform:uppercase;letter-spacing:1px;margin-bottom:6px">📷 Foto del Recibo</div><img src="${fotos[g.id]}" style="width:100%;border-radius:8px;border:1px solid rgba(201,168,76,0.2)" loading="lazy" onerror="this.outerHTML='<div style=&quot;padding:16px;text-align:center;color:var(--gray);font-size:12px;background:rgba(255,255,255,0.03);border-radius:8px;border:1px dashed rgba(201,168,76,0.2)&quot;>⚠️ Foto no disponible en este dispositivo</div>'"></div>`:''}
-    <div style="margin-top:14px"><div style="font-size:11px;color:var(--gray);margin-bottom:6px">${textoEstadoOriginal(g.id)}</div><div id="orig-recibo-${g.id}"><button class="btn btn-sm btn-ghost" onclick="verReciboOriginal(${g.id})">🧾 Ver recibo original</button></div>
-    ${g.tipo!=='viaje'?`<div style="margin-top:8px"><input type="file" id="adj-file-${g.id}" accept="image/*,application/pdf" style="display:none" onchange="adjuntarReciboFicha(${g.id}, this)"><button class="btn btn-sm" id="adj-btn-${g.id}" onclick="document.getElementById('adj-file-${g.id}').click()">${documentosDeGasto(g.id).tiene?'📎 Añadir o actualizar recibo original':'📎 Adjuntar recibo original'}</button><div id="adjuntar-estado-${g.id}" style="display:none;font-size:12px;color:var(--gray);margin-top:6px"></div></div>`:''}</div>
+    ${fotoMini?`<div style="margin-top:14px"><div style="font-size:10px;color:var(--gold);text-transform:uppercase;letter-spacing:1px;margin-bottom:6px">📷 Foto del Recibo</div><img src="${fotoMini}" style="width:100%;border-radius:8px;border:1px solid rgba(201,168,76,0.2)" loading="lazy" onerror="this.outerHTML='<div style=&quot;padding:16px;text-align:center;color:var(--gray);font-size:12px;background:rgba(255,255,255,0.03);border-radius:8px;border:1px dashed rgba(201,168,76,0.2)&quot;>⚠️ Foto no disponible en este dispositivo</div>'"></div>`:''}
+    <div style="margin-top:14px"><div style="font-size:11px;color:var(--gray);margin-bottom:6px">${textoEstadoOriginal(g.id)}</div><div id="orig-recibo-${escHtml(String(g.id))}"><button class="btn btn-sm btn-ghost" onclick="verReciboOriginal(${jsArg(g.id)})">🧾 Ver recibo original</button></div>
+    ${g.tipo!=='viaje'?`<div style="margin-top:8px"><input type="file" id="adj-file-${escHtml(String(g.id))}" accept="image/*,application/pdf" style="display:none" onchange="adjuntarReciboFicha(${jsArg(g.id)}, this)"><button class="btn btn-sm" id="adj-btn-${escHtml(String(g.id))}" onclick="document.getElementById(${jsArg('adj-file-'+g.id)}).click()">${documentosDeGasto(g.id).tiene?'📎 Añadir o actualizar recibo original':'📎 Adjuntar recibo original'}</button><div id="adjuntar-estado-${escHtml(String(g.id))}" style="display:none;font-size:12px;color:var(--gray);margin-top:6px"></div></div>`:''}</div>
     <div class="form-actions" style="margin-top:16px">
-      <button class="btn btn-sm" onclick="editarGasto(${g.id})">✏️ Editar</button>
-      <button class="btn btn-sm btn-danger" onclick="eliminarGasto(${g.id})">🗑️ Eliminar</button>
+      <button class="btn btn-sm" onclick="editarGasto(${jsArg(g.id)})">✏️ Editar</button>
+      <button class="btn btn-sm btn-danger" onclick="eliminarGasto(${jsArg(g.id)})">🗑️ Eliminar</button>
       <button class="btn btn-sm btn-ghost" onclick="closeModal()">Cerrar</button>
     </div>
   `);
@@ -3367,8 +3497,8 @@ function editarGasto(id){
     <div class="form-group"><label>Monto</label><input type="number" step="0.01" id="e-monto" value="${g.monto}"></div>
     <div class="form-group"><label>Descripción</label><textarea id="e-desc">${escHtml(g.descripcion||'')}</textarea></div>
     <div class="form-actions" style="margin-top:16px">
-      <button class="btn btn-gold btn-sm" onclick="guardarEdicionGasto(${g.id})">💾 Guardar Cambios</button>
-      <button class="btn btn-sm btn-ghost" onclick="showGastoDetail(${g.id})">Cancelar</button>
+      <button class="btn btn-gold btn-sm" onclick="guardarEdicionGasto(${jsArg(g.id)})">💾 Guardar Cambios</button>
+      <button class="btn btn-sm btn-ghost" onclick="showGastoDetail(${jsArg(g.id)})">Cancelar</button>
     </div>
   `);
   if(catOriginal) document.getElementById('e-cat').value=g.categoria;
@@ -3429,11 +3559,11 @@ function renderServicios(){
         </div>
         ${servicios[lote].AAA.map(item=>`
           <div class="roi-row">
-            <span class="roi-label">${item.concepto}</span>
+            <span class="roi-label">${escHtml(item.concepto||'')}</span>
             <div style="display:flex;align-items:center;gap:8px">
-              <span class="badge badge-${item.estado==='pagado'?'green':item.estado==='en proceso'?'blue':'red'}">${item.estado}</span>
+              <span class="badge badge-${item.estado==='pagado'?'green':item.estado==='en proceso'?'blue':'red'}">${escHtml(item.estado||'')}</span>
               <span class="mono" style="min-width:70px;text-align:right">${item.monto>0?fmt(item.monto):'—'}</span>
-              <button class="btn btn-xs btn-outline" onclick="editServicio('${lote}','AAA',${item.id})">✏️</button>
+              <button class="btn btn-xs btn-outline" onclick="editServicio(${jsArg(lote)},'AAA',${jsArg(item.id)})">✏️</button>
             </div>
           </div>`).join('')}
       </div>
@@ -3444,11 +3574,11 @@ function renderServicios(){
         </div>
         ${servicios[lote].LUMA.map(item=>`
           <div class="roi-row">
-            <span class="roi-label">${item.concepto}</span>
+            <span class="roi-label">${escHtml(item.concepto||'')}</span>
             <div style="display:flex;align-items:center;gap:8px">
-              <span class="badge badge-${item.estado==='pagado'?'green':item.estado==='en proceso'?'blue':'red'}">${item.estado}</span>
+              <span class="badge badge-${item.estado==='pagado'?'green':item.estado==='en proceso'?'blue':'red'}">${escHtml(item.estado||'')}</span>
               <span class="mono" style="min-width:70px;text-align:right">${item.monto>0?fmt(item.monto):'—'}</span>
-              <button class="btn btn-xs btn-outline" onclick="editServicio('${lote}','LUMA',${item.id})">✏️</button>
+              <button class="btn btn-xs btn-outline" onclick="editServicio(${jsArg(lote)},'LUMA',${jsArg(item.id)})">✏️</button>
             </div>
           </div>`).join('')}
       </div>`;
@@ -3470,7 +3600,7 @@ function editServicio(lote,tipo,id){
       </div>
     </div>
     <div class="form-actions" style="margin-top:14px">
-      <button class="btn btn-gold" onclick="saveServicio('${lote}','${tipo}',${id})">Guardar</button>
+      <button class="btn btn-gold" onclick="saveServicio(${jsArg(lote)},${jsArg(tipo)},${jsArg(id)})">Guardar</button>
     </div>
   `);
 }
@@ -3496,7 +3626,7 @@ function showServicioModal(lote){
       </div>
     </div>
     <div class="form-actions" style="margin-top:14px">
-      <button class="btn btn-gold" onclick="addServicio('${lote}')">Añadir</button>
+      <button class="btn btn-gold" onclick="addServicio(${jsArg(lote)})">Añadir</button>
     </div>
   `);
 }
@@ -3663,11 +3793,11 @@ function renderContratistas(){
     return `
     <div class="contratista-card" style="flex-wrap:wrap;gap:10px">
       <div class="cont-info" style="flex:1;min-width:200px">
-        <div class="cont-avatar">${c.nombre.charAt(0).toUpperCase()}</div>
+        <div class="cont-avatar">${escHtml(c.nombre.charAt(0).toUpperCase())}</div>
         <div>
-          <div class="cont-name">${c.nombre}</div>
-          <div class="cont-esp">${c.especialidad}</div>
-          ${c.tel?`<div class="cont-tel">${c.tel}</div>`:''}
+          <div class="cont-name">${escHtml(c.nombre)}</div>
+          <div class="cont-esp">${escHtml(c.especialidad||'')}</div>
+          ${c.tel?`<div class="cont-tel">${escHtml(c.tel)}</div>`:''}
           ${tieneContrato?`<div style="font-size:11px;margin-top:6px;display:flex;gap:10px;flex-wrap:wrap">
             <span style="color:var(--gray)">Contrato: <b class="mono" style="color:var(--white)">${fmt(c.montoContrato)}</b></span>
             <span style="color:var(--green)">Pagado: <b class="mono">${fmt(c.pagado||0)}</b></span>
@@ -3676,16 +3806,16 @@ function renderContratistas(){
               :`<span style="color:var(--green)">✅ Saldado</span>`}
           </div>`:''}
           ${tieneContrato?`<div style="margin-top:6px"><div class="prog-bar" style="height:4px"><div class="prog-fill" style="background:${pendiente<=0?'var(--green)':'var(--gold)'};width:${Math.min(100,((c.pagado||0)/(c.montoContrato||1))*100).toFixed(0)}%"></div></div></div>`:''}
-          ${c.notas?`<div style="font-size:11px;color:var(--gray);margin-top:4px">${c.notas}</div>`:''}
+          ${c.notas?`<div style="font-size:11px;color:var(--gray);margin-top:4px">${escHtml(c.notas)}</div>`:''}
         </div>
       </div>
       <div style="display:flex;flex-direction:column;gap:6px;align-items:flex-end;flex-shrink:0">
         <div style="display:flex;gap:6px">
-          ${c.tel?`<a href="tel:${c.tel}" class="btn btn-xs btn-outline">📞</a>`:''}
-          <button class="btn btn-xs btn-ghost" onclick="editarContratista(${c.id})">✏️</button>
-          <button class="btn btn-xs btn-danger" onclick="eliminarContratista(${c.id})">🗑️</button>
+          ${c.tel?`<a href="tel:${escHtml(c.tel)}" class="btn btn-xs btn-outline">📞</a>`:''}
+          <button class="btn btn-xs btn-ghost" onclick="editarContratista(${jsArg(c.id)})">✏️</button>
+          <button class="btn btn-xs btn-danger" onclick="eliminarContratista(${jsArg(c.id)})">🗑️</button>
         </div>
-        ${tieneContrato&&pendiente>0?`<button class="btn btn-xs btn-gold" onclick="registrarPagoCont(${c.id})">💵 Registrar Pago</button>`:''}
+        ${tieneContrato&&pendiente>0?`<button class="btn btn-xs btn-gold" onclick="registrarPagoCont(${jsArg(c.id)})">💵 Registrar Pago</button>`:''}
       </div>
     </div>`;
   }).join(''):'<div class="empty"><div class="empty-icon">👷</div>Sin contratistas</div>';
@@ -3730,14 +3860,14 @@ function editarContratista(id){
   const c=contratistas.find(x=>x.id===id);if(!c)return;
   openModal('Editar Contratista',`
     <div class="form-grid" style="grid-template-columns:1fr;">
-      <div class="fg"><label>Nombre</label><input type="text" id="ec-nombre" value="${c.nombre}"></div>
-      <div class="fg"><label>Teléfono</label><input type="tel" id="ec-tel" value="${c.tel||''}"></div>
+      <div class="fg"><label>Nombre</label><input type="text" id="ec-nombre" value="${escHtml(c.nombre)}"></div>
+      <div class="fg"><label>Teléfono</label><input type="tel" id="ec-tel" value="${escHtml(c.tel||'')}"></div>
       <div class="fg"><label>Monto del Contrato ($)</label><input type="number" id="ec-contrato" value="${c.montoContrato||''}" step="0.01" min="0" placeholder="0.00"></div>
       <div class="fg"><label>Pagado hasta ahora ($)</label><input type="number" id="ec-pagado" value="${c.pagado||''}" step="0.01" min="0" placeholder="0.00"></div>
-      <div class="fg"><label>Notas</label><textarea id="ec-notas">${c.notas||''}</textarea></div>
+      <div class="fg"><label>Notas</label><textarea id="ec-notas">${escHtml(c.notas||'')}</textarea></div>
     </div>
     <div class="form-actions" style="margin-top:14px">
-      <button class="btn btn-gold" onclick="guardarEdicionCont(${id})">Guardar</button>
+      <button class="btn btn-gold" onclick="guardarEdicionCont(${jsArg(id)})">Guardar</button>
     </div>
   `);
 }
@@ -3764,14 +3894,14 @@ function registrarPagoCont(id){
     </div>
     <div class="form-grid" style="grid-template-columns:1fr;">
       <div class="fg"><label>Monto del Pago ($)</label><input type="number" id="cp-monto" placeholder="${pendiente.toFixed(2)}" step="0.01" min="0.01"></div>
-      <div class="fg"><label>Fecha</label><input type="date" id="cp-fecha" value="${new Date().toISOString().split('T')[0]}"></div>
+      <div class="fg"><label>Fecha</label><input type="date" id="cp-fecha" value="${hoyLocalISO()}"></div>
       <div class="fg"><label>Método de Pago</label>
         <select id="cp-metodo"><option value="efectivo">💵 Efectivo</option><option value="ath">ATH Móvil</option><option value="cheque">🗒 Cheque</option><option value="transferencia">🏦 Transferencia</option></select>
       </div>
       <div class="fg"><label>Notas</label><input type="text" id="cp-notas" placeholder="Ej: Pago parcial semana 1"></div>
     </div>
     <div class="form-actions" style="margin-top:14px">
-      <button class="btn btn-gold" onclick="confirmarPagoCont(${id})">Registrar Pago</button>
+      <button class="btn btn-gold" onclick="confirmarPagoCont(${jsArg(id)})">Registrar Pago</button>
     </div>
   `);
 }
@@ -3783,7 +3913,7 @@ function confirmarPagoCont(id){
   const gastosAntes=gastos.length;
   c.pagado=(c.pagado||0)+monto;
   const notas=document.getElementById('cp-notas').value.trim();
-  const fecha=document.getElementById('cp-fecha').value||new Date().toISOString().split('T')[0];
+  const fecha=document.getElementById('cp-fecha').value||hoyLocalISO();
   const metodo=document.getElementById('cp-metodo').value;
   gastos.push({
     id:Date.now(),fecha,
@@ -3802,10 +3932,10 @@ function confirmarPagoCont(id){
 function renderTimeline(){
   document.getElementById('timeline-container').innerHTML=timeline.map(t=>`
     <div class="tl-item">
-      <div class="tl-dot ${t.estado}"></div>
-      <div class="tl-date">${t.fecha}</div>
-      <div class="tl-title">${t.titulo}</div>
-      <div class="tl-desc">${t.desc}</div>
+      <div class="tl-dot ${escHtml(t.estado||'pendiente')}"></div>
+      <div class="tl-date">${escHtml(t.fecha||'')}</div>
+      <div class="tl-title">${escHtml(t.titulo||'')}</div>
+      <div class="tl-desc">${escHtml(t.desc||'')}</div>
     </div>`).join('');
 }
 function showAddTimeline(){
@@ -3871,17 +4001,18 @@ function renderDocs(){
   const filas = sorted.map(d=>{
     const prioColor = d.prioridad==='alta'?'var(--red)':d.prioridad==='media'?'var(--gold)':'var(--gray)';
     const prioDot = `<span style="display:inline-block;width:7px;height:7px;border-radius:50%;background:${prioColor};margin-right:6px"></span>`;
-    const driveBtn = d.driveId
-      ? `<a href="https://drive.google.com/file/d/${d.driveId}/view" target="_blank" class="btn btn-xs btn-outline">📂 Ver</a>`
+    const driveIdSeguro = typeof d.driveId==='string' && /^[A-Za-z0-9_-]{10,80}$/.test(d.driveId);
+    const driveBtn = driveIdSeguro
+      ? `<a href="https://drive.google.com/file/d/${d.driveId}/view" target="_blank" rel="noopener" class="btn btn-xs btn-outline">📂 Ver</a>`
       : `<span style="font-size:10px;color:var(--gray)">Sin archivo</span>`;
     const estadoColor = d.estado==='listo'?'green':d.estado==='en proceso'?'blue':'red';
     return `<tr>
       <td>
-        ${prioDot}<span style="font-size:13px">${d.nombre}</span>
+        ${prioDot}<span style="font-size:13px">${escHtml(d.nombre||'')}</span>
       </td>
-      <td><span class="badge badge-${d.lote==='132A'?'A':d.lote==='132B'?'B':'C'}">${d.lote}</span></td>
+      <td><span class="badge badge-${d.lote==='132A'?'A':d.lote==='132B'?'B':'C'}">${escHtml(d.lote||'')}</span></td>
       <td>
-        <select class="badge badge-${estadoColor}" style="border:none;background:transparent;cursor:pointer;font-size:10px;" onchange="updateDoc(${d.id},this.value)">
+        <select class="badge badge-${estadoColor}" style="border:none;background:transparent;cursor:pointer;font-size:10px;" onchange="updateDoc(${jsArg(d.id)},this.value)">
           <option value="pendiente" ${d.estado==='pendiente'?'selected':''}>⏳ Pendiente</option>
           <option value="en proceso" ${d.estado==='en proceso'?'selected':''}>🔄 En Proceso</option>
           <option value="listo" ${d.estado==='listo'?'selected':''}>✅ Listo</option>
@@ -3889,8 +4020,8 @@ function renderDocs(){
       </td>
       <td>${driveBtn}</td>
       <td>
-        <button class="btn btn-xs btn-ghost" onclick="uploadDocDrive(${d.id})" title="Subir a Drive">📤</button>
-        <button class="btn btn-xs btn-danger" onclick="eliminarDoc(${d.id})" title="Eliminar">🗑️</button>
+        <button class="btn btn-xs btn-ghost" onclick="uploadDocDrive(${jsArg(d.id)})" title="Subir a Drive">📤</button>
+        <button class="btn btn-xs btn-danger" onclick="eliminarDoc(${jsArg(d.id)})" title="Eliminar">🗑️</button>
       </td>
     </tr>`;
   }).join('');
@@ -3904,7 +4035,7 @@ function renderDocs(){
     </div>
     <div style="margin-top:14px;display:flex;gap:8px;justify-content:flex-end;flex-wrap:wrap;">
       <button class="btn btn-sm btn-outline" onclick="showAddDoc()">+ Añadir Documento</button>
-      <a href="https://drive.google.com/drive/folders/11yIIr6FrK2I4pFLtDiW-pcyUbuSGLSE6" target="_blank" class="btn btn-sm btn-ghost">📂 Abrir Drive</a>
+      <a href="https://drive.google.com/drive/folders/11yIIr6FrK2I4pFLtDiW-pcyUbuSGLSE6" target="_blank" rel="noopener" class="btn btn-sm btn-ghost">📂 Abrir Drive</a>
     </div>
 
     <div class="panel" style="margin-top:16px">
@@ -3934,8 +4065,11 @@ function estadoRespaldoTexto(){
   const pend=hayRespaldoPendiente();
   const partes=[];
   partes.push(driveTokenValid()?'Google Drive: conectado 🟢':'Google Drive: no conectado ☁️');
-  partes.push(ultimo?('Último respaldo correcto: '+String(ultimo).slice(0,16).replace('T',' ')):'Último respaldo correcto: ninguno en este dispositivo');
-  if(pend) partes.push('⚠️ HAY CAMBIOS SIN RESPALDAR');
+  partes.push(ultimo?('Último respaldo correcto: '+escHtml(fechaHoraLocal(ultimo))):'Último respaldo correcto: ninguno en este dispositivo');
+  if(pend){
+    const motivo=localStorage.getItem(DRIVE_PENDING_MOTIVO_KEY);
+    partes.push('⚠️ HAY CAMBIOS SIN RESPALDAR'+(motivo?' — '+escHtml(motivo):''));
+  }
   // Dónde viven los datos y qué se comprobó (2026-11-01). Solo se afirma lo verificado por relectura.
   let monto=0; try{ monto=gastos.reduce((s,g)=>s+(Number(g.monto)||0),0); }catch(e){}
   const nRefs=Object.keys(leerRecibos()).length, colaR=leerRecibosPend(), nPend=Object.values(colaR).filter(p=>p&&p.estado!=='error'&&p.estado!=='sin_copia').length, nErr=Object.values(colaR).filter(p=>p&&p.estado==='error').length;
@@ -3943,7 +4077,7 @@ function estadoRespaldoTexto(){
   partes.push('Recibos originales: en Google Drive, carpeta «'+RECIBOS_CARPETA_NOMBRE+'» ('+nRefs+' verificados'+(nPend?', '+nPend+' pendientes de subir':'')+(nErr?', ⚠️ '+nErr+' con error':'')+'); miniaturas históricas: '+Object.keys(fotos||{}).length+' solo como vista previa (no se guardan como almacén independiente)');
   if(typeof centralTexto==='function') partes.push(centralTexto());
   let v=null; try{ v=JSON.parse(localStorage.getItem(DRIVE_VERIF_KEY)||'null'); }catch(e){}
-  partes.push(v&&v.fecha ? ('Drive verificado por relectura: '+v.gastos+' gastos ($'+Number(v.monto).toFixed(2)+') el '+String(v.fecha).slice(0,16).replace('T',' ')+' en '+v.archivo) : 'Drive: sin verificación por relectura todavía');
+  partes.push(v&&v.fecha ? ('Drive verificado por relectura: '+v.gastos+' gastos ($'+Number(v.monto).toFixed(2)+') el '+escHtml(fechaHoraLocal(v.fecha))+' en '+escHtml(v.archivo)) : 'Drive: sin verificación por relectura todavía');
   return partes.join(' · ');
 }
 
@@ -3964,12 +4098,12 @@ function uploadDocDrive(id){
   const d=docs.find(x=>x.id===id);if(!d)return;
   openModal('📤 Subir a Drive — '+d.nombre,`
     <div style="font-size:13px;color:var(--gray);margin-bottom:14px">Sube el archivo físico a tu carpeta de Drive del proyecto.</div>
-    <a href="https://drive.google.com/drive/folders/11yIIr6FrK2I4pFLtDiW-pcyUbuSGLSE6" target="_blank" class="btn btn-gold" style="margin-bottom:12px;display:block;text-align:center">📂 Ir a carpeta Drive</a>
+    <a href="https://drive.google.com/drive/folders/11yIIr6FrK2I4pFLtDiW-pcyUbuSGLSE6" target="_blank" rel="noopener" class="btn btn-gold" style="margin-bottom:12px;display:block;text-align:center">📂 Ir a carpeta Drive</a>
     <div style="font-size:12px;color:var(--gray)">Una vez subido, copia el ID del archivo de Drive y pégalo aquí para vincularlo:</div>
     <div class="fg" style="margin-top:10px"><label>ID de archivo Drive</label>
       <input type="text" id="ud-id" placeholder="Ej: 1pC27OYzWkeaSDpi..."></div>
     <div class="form-actions" style="margin-top:14px">
-      <button class="btn btn-gold" onclick="saveDriveId(${id})">Vincular</button>
+      <button class="btn btn-gold" onclick="saveDriveId(${jsArg(id)})">Vincular</button>
     </div>
   `);
 }
@@ -4019,7 +4153,7 @@ function closeModal(){document.getElementById('modal').classList.remove('show');
 // ============ EXPORT CSV ============
 function exportCSV(){
   const rows=gastos.map(g=>[g.fecha,g.contratista,g.categoria,g.lote,g.metodo,g.monto,g.descripcion||'']);
-  const csv=[['Fecha','Contratista','Categoria','Lote','Metodo','Monto','Descripcion'],...rows].map(r=>r.map(v=>`"${v}"`).join(',')).join('\n');
+  const csv=[['Fecha','Contratista','Categoria','Lote','Metodo','Monto','Descripcion'],...rows].map(r=>r.map(csvCampo).join(',')).join('\n');
   const a=document.createElement('a');
   a.href='data:text/csv;charset=utf-8,'+encodeURIComponent('\uFEFF'+csv);
   a.download='Proyecto_Arroyo_132.csv';a.click();
@@ -4061,10 +4195,10 @@ function renderFinanciamiento(){
   document.getElementById('tc-act-total').textContent = fmt(totAct);
   document.getElementById('tc-act-list').innerHTML = tuCoop.activacion.map(i=>`
     <div class="roi-row">
-      <span class="roi-label">${i.concepto}</span>
+      <span class="roi-label">${escHtml(i.concepto||'')}</span>
       <div style="display:flex;align-items:center;gap:8px">
         <span class="mono">${i.monto>0?fmt(i.monto):'—'}</span>
-        <button class="btn btn-xs btn-outline" onclick="editActivacion(${i.id})">✏️</button>
+        <button class="btn btn-xs btn-outline" onclick="editActivacion(${jsArg(i.id)})">✏️</button>
       </div>
     </div>`).join('');
 
@@ -4073,12 +4207,12 @@ function renderFinanciamiento(){
   document.getElementById('tc-int-total').textContent = fmt(totInt);
   const tbody = document.getElementById('tc-int-list');
   tbody.innerHTML = tuCoop.intereses.length ? tuCoop.intereses.map(i=>`<tr>
-    <td class="mono" style="font-size:12px">${i.mes}</td>
+    <td class="mono" style="font-size:12px">${escHtml(i.mes||'')}</td>
     <td class="mono">${fmt(i.balance)}</td>
     <td class="mono" style="color:var(--red)">${fmt(i.monto)}</td>
     <td><span class="badge badge-${i.pagado?'green':'red'}">${i.pagado?'Pagado':'Pendiente'}</span></td>
-    <td><button class="btn btn-xs btn-ghost" onclick="toggleIntPago(${i.id})">✓</button></td>
-    <td><button class="btn btn-xs btn-danger" onclick="eliminarInteres(${i.id})">🗑️</button></td>
+    <td><button class="btn btn-xs btn-ghost" onclick="toggleIntPago(${jsArg(i.id)})">✓</button></td>
+    <td><button class="btn btn-xs btn-danger" onclick="eliminarInteres(${jsArg(i.id)})">🗑️</button></td>
   </tr>`).join('') : '<tr><td colspan="6"><div class="empty">Sin registros de intereses</div></td></tr>';
 
   // Impacto
@@ -4119,7 +4253,7 @@ function editActivacion(id){
   openModal(`Editar — ${item.concepto}`,`
     <div class="fg"><label>Monto ($)</label><input type="number" id="ea-monto" value="${item.monto}" step="0.01"></div>
     <div class="form-actions" style="margin-top:14px">
-      <button class="btn btn-gold" onclick="saveActivacion(${id})">Guardar</button>
+      <button class="btn btn-gold" onclick="saveActivacion(${jsArg(id)})">Guardar</button>
     </div>`);
 }
 function saveActivacion(id){
@@ -4149,7 +4283,7 @@ function addActivacion(){
 }
 
 function showAddInteres(){
-  const hoy=new Date().toISOString().slice(0,7);
+  const hoy=mesLocalISO();
   openModal('Registrar Interés Mensual',`
     <div class="form-grid" style="grid-template-columns:1fr;">
       <div class="fg"><label>Mes (YYYY-MM)</label><input type="month" id="ni-mes" value="${hoy}"></div>
@@ -4216,7 +4350,7 @@ function calcViaje(){
 function registrarViaje(){
   const peajes = parseFloat(document.getElementById('calc-peajes')?.textContent?.replace(/[^0-9.]/g,'')||'8.20');
   const gas = parseFloat(document.getElementById('calc-gas')?.textContent?.replace(/[^0-9.]/g,'')||'0');
-  const hoy = new Date().toISOString().split('T')[0];
+  const hoy = hoyLocalISO();
   document.getElementById('vf-fecha').value = hoy;
   document.getElementById('vf-peajes').value = peajes.toFixed(2);
   document.getElementById('vf-gasolina').value = gas.toFixed(2);
@@ -4298,15 +4432,15 @@ function renderViajes(){
     return;
   }
   tbody.innerHTML = viajes.map(v=>`<tr>
-    <td class="mono" style="font-size:12px">${v.fecha}</td>
-    <td style="font-size:12px">${v.proposito}${v.notas?'<br><span style="font-size:10px;color:var(--gray)">'+v.notas+'</span>':''}</td>
+    <td class="mono" style="font-size:12px">${escHtml(v.fecha||'')}</td>
+    <td style="font-size:12px">${escHtml(v.proposito||'')}${v.notas?'<br><span style="font-size:10px;color:var(--gray)">'+escHtml(v.notas)+'</span>':''}</td>
     <td class="mono" style="color:var(--red)">${fmt(v.peajes||0)}</td>
     <td class="mono" style="color:var(--blue)">${fmt(v.gasolina||0)}</td>
     <td class="mono" style="color:#e74c3c">${(v.comida||0)>0?fmt(v.comida):'—'}</td>
     <td class="mono" style="color:#9b59b6">${(v.estadia||0)>0?fmt(v.estadia):'—'}</td>
     <td class="mono" style="color:var(--gray)">${(v.otros||0)>0?fmt(v.otros):'—'}</td>
     <td class="mono" style="color:var(--gold);font-weight:600">${fmt(v.total||0)}</td>
-    <td><button class="btn btn-xs btn-danger" onclick="eliminarViaje(${v.id})">🗑️</button></td>
+    <td><button class="btn btn-xs btn-danger" onclick="eliminarViaje(${jsArg(v.id)})">🗑️</button></td>
   </tr>`).join('');
   document.getElementById('v-tabla-total').textContent = `Total acumulado: ${fmt(total)} | Promedio por viaje: ${fmt(promedio)}`;
 }
@@ -4361,7 +4495,7 @@ function renderBanco(){
   const sortedCats = Object.entries(cats).sort((a,b)=>b[1]-a[1]);
   if(el('banco-cat-table')){
     el('banco-cat-table').innerHTML = sortedCats.length
-      ? sortedCats.map(([cat,amt])=>`<div class="roi-row"><span class="roi-label">${cat}</span><span class="roi-val mono">${fmt(amt)}</span></div>`).join('')
+      ? sortedCats.map(([cat,amt])=>`<div class="roi-row"><span class="roi-label">${escHtml(cat)}</span><span class="roi-val mono">${fmt(amt)}</span></div>`).join('')
         + `<div class="roi-row hl"><span class="roi-label"><b>Total</b></span><span class="roi-val gold"><b>${fmt(totalObra)}</b></span></div>`
       : '<div class="empty" style="padding:16px;font-size:12px">Sin gastos registrados aún</div>';
   }
@@ -4389,10 +4523,10 @@ function exportarBanco(){
     ...gastos.map(g=>[g.categoria||'',g.descripcion||'',g.lote||'',g.monto.toFixed(2)]),
     ['','','Total Obra',gastos.reduce((s,g)=>s+g.monto,0).toFixed(2)],
   ];
-  const csv = filas.map(r=>r.map(c=>`"${c}"`).join(',')).join('\n');
+  const csv = filas.map(r=>r.map(csvCampo).join(',')).join('\n');
   const a = document.createElement('a');
   a.href = 'data:text/csv;charset=utf-8,﻿' + encodeURIComponent(csv);
-  a.download = `Arroyo132_Reporte_Banco_${new Date().toISOString().split('T')[0]}.csv`;
+  a.download = `Arroyo132_Reporte_Banco_${hoyLocalISO()}.csv`;
   a.click();
 }
 
@@ -4426,7 +4560,11 @@ Reporte al ${hoy}
 JGarcía Realty · Jesvan García · (787) 967-4000`;
   try{
     if(navigator.share) await navigator.share({title:'Arroyo 132 — Reporte',text:txt});
-    else{ await navigator.clipboard?.writeText(txt); alert('📋 Resumen copiado. Pégalo en WhatsApp o email.'); }
+    else if(navigator.clipboard && typeof navigator.clipboard.writeText==='function'){
+      await navigator.clipboard.writeText(txt);
+      alert('📋 Resumen copiado. Pégalo en WhatsApp o email.');
+    }
+    else alert('⚠️ Este navegador no permite copiar automáticamente. Abre el reporte y copia el texto a mano.');
   }catch(e){ if(e.name!=='AbortError') alert('Error al compartir: '+e.message); }
 }
 
@@ -4464,6 +4602,7 @@ const DEVICE_FILE_KEY  = 'a132_drive_device_file_id'; // id de la copia propia d
 // meses sin que la app lo dijera. Estas 3 claves hacen visible ese estado y permiten reintentar.
 const DRIVE_LASTOK_KEY   = 'a132_drive_lastok';      // ISO de la última subida correcta
 const DRIVE_PENDING_KEY  = 'a132_drive_pendiente';   // '1' si hay cambios sin respaldar
+const DRIVE_PENDING_MOTIVO_KEY = 'a132_drive_pendiente_motivo';   // motivo visible (p. ej. central no confirmado)
 
 // Identificador estable de ESTE dispositivo (navegador). Se genera una sola vez y no cambia.
 function deviceId(){
@@ -4612,12 +4751,16 @@ function updateDriveBtn(icon){
 // silencio (que es exactamente lo que pasó hasta 2026-10-12: el archivo de Drive estuvo sin
 // actualizarse desde el 2026-06-17 sin que la app avisara nunca).
 function marcarRespaldoPendiente(motivo){
-  try{ localStorage.setItem(DRIVE_PENDING_KEY,'1'); }catch(e){}
+  try{
+    localStorage.setItem(DRIVE_PENDING_KEY,'1');
+    if(motivo) localStorage.setItem(DRIVE_PENDING_MOTIVO_KEY,String(motivo).slice(0,200));
+    else localStorage.removeItem(DRIVE_PENDING_MOTIVO_KEY);
+  }catch(e){}
   const btn=document.getElementById('btn-drive');
   if(btn){
     btn.textContent='⚠️';
     const ultimo=localStorage.getItem(DRIVE_LASTOK_KEY);
-    btn.title='⚠️ Hay cambios SIN respaldar'+(ultimo?` — último respaldo correcto: ${ultimo.slice(0,16).replace('T',' ')}`:' — nunca se ha respaldado en este dispositivo')+(motivo?` (${motivo})`:'');
+    btn.title='⚠️ Hay cambios SIN respaldar'+(ultimo?` — último respaldo correcto: ${fechaHoraLocal(ultimo)}`:' — nunca se ha respaldado en este dispositivo')+(motivo?` (${motivo})`:'');
   }
 }
 
@@ -4626,9 +4769,10 @@ function marcarRespaldoOk(){
   try{
     localStorage.setItem(DRIVE_LASTOK_KEY, ahoraIso);
     localStorage.removeItem(DRIVE_PENDING_KEY);
+    localStorage.removeItem(DRIVE_PENDING_MOTIVO_KEY);
   }catch(e){}
   const btn=document.getElementById('btn-drive');
-  if(btn){ btn.textContent='✅'; btn.title='Respaldo al día — '+ahoraIso.slice(0,16).replace('T',' '); }
+  if(btn){ btn.textContent='✅'; btn.title='Respaldo al día — '+fechaHoraLocal(ahoraIso); }
 }
 
 function hayRespaldoPendiente(){ try{ return localStorage.getItem(DRIVE_PENDING_KEY)==='1'; }catch(e){ return false; } }
@@ -4709,6 +4853,14 @@ function verificarEscrituraBackup(esperado, leido){
   const alterados = esp.filter(g=>Math.abs((Number(porId.get(String(g.id)).monto)||0)-(Number(g.monto)||0))>0.004).length;
   if(alterados) return {ok:false, motivo:alterados+' gasto(s) con monto distinto al escrito'};
   if(leido.gastos.length < esp.length) return {ok:false, motivo:'Drive tiene '+leido.gastos.length+' gastos y se esperaban '+esp.length};
+  // Las referencias a recibos también se verifican: un HTTP 200 no prueba que Drive guardó las 5.
+  const refsEsp = (esperado && esperado.recibos && typeof esperado.recibos==='object') ? esperado.recibos : {};
+  const refsLeido = (leido.recibos && typeof leido.recibos==='object') ? leido.recibos : {};
+  const idsDoc = r => listarDocumentos(r).map(x=>x && x.doc && x.doc.driveId).filter(Boolean).map(String).sort();
+  const faltanRefs = Object.keys(refsEsp).filter(k=>!refsLeido[k]);
+  if(faltanRefs.length) return {ok:false, motivo:'faltan '+faltanRefs.length+' referencia(s) de recibo en Drive'};
+  const refsAlteradas = Object.keys(refsEsp).filter(k=>JSON.stringify(idsDoc(refsEsp[k]))!==JSON.stringify(idsDoc(refsLeido[k])));
+  if(refsAlteradas.length) return {ok:false, motivo:refsAlteradas.length+' referencia(s) de recibo con documento distinto en Drive'};
   const monto = Math.round(leido.gastos.reduce((s,g)=>s+(Number(g.monto)||0),0)*100)/100;
   return {ok:true, gastos:leido.gastos.length, monto};
 }
@@ -4731,6 +4883,21 @@ async function backupToDrive(mostrarFeedback=false){
     // (1) Copia PROPIA de este dispositivo. Este archivo solo lo escribe su dueño: es la red de
     //     seguridad que garantiza que ningún respaldo puede borrar el trabajo de otro equipo.
     await driveSubir(deviceFile(), JSON.stringify(contenidoBackup()), token, DEVICE_FILE_KEY);
+
+    // (1b) La fuente central es la dueña de las referencias a recibos. Antes de tocar el combinado
+    //      se espera a que ESTE dispositivo adopte el estado central (o a la sincronización en
+    //      curso). Sin esto, un respaldo que llega antes que la sincronización graba 0 referencias
+    //      y la fusión no puede recuperarlas: el combinado es el único otro origen. La copia propia
+    //      del dispositivo ya quedó escrita arriba, así que ningún dato local se pierde al pausar.
+    if(typeof centralAsegurarAntesDeRespaldo==='function' && typeof modoCentral==='function' && modoCentral()){
+      const centralListo=await centralAsegurarAntesDeRespaldo();
+      if(!centralListo){
+        const motivo='no se pudo confirmar la fuente central; el combinado no se reescribe para no perder sus referencias';
+        registrarRespaldoLog('PAUSADO', {motivo});
+        marcarRespaldoPendiente('respaldo combinado en pausa: '+motivo);
+        return;
+      }
+    }
 
     // (2) Archivo combinado: LEER → FUSIONAR → ESCRIBIR. La fusión nunca descarta un registro.
     const remoto = await driveDescargar(DRIVE_FILE_NAME, token, DRIVE_FILE_KEY);
@@ -4936,7 +5103,7 @@ async function restaurarDesdeDrive(){
 
   const fusion = fusionarEstado(contenidoBackup(), data);
   const lineas = [
-    'Respaldo en Drive: ' + String(data.fecha||'sin fecha').slice(0,16).replace('T',' '),
+    'Respaldo en Drive: ' + (data.fecha?fechaHoraLocal(data.fecha):'sin fecha'),
     (data.dispositivo ? 'Escrito por: '+data.dispositivo : null),
     'Gastos aquí: '+gastos.length+'  ·  en el respaldo: '+data.gastos.length,
     'Se añadirían '+fusion.agregados+' gasto(s) y '+fusion.viajesAgregados+' viaje(s) que no están aquí.',
@@ -4996,7 +5163,7 @@ function exportarBackup(){
     const blob=new Blob([texto],{type:'application/json'});
     const url=URL.createObjectURL(blob);
     const a=document.createElement('a');
-    const hoy=new Date().toISOString().slice(0,10);
+    const hoy=hoyLocalISO();
     a.href=url; a.download=`arroyo132-backup-${hoy}.json`;
     document.body.appendChild(a); a.click();
     setTimeout(()=>{ URL.revokeObjectURL(url); a.remove(); },1000);
@@ -5231,50 +5398,86 @@ async function centralToken(interactivo){
   if(!driveTokenValid()) token=await asegurarTokenDrive(!!interactivo);
   return token||null;
 }
+let _centralPromesa=null;
+// Devuelve {ok, estado?, motivo?}. `ok` significa que ESTE dispositivo adoptó el estado central en
+// esta vuelta (o ya lo tenía). Un respaldo que dependa de las referencias del central debe esperar
+// a este resultado: el combinado v4 se fusiona con la vista LOCAL, no con el central.
 async function centralSincronizar(){
-  if(!modoCentral()) return;
-  if(_centralEnCurso){ _centralOtra=true; return; }
+  if(!modoCentral()) return {ok:false,motivo:'fuente central apagada'};
+  if(_centralEnCurso){ _centralOtra=true; return _centralPromesa?await _centralPromesa:{ok:false,motivo:'sincronización en curso'}; }
   _centralEnCurso=true;
-  try{
-    const token=await centralToken(false);
-    if(!token){ centralMarcar('pendiente','Google Drive no conectado: los cambios quedan en este dispositivo y se envían al conectar'); return; }
-    if(centralHayCorrupcion()){ centralMarcar('error','Este dispositivo guardó una copia ilegible de los gastos (a132_gastos_corrupto_*): la sincronización se detiene hasta revisarlo, para no propagar datos dañados'); return; }
-    const alm=centralAlmacen(token); let estado, empujo=false;
-    const foto=centralFoto();
-    try{ _centralTope=localStorage.getItem(CENTRAL_TOPE_KEY)==='1'; }catch(e){ _centralTope=false; }
-    if(!centralLeerBase()){   // bandera puesta pero sin base: no se escribe nada (podría resucitar borrados o pisar ediciones); se reconstruye desde el central
-      const l=await alm.leer();
-      if(!l.estado){ centralMarcar('error','el archivo central no existe en Drive'); return; }
-      try{ localStorage.setItem(CENTRAL_ANTES_KEY+'_reciente',JSON.stringify({fecha:new Date().toISOString(),dispositivo:deviceId(),gastos,viajes,recibos:leerRecibos()})); }catch(e){ centralMarcar('error','no hay espacio para la copia local previa'); return; }
-      const vb=A132Central.verificarCentral(l.estado); if(!vb.ok) throw new Error('el estado central no es válido: '+vb.motivo);
-      centralAdoptar(l.estado);
-      centralMarcar('ok','base reconstruida desde el central (copia local previa guardada)',{rev:l.estado.rev,gastos:vb.gastos,suma:vb.suma});
-      return;
+  const p=(async()=>{
+    try{
+      const token=await centralToken(false);
+      if(!token){ centralMarcar('pendiente','Google Drive no conectado: los cambios quedan en este dispositivo y se envían al conectar'); return {ok:false,motivo:'Google Drive no conectado'}; }
+      if(centralHayCorrupcion()){ centralMarcar('error','Este dispositivo guardó una copia ilegible de los gastos (a132_gastos_corrupto_*): la sincronización se detiene hasta revisarlo, para no propagar datos dañados'); return {ok:false,motivo:'copia ilegible de los gastos'}; }
+      const alm=centralAlmacen(token); let estado, empujo=false;
+      const foto=centralFoto();
+      try{ _centralTope=localStorage.getItem(CENTRAL_TOPE_KEY)==='1'; }catch(e){ _centralTope=false; }
+      if(!centralLeerBase()){   // bandera puesta pero sin base: no se escribe nada (podría resucitar borrados o pisar ediciones); se reconstruye desde el central
+        const l=await alm.leer();
+        if(!l.estado){ centralMarcar('error','el archivo central no existe en Drive'); return {ok:false,motivo:'el archivo central no existe en Drive'}; }
+        try{ localStorage.setItem(CENTRAL_ANTES_KEY+'_reciente',JSON.stringify({fecha:new Date().toISOString(),dispositivo:deviceId(),gastos,viajes,recibos:leerRecibos()})); }catch(e){ centralMarcar('error','no hay espacio para la copia local previa'); return {ok:false,motivo:'no hay espacio para la copia local previa'}; }
+        const vb=A132Central.verificarCentral(l.estado); if(!vb.ok) throw new Error('el estado central no es válido: '+vb.motivo);
+        centralAdoptar(l.estado);
+        centralMarcar('ok','base reconstruida desde el central (copia local previa guardada)',{rev:l.estado.rev,gastos:vb.gastos,suma:vb.suma});
+        return {ok:true,estado:l.estado};
+      }
+      if(centralCambiosPendientes()){ estado=(await A132Central.actualizar(alm,centralMutador)).estado; empujo=true; }
+      else{ const l=await alm.leer(); if(!l.estado){ centralMarcar('error','el archivo central no existe en Drive'); return {ok:false,motivo:'el archivo central no existe en Drive'}; } estado=l.estado; }
+      const v=A132Central.verificarCentral(estado);
+      if(!v.ok) throw new Error('el estado central no es válido: '+v.motivo);
+      if(centralFoto()!==foto){   // el usuario cambió algo mientras se sincronizaba: no se reemplaza su vista; se reenvía en la siguiente vuelta
+        if(empujo&&_centralToc){ try{ centralBaseTrasEmpuje(estado,_centralToc); }catch(e){} }   // lo ya enviado queda como base (si no, un borrado hecho durante la subida podría revertirse)
+        centralMarcar('pendiente','hubo cambios mientras se sincronizaba; se envían de nuevo'); _centralOtra=true; return {ok:false,motivo:'hubo cambios mientras se sincronizaba'};
+      }
+      centralAdoptar(estado);
+      centralMarcar('ok','sincronizado',{rev:estado.rev,gastos:v.gastos,suma:v.suma,conflictos:(estado.conflictos||[]).length});
+      return {ok:true,estado};
+    }catch(e){
+      centralMarcar('error',e&&e.message?e.message:e,e&&e.tope?{tope:true}:undefined);
+      return {ok:false,motivo:e&&e.message?e.message:String(e)};
+    }finally{
+      _centralEnCurso=false; _centralTope=false; _centralToc=null;
+      try{ localStorage.removeItem(CENTRAL_TOPE_KEY); }catch(e){}
+      if(_centralOtra){ _centralOtra=false; setTimeout(centralSincronizar,300); }
     }
-    if(centralCambiosPendientes()){ estado=(await A132Central.actualizar(alm,centralMutador)).estado; empujo=true; }
-    else{ const l=await alm.leer(); if(!l.estado){ centralMarcar('error','el archivo central no existe en Drive'); return; } estado=l.estado; }
-    const v=A132Central.verificarCentral(estado);
-    if(!v.ok) throw new Error('el estado central no es válido: '+v.motivo);
-    if(centralFoto()!==foto){   // el usuario cambió algo mientras se sincronizaba: no se reemplaza su vista; se reenvía en la siguiente vuelta
-      if(empujo&&_centralToc){ try{ centralBaseTrasEmpuje(estado,_centralToc); }catch(e){} }   // lo ya enviado queda como base (si no, un borrado hecho durante la subida podría revertirse)
-      centralMarcar('pendiente','hubo cambios mientras se sincronizaba; se envían de nuevo'); _centralOtra=true; return;
-    }
-    centralAdoptar(estado);
-    centralMarcar('ok','sincronizado',{rev:estado.rev,gastos:v.gastos,suma:v.suma,conflictos:(estado.conflictos||[]).length});
-  }catch(e){
-    centralMarcar('error',e&&e.message?e.message:e,e&&e.tope?{tope:true}:undefined);
-  }finally{
-    _centralEnCurso=false; _centralTope=false; _centralToc=null;
-    try{ localStorage.removeItem(CENTRAL_TOPE_KEY); }catch(e){}
-    if(_centralOtra){ _centralOtra=false; setTimeout(centralSincronizar,300); }
-  }
+  })();
+  _centralPromesa=p;
+  try{ return await p; } finally{ if(_centralPromesa===p) _centralPromesa=null; }
+}
+// Antes de escribir el combinado v4, la vista local debe haber adoptado el central: las
+// referencias de recibos viven en el central y el combinado se fusiona con lo LOCAL.
+// (2026-11-03: un respaldo que se adelantaba a la sincronización grababa 0 referencias.)
+// ¿La vista local ya contiene las referencias conocidas del último estado central adoptado?
+// Sirve para no pausar el combinado en un dispositivo que ya las tenía cuando el central no
+// responde, sin reabrir el caso peligroso del dispositivo que nunca las adoptó.
+function centralRefsLocalesCubrenBase(){
+  const base=centralLeerBase();
+  if(!base || !base.recibos || typeof base.recibos!=='object') return false;
+  const claves=Object.keys(base.recibos); if(!claves.length) return false;
+  const local=leerRecibos();
+  const ids=r=>listarDocumentos(r).map(x=>x&&x.doc&&x.doc.driveId).filter(Boolean).map(String).sort();
+  return claves.every(k=>local[k] && JSON.stringify(ids(local[k]))===JSON.stringify(ids(base.recibos[k])));
+}
+async function centralAsegurarAntesDeRespaldo(){
+  if(typeof modoCentral!=='function' || !modoCentral()) return true;
+  let r=await centralSincronizar();
+  // Si la sincronización se interrumpió porque el usuario guardó algo mientras subía, la vista
+  // local ya tiene esos cambios: se reintenta UNA vez para que ESTE respaldo escriba el combinado
+  // en vez de dejarlo pausado hasta el próximo guardado/visibility/online.
+  if(r && !r.ok && /cambios mientras se sincronizaba/.test(String(r.motivo||''))) r=await centralSincronizar();
+  if(r && r.ok) return true;
+  // Central no confirmado: si este dispositivo ya adoptó las referencias conocidas, se puede
+  // escribir el combinado con lo local (no se pierde ninguna); si nunca las adoptó, se pausa.
+  return centralRefsLocalesCubrenBase();
 }
 function centralProgramar(){ clearTimeout(_centralT); _centralT=setTimeout(centralSincronizar,1500); }
 function centralTexto(){
   if(!modoCentral()) return 'Fuente central: apagada (cada dispositivo usa su copia y el respaldo de Drive)';
   let s=null; try{ s=JSON.parse(localStorage.getItem(CENTRAL_ESTADO_KEY)||'null'); }catch(e){}
   const base=centralLeerBase();
-  const parte=s?(s.estado==='ok'?('sincronizada '+String(s.fecha).slice(0,16).replace('T',' ')+' · revisión '+s.rev+' · '+s.gastos+' gastos ($'+Number(s.suma).toFixed(2)+')'):((s.estado==='error'?'⚠️ ERROR: ':'⏳ ')+escHtml(s.mensaje))):'sin sincronizar todavía';
+  const parte=s?(s.estado==='ok'?('sincronizada '+escHtml(fechaHoraLocal(s.fecha))+' · revisión '+s.rev+' · '+s.gastos+' gastos ($'+Number(s.suma).toFixed(2)+')'):((s.estado==='error'?'⚠️ ERROR: ':'⏳ ')+escHtml(s.mensaje))):'sin sincronizar todavía';
   return 'Fuente central ACTIVA en Google Drive («'+A132Drive.NOMBRE_CENTRAL+'»): '+parte+(base?'':' · sin base local')+(centralCambiosPendientes()?' · hay cambios locales por enviar':'');
 }
 // Activación explícita en ESTE dispositivo. Reversible: guarda una copia local previa (a132_antes_central) y no toca el respaldo v4.
@@ -5320,7 +5523,7 @@ function centralRevertir(){
   if(_centralEnCurso){ alert('Hay una sincronización en curso; espera a que termine y vuelve a intentarlo.'); return; }
   let c=null; try{ c=JSON.parse(localStorage.getItem(CENTRAL_ANTES_KEY)||'null'); }catch(e){}
   if(!c||!Array.isArray(c.gastos)){ alert('No hay una copia previa a la activación en este dispositivo.'); return; }
-  if(!confirm('↩️ Volver a la copia previa a la fuente central\n\nEste dispositivo vuelve a sus '+c.gastos.length+' gastos de '+String(c.fecha).slice(0,16).replace('T',' ')+'. Lo que ya se había sincronizado sigue en el archivo central de Drive (que no se toca). Lo que hiciste aquí y aún NO se había sincronizado NO está en el central: se guarda solo en este dispositivo, en la copia «a132_antes_central_reciente» (tus '+gastos.length+' gastos actuales). La fuente central se apaga aquí.\n\n¿Continuar?')) return;
+  if(!confirm('↩️ Volver a la copia previa a la fuente central\n\nEste dispositivo vuelve a sus '+c.gastos.length+' gastos de '+fechaHoraLocal(c.fecha)+'. Lo que ya se había sincronizado sigue en el archivo central de Drive (que no se toca). Lo que hiciste aquí y aún NO se había sincronizado NO está en el central: se guarda solo en este dispositivo, en la copia «a132_antes_central_reciente» (tus '+gastos.length+' gastos actuales). La fuente central se apaga aquí.\n\n¿Continuar?')) return;
   try{   // se guarda la vista ACTUAL antes de reemplazarla; la «reciente» anterior (si había) se conserva con otro nombre
     const kr=CENTRAL_ANTES_KEY+'_reciente', prev=localStorage.getItem(kr);
     if(prev) localStorage.setItem(kr+'_'+Date.now(),prev);

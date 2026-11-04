@@ -17,7 +17,7 @@ function extraer(nombre) {
   for (; k < script.length; k++) { if (script[k] === '{') n++; else if (script[k] === '}') { n--; if (!n) break; } }
   return script.slice(ini, k + 1);
 }
-const NOMBRES = ['modoCentral', 'centralLeerBase', 'centralLocal', 'centralMarcar', 'centralCambiosPendientes', 'centralMutador', 'centralAdoptar', 'centralAlmacen', 'centralToken', 'centralSincronizar', 'centralProgramar', 'centralTexto', 'centralActivar', 'leerRecibos', 'leerRecibosPend', 'guardarRecibos', 'escribirVerificado', 'limpiarRecibos', 'actualizarPend', 'centralFoto', 'centralClavesCorrupcion', 'centralHayCorrupcion', 'centralCorrupcionRevisada', 'centralBotonesExtra', 'centralConfirmarBorradoMasivo', 'centralRegistrarViajeBorrado', 'centralViajesBorradosPend', 'centralBaseTrasEmpuje', 'eliminarViaje', 'saveViajes', 'centralRevertir', 'restaurarDesdeDrive', 'importarBackup', 'escHtml'];
+const NOMBRES = ['modoCentral', 'centralLeerBase', 'centralLocal', 'centralMarcar', 'centralCambiosPendientes', 'centralMutador', 'centralAdoptar', 'centralAlmacen', 'centralToken', 'centralSincronizar', 'centralProgramar', 'centralTexto', 'centralActivar', 'leerRecibos', 'leerRecibosPend', 'guardarRecibos', 'escribirVerificado', 'limpiarRecibos', 'actualizarPend', 'centralFoto', 'centralClavesCorrupcion', 'centralHayCorrupcion', 'centralCorrupcionRevisada', 'centralBotonesExtra', 'centralConfirmarBorradoMasivo', 'centralRegistrarViajeBorrado', 'centralViajesBorradosPend', 'centralBaseTrasEmpuje', 'eliminarViaje', 'saveViajes', 'centralRevertir', 'restaurarDesdeDrive', 'importarBackup', 'escHtml', 'fechaHoraLocal'];
 
 function dispositivo(nombre, drive, { gastos = [], viajes = [] } = {}) {
   const alm = new Map([['tok', 'T']]);

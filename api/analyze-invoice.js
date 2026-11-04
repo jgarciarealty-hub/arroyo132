@@ -303,8 +303,20 @@ function dentroDeLimite(ip, maxPorMinuto) {
   return true;
 }
 
+// Fecha del negocio (Puerto Rico), no la UTC del servidor: el presupuesto diario y el «Hoy»
+// del prompt cambiaban a las 20:00 locales. Vercel ejecuta en UTC.
+function fechaPuertoRico(ahora = new Date()) {
+  try {
+    const partes = new Intl.DateTimeFormat('en-CA', { timeZone: 'America/Puerto_Rico', year: 'numeric', month: '2-digit', day: '2-digit' }).formatToParts(ahora);
+    const valor = (t) => (partes.find((p) => p.type === t) || {}).value;
+    return valor('year') + '-' + valor('month') + '-' + valor('day');
+  } catch (e) {
+    return ahora.toISOString().slice(0, 10);
+  }
+}
+
 function dentroDePresupuesto(maxDiario) {
-  const hoy = new Date().toISOString().slice(0, 10);
+  const hoy = fechaPuertoRico();
   if (_presupuesto.dia !== hoy) _presupuesto = { dia: hoy, usadas: 0 };
   if (_presupuesto.usadas >= maxDiario) return false;
   _presupuesto.usadas++;
@@ -368,7 +380,7 @@ function validarCuerpo(body, maxTexto) {
   }
 
   if (imagenes !== 1 || textos > 1) return { ok: false, error: 'Se requiere exactamente un recibo' };
-  bloques.push({ type: 'text', text: PROMPT_LECTURA_SERVIDOR.replace('__HOY__', new Date().toISOString().slice(0, 10)) });
+  bloques.push({ type: 'text', text: PROMPT_LECTURA_SERVIDOR.replace('__HOY__', fechaPuertoRico()) });
 
   return { ok: true, bloque: bloques };
 }
@@ -480,6 +492,7 @@ module.exports._internals = {
   ipDe,
   _reiniciar: () => { _ventanas.clear(); _presupuesto = { dia: '', usadas: 0 }; _tokensVistos.clear(); },
   _ponerJwks: (llaves) => { _jwks = llaves; _jwksExpira = Date.now() + 3600 * 1000; },
+  fechaPuertoRico,
   MODELO_DEFECTO,
   MIN_TOKENS_LECTURA,
   TOKENS_DEFECTO,

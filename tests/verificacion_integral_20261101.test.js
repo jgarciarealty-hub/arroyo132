@@ -23,7 +23,7 @@ function extraer(nombre) {
 
 // ── 1. Extracción veraz ──────────────────────────────────────────────────────
 const ctx = vm.createContext({});
-vm.runInContext(['normalizarTexto','claveContenido','interpretarExtraccion', 'textoEstadoExtraccion', 'verificarEscrituraBackup'].map(extraer).join('\n'), ctx);
+vm.runInContext(['normalizarTexto','claveContenido','interpretarExtraccion', 'textoEstadoExtraccion', 'listarDocumentos', 'verificarEscrituraBackup'].map(extraer).join('\n'), ctx);
 const I = (t) => vm.runInContext('interpretarExtraccion', ctx)(t);
 const T = (l) => vm.runInContext('textoEstadoExtraccion', ctx)(l);
 
@@ -103,7 +103,7 @@ vm.runInContext('const ORIG_DB="a132_originales", ORIG_STORE="recibos";' + ['ori
   const ctx3 = vm.createContext({ console, String });
   vm.runInContext('const ORIG_DB="x", ORIG_STORE="y";' + ['origAbrir', 'origGuardar', 'origLeer'].map(extraer).join('\n'), ctx3);
   test('sin IndexedDB: guardar devuelve false y no lanza', (await vm.runInContext('origGuardar', ctx3)(1, archivo)) === false);
-  test('detalle del gasto ofrece «Ver recibo original»', /verReciboOriginal\(\$\{g\.id\}\)/.test(script) && /id="orig-recibo-\$\{g\.id\}"/.test(script));
+  test('detalle del gasto ofrece «Ver recibo original»', /verReciboOriginal\(\$\{jsArg\(g\.id\)\}\)/.test(script) && /id="orig-recibo-\$\{escHtml\(String\(g\.id\)\)\}"/.test(script));
   test('guardarGasto conserva el original (ahora vía Drive)', script.includes('registrarOriginalNuevo(nuevoId,_archivoOriginal)'));
 
   // ── 4. Causa 61 vs 11: el conjunto sembrado ─────────────────────────────────
