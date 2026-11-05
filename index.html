@@ -1653,9 +1653,7 @@ let gastos = (()=>{ try{ return JSON.parse(localStorage.getItem('a132_gastos')||
   localStorage.removeItem('a132_gastos'); return []; } })();
 // Recibos recuperados manualmente — se añaden si no existen (portado desde commit fc0a54e,
 // perdido por accidente en el commit 7735957 del 2026-06-16; ver docs/ESTADO_ARROYO_132.md)
-(function recuperarRecibos(){
-  try{ if(localStorage.getItem('a132_central')==='1') return; }catch(e){}   // modo central: las semillas con ids fijos colisionaban con los gastos reales
-  const recuperados=[
+const GASTOS_SEMILLA=[
     {id:700001,fecha:'2026-04-15',contratista:'Ferreterías Maderas 3C',tel:'(787) 474-3333',categoria:'Electricidad',lote:'Compartido',metodo:'tarjeta',monto:293.02,descripcion:'Inv C99711 — Curva Elect. PVC 1½" SCH40 x5, Tubo Elect. PVC Gray 1½"×10\' x17, Tubo Galvanizado ½"×20\', Tubo Galvanizado 2"×20\'',tipo:'manual'},
     {id:700002,fecha:'2026-04-13',contratista:'AIG Electrical Supply Inc.',tel:'(787) 995-3333',categoria:'Electricidad',lote:'Compartido',metodo:'efectivo',monto:30.22,descripcion:'Ticket INSJ26-07955 — Rigid Condulet Clamp F2 x2 ($16.27), Ground Pipe Clamp ½"-1" x2 ($13.95)',tipo:'manual'},
     {id:700003,fecha:'2026-04-13',contratista:'Toa Alta Hardware',tel:'(787) 966-7426',categoria:'Electricidad',lote:'Compartido',metodo:'efectivo',monto:22.28,descripcion:'Trans #077757 — Irrigation Valve Box x2 @ $9.99',tipo:'manual'},
@@ -1673,6 +1671,19 @@ let gastos = (()=>{ try{ return JSON.parse(localStorage.getItem('a132_gastos')||
     {id:700010,fecha:'2025-04-20',contratista:'Operador Excavadora',tel:'',categoria:'Limpieza / Excavación',lote:'Compartido',metodo:'efectivo',monto:1500,descripcion:'Limpieza de terreno con excavadora (digger)',tipo:'manual'},
     {id:700011,fecha:'2026-06-07',contratista:'Ferretería Cosme',tel:'',categoria:'Electricidad',lote:'Compartido',metodo:'efectivo',monto:152.54,descripcion:'Se compro arena piedra y cemento',tipo:'manual'},
   ];
+// Una semilla es un registro de recuperación INTACTO. Si el usuario lo editó deja de serlo:
+// en ese caso manda su versión y el remoto se trata como conflicto (nunca al revés).
+function esSemilla(g){
+  if(!g || typeof g!=='object') return false;
+  return GASTOS_SEMILLA.some(s=>String(s.id)===String(g.id)
+    && s.fecha===g.fecha
+    && s.contratista===g.contratista
+    && Number(s.monto)===Number(g.monto)
+    && String(s.descripcion||'')===String(g.descripcion||''));
+}
+(function recuperarRecibos(){
+  try{ if(localStorage.getItem('a132_central')==='1') return; }catch(e){}   // modo central: sin semillas
+  const recuperados=GASTOS_SEMILLA;
   let cambio=false;
   recuperados.forEach(r=>{
     if(!gastos.some(g=>g.id===r.id||(g.contratista===r.contratista&&g.fecha===r.fecha&&Math.abs(g.monto-r.monto)<0.5))){
@@ -5038,12 +5049,20 @@ function fusionarGastos(locales, remotos){
   const salida = localesArr.slice();
   const posiblesDuplicados = [];
   const conflictos = [];
+  const semillasReemplazadas = [];
   let agregados = 0;
 
   remotosArr.forEach(r=>{
     if(r === null || typeof r !== 'object') return;      // registro corrupto: se ignora, no rompe
     if(idsLocales.has(String(r.id))){                    // mismo id
-      const gemelo = localesArr.find(l=>String(l.id)===String(r.id));
+      const gemelo = salida.find(l=>String(l.id)===String(r.id));
+      // Una semilla SIN TOCAR cede ante el dato real del respaldo. Antes se conservaba la
+      // semilla y el gasto real no se restauraba (defecto H1, 2026-11-05).
+      if(gemelo && esSemilla(gemelo) && !esSemilla(r) && JSON.stringify(gemelo)!==JSON.stringify(r)){
+        const i = salida.findIndex(l=>String(l.id)===String(r.id));
+        if(i>=0){ salida[i]=r; semillasReemplazadas.push({ id:r.id, semilla:gemelo, real:r }); }
+        return;
+      }
       if(JSON.stringify(gemelo)!==JSON.stringify(r)) conflictos.push({ id:r.id, local:gemelo, remoto:r });
       return;
     }
@@ -5055,7 +5074,7 @@ function fusionarGastos(locales, remotos){
     if(parecidos.length) posiblesDuplicados.push({ nuevo:r, parecidos });
   });
 
-  return { gastos: salida, agregados, posiblesDuplicados, conflictos };
+  return { gastos: salida, agregados, posiblesDuplicados, conflictos, semillasReemplazadas };
 }
 
 // Unión de referencias de recibos entre dos dispositivos. Reutiliza la unión por documento
@@ -5103,6 +5122,7 @@ function fusionarEstado(local, remoto){
     gastos: f.gastos, viajes: vLocales.concat(vNuevos), fotos: fotosFusion, recibos: recibosFusion,
     agregados: f.agregados, viajesAgregados: vNuevos.length,
     posiblesDuplicados: f.posiblesDuplicados, conflictos: f.conflictos, divergentes,
+    semillasReemplazadas: f.semillasReemplazadas || [],
   };
 }
 
@@ -5126,6 +5146,7 @@ async function restaurarDesdeDrive(){
   ].filter(Boolean);
   if(fusion.posiblesDuplicados.length) lineas.push('⚠️ '+fusion.posiblesDuplicados.length+' posible(s) duplicado(s) — se añaden y se marcan para que los revises.');
   if(fusion.conflictos.length) lineas.push('⚠️ '+fusion.conflictos.length+' conflicto(s): el mismo registro con datos distintos en dos equipos. Se conserva el de aquí.');
+  if(fusion.semillasReemplazadas.length) lineas.push('✅ '+fusion.semillasReemplazadas.length+' registro(s) de recuperación serán sustituidos por los datos reales del respaldo.');
   if(Object.keys(fusion.fotos||{}).length) lineas.push('ℹ️ Las miniaturas son solo vista previa; no se guardan como almacén independiente. Los originales siguen en Drive/IndexedDB.');
   if(!confirm('☁️ Traer datos desde Google Drive\n\n'+lineas.join('\n')+'\n\n¿Continuar?')) return;
 
@@ -5199,6 +5220,7 @@ function importarBackup(){
       const avisos=[];
       if(fusion.posiblesDuplicados.length) avisos.push('⚠️ '+fusion.posiblesDuplicados.length+' posible(s) duplicado(s) — se añaden y se marcan.');
       if(fusion.conflictos.length) avisos.push('⚠️ '+fusion.conflictos.length+' conflicto(s): el mismo registro con datos distintos. Se conserva el de aquí.');
+      if(fusion.semillasReemplazadas.length) avisos.push('✅ '+fusion.semillasReemplazadas.length+' registro(s) de recuperación serán sustituidos por los datos reales del respaldo.');
       if(Object.keys(fusion.fotos||{}).length) avisos.push('ℹ️ Las miniaturas son solo vista previa; no se guardan como almacén independiente. Los originales siguen en Drive/IndexedDB.');
       if(!confirm(`📂 Importar respaldo local\n\nArchivo: ${file.name}\nGastos aquí: ${gastos.length}\nGastos en el archivo: ${data.gastos.length}\nSe añadirían ${fusion.agregados} gasto(s) y ${fusion.viajesAgregados} viaje(s). NADA se borra.\n\n${avisos.join('\n')}\n\n¿Continuar?`)) return;
       const antes={gastos,viajes,fotos,docs,timeline,presupuesto,recibos:leerRecibos()};
@@ -5219,7 +5241,7 @@ function importarBackup(){
       try{ if(!saveViajes()) seccionesOk=false; }catch(e){ seccionesOk=false; }
       try{ if(!guardarPresupuesto(true)) seccionesOk=false; }catch(e){ seccionesOk=false; }
       if(!seccionesOk) alert('⚠️ Los gastos se guardaron, pero los viajes/presupuesto importados no se pudieron persistir (almacenamiento lleno).');
-      alert(`✅ Importado. ${fusion.agregados} gasto(s) añadidos — total ${gastos.length}. No se borró ningún gasto.`);
+      alert(`✅ Importado. ${fusion.agregados} gasto(s) añadidos — total ${gastos.length}. No se borró ningún gasto.`+(fusion.semillasReemplazadas.length?' '+fusion.semillasReemplazadas.length+' registro(s) de recuperación sustituidos por los datos reales.':''));
       renderDashboard();
     }catch(e){ alert('Archivo inválido: '+(e.message||e)); }
   };

@@ -1,4 +1,4 @@
-// Corrección integral 2026-11-01: extracción IA veraz, recibo original, respaldo verificado y causa 61 vs 11.
+﻿// Corrección integral 2026-11-01: extracción IA veraz, recibo original, respaldo verificado y causa 61 vs 11.
 // Uso: node tests/verificacion_integral_20261101.test.js
 'use strict';
 const fs = require('node:fs');
@@ -107,7 +107,8 @@ vm.runInContext('const ORIG_DB="a132_originales", ORIG_STORE="recibos";' + ['ori
   test('guardarGasto conserva el original (ahora vía Drive)', script.includes('registrarOriginalNuevo(nuevoId,_archivoOriginal)'));
 
   // ── 4. Causa 61 vs 11: el conjunto sembrado ─────────────────────────────────
-  const bloque = script.slice(script.indexOf('const recuperados=['), script.indexOf('];', script.indexOf('const recuperados=[')));
+  const _iniSem = script.indexOf('const GASTOS_SEMILLA=[') >= 0 ? script.indexOf('const GASTOS_SEMILLA=[') : script.indexOf('const recuperados=[');
+  const bloque = script.slice(_iniSem, script.indexOf('];', _iniSem));
   const montos = [...bloque.matchAll(/\{id:7000\d\d,[^\n]*?monto:([\d.]+)/g)].map(x => +x[1]);
   test('conjunto sembrado = 11 gastos por $3,299.58 (el "respaldo viejo")', montos.length === 11 && Math.abs(montos.reduce((a, b) => a + b, 0) - 3299.58) < 0.005, montos.length);
 
@@ -119,3 +120,4 @@ test('IVU absurdo (mayor que el total) se descarta', I('{"fecha":"2026-04-15","m
   console.log(`\n${pass} pasaron, ${fail} fallaron`);
   process.exit(fail ? 1 : 0);
 })();
+
