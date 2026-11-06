@@ -1,4 +1,4 @@
-// Colisión de semillas (2026-11-05): un respaldo real debe sustituir una semilla intacta,
+﻿// Colisión de semillas (2026-11-05): un respaldo real debe sustituir una semilla intacta,
 // pero NUNCA debe pisar un registro que el usuario editó ni un gasto normal.
 // Funciones REALES extraídas de index.html; sin red, sin Drive, sin datos reales.
 'use strict';
@@ -30,7 +30,7 @@ function extraerConst(nombre) {
 function crear() {
   const ctx = { JSON, Object, Array, String, Number, Set, Map, Math };
   vm.createContext(ctx);
-  vm.runInContext([extraerConst('GASTOS_SEMILLA'), extraer('esSemilla'), extraer('normalizarTexto'), extraer('claveContenido'), extraer('fusionarGastos')].join('\n'), ctx);
+  vm.runInContext([extraerConst('GASTOS_SEMILLA'), extraer('msDe'), extraer('esTombstone'), extraer('anotarTombstone'), extraer('mapaTombstones'), extraer('listaTombstones'), extraer('tombGana'), extraer('compararRegistros'), extraer('esSemilla'), extraer('normalizarTexto'), extraer('claveContenido'), extraer('fusionarGastos')].join('\n'), ctx);
   return ctx;
 }
 const fusionar = (locales, remotos) => { const ctx = crear(); ctx.__l = locales; ctx.__r = remotos; return vm.runInContext('fusionarGastos(__l, __r)', ctx); };
@@ -112,3 +112,5 @@ if (!process.env.A132_HTML) {
 
 console.log('\n' + pass + ' PASS / ' + fail + ' FAIL');
 process.exit(fail ? 1 : 0);
+
+

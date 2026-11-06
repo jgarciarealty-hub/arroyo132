@@ -1,4 +1,4 @@
-// Editar gasto: guardar sin cambios deja el gasto IDENTICO campo por campo; metodo/categoria/lote desconocidos se conservan (2026-11-01).
+﻿// Editar gasto: guardar sin cambios deja el gasto IDENTICO campo por campo; metodo/categoria/lote desconocidos se conservan (2026-11-01).
 // Funciones REALES (editarGasto, guardarEdicionGasto, asegurarOpcionSelect, escHtml, openModal) extraidas de index.html; DOM minimo simulado
 // con la semantica de <select> del navegador (valor inexistente => ninguna opcion seleccionada => value ''). Solo lectura de la copia respaldada.
 // Uso: node tests/verificacion_edicion_gasto.test.js   (incluye mutaciones sobre copias temporales)
@@ -72,7 +72,8 @@ function editar(g, cambios = {}) {
   return ctx;
 }
 const clon = o => JSON.parse(JSON.stringify(o));
-const iguales = (a, b) => JSON.stringify(a) === JSON.stringify(b);   // incluye el orden de claves
+const sinSello = (o) => { if (o === undefined || o === null) return o; const c = JSON.parse(JSON.stringify(o)); if (c && typeof c === 'object') delete c.modificado; return c; };
+const iguales = (a, b) => JSON.stringify(sinSello(a)) === JSON.stringify(sinSello(b));   // incluye el orden de claves (sin el sello O1)
 
 // -- 1. ida y vuelta sin cambios de TODOS los gastos reales -------------------
 const cuentaM = {}; REAL.forEach(g => cuentaM[g.metodo] = (cuentaM[g.metodo] || 0) + 1);
@@ -142,3 +143,5 @@ if (!process.env.A132_HTML) {
 }
 console.log(`\n${pass} PASS / ${fail} FAIL`);
 process.exit(fail ? 1 : 0);
+
+

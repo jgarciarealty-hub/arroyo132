@@ -1,4 +1,4 @@
-// Coincidencia recibo ↔ gasto existente, asociación sin duplicar y varios documentos por gasto (2026-11-01).
+﻿// Coincidencia recibo ↔ gasto existente, asociación sin duplicar y varios documentos por gasto (2026-11-01).
 // Funciones REALES extraídas de index.html, Drive simulado con bytes reales, DOM mínimo simulado. Sin red, sin IA, sin Drive real.
 // Uso: node tests/verificacion_coincidencia_recibos.test.js        (incluye mutaciones sobre copias temporales)
 //      A132_HTML=<ruta> node tests/...                              (usado por las mutaciones)
@@ -98,7 +98,7 @@ const nombres = ['md5Hex', 'sha256Hex', 'extensionDe', 'verificarCargaOriginal',
   'docRefValido', 'listarDocumentos', 'sinHistorico', 'aplicarReferencia', 'gastoDeClave', 'clavesPendDeGasto', 'documentosDeGasto',
   '_esperar', '_estadoAsociacion', 'vigilarAsociacion', '_btnUnico', 'tokensProveedor', 'proveedorContenido', 'distanciaLev', 'similitudProveedor', 'diasEntreFechas', 'buscarGastoCoincidente', 'asociarOriginalAGasto', '_btnCoinc', '_lineaGasto', 'cerrarCoincidencia', 'mostrarCoincidencia', 'terminarAsociacion',
   'verReciboOriginal', 'pintarOtrosDocumentos', 'eliminarGasto'];
-vm.runInContext("const RECIBOS_KEY='a132_recibos', RECIBOS_PEND_KEY='a132_recibos_pend', RECIBOS_CARPETA_KEY='a132_recibos_carpeta', RECIBOS_CARPETA_NOMBRE='Arroyo 132 — Recibos originales'; const DRIVE_CAMPOS_ARCHIVO='id,name,size,md5Checksum,webViewLink,appProperties'; var _archivoOriginal=null; var _colaOriginalesEnCurso=false; var _pendMemoria={}; var _pendMemoriaAutoritativa=false; " + script.match(/^var _esperaColaMs=.*;$/m)[0] + " var _adjuntando={};\n"
+vm.runInContext("const RECIBOS_KEY='a132_recibos', RECIBOS_PEND_KEY='a132_recibos_pend', RECIBOS_CARPETA_KEY='a132_recibos_carpeta', RECIBOS_CARPETA_NOMBRE='Arroyo 132 — Recibos originales'; const DRIVE_CAMPOS_ARCHIVO='id,name,size,md5Checksum,webViewLink,appProperties'; var _archivoOriginal=null; var _colaOriginalesEnCurso=false; var _pendMemoria={}; var _pendMemoriaAutoritativa=false; var tombGastos=[]; function borrarRegistro(){} function persistirTombstones(){} " + script.match(/^var _esperaColaMs=.*;$/m)[0] + " var _adjuntando={};\n"
   + constante('PROV_RUIDO') + '\n' + constante('_cents') + '\n' + nombres.map(extraer).join('\n'), ctx);
 const R = n => vm.runInContext(n, ctx);
 const archivo = (bytes, name = 'r.jpg', type = 'image/jpeg') => new File([bytes], name, { type });
@@ -351,3 +351,4 @@ const ids = r => r.candidatos.map(c => c.gasto.id);
   console.log(`\nMutaciones: ${mutaciones.length - vivos}/${mutaciones.length} detectadas`);
   process.exit(fail || vivos ? 1 : 0);
 })().catch(e => { console.log('ERROR', e && e.stack || e); process.exit(2); });
+

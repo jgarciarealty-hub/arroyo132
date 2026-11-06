@@ -1693,6 +1693,62 @@ function esSemilla(g){
   if(cambio) try{localStorage.setItem('a132_gastos',JSON.stringify(gastos));}catch(e){}
 })();
 let fotos  = (()=>{ try{ return JSON.parse(localStorage.getItem('a132_fotos')||'{}'); }catch(e){ return {}; } })();
+
+// ─────────── PROPAGACIÓN DE BORRADOS (port O1, 2026-11-05) ───────────
+// Borrar era un filter sin rastro: el otro equipo seguía teniéndolo y la fusión lo devolvía.
+// Ahora cada gasto lleva `modificado` (al crear y al editar) y borrar deja una LÁPIDA
+// {id, borrado:true, modificado} que viaja en el respaldo. Con el mismo id gana el modificado
+// mayor; una lápida que gana oculta el registro y su foto. Sin lápida no hay intención de
+// borrado, así que un respaldo antiguo no puede borrar nada.
+let tombGastos = (()=>{ try{ const a=JSON.parse(localStorage.getItem('a132_tomb_gastos')||'[]'); return Array.isArray(a)?a.filter(t=>t&&t.borrado===true):[]; }catch(e){ return []; } })();
+const TOMB_RETENCION_DIAS = 90;
+function selloModificado(){ return new Date().toISOString(); }
+function msDe(reg){ if(!reg||typeof reg!=='object') return NaN; const m=reg.modificado; if(!m) return NaN; const t=Date.parse(m); return isFinite(t)?t:NaN; }
+function esTombstone(reg){ return !!(reg && typeof reg==='object' && reg.borrado===true); }
+function anotarTombstone(mapa, reg){
+  if(!reg || reg.id===undefined || reg.id===null) return;
+  const k=String(reg.id); const previo=mapa.get(k); const t=msDe(reg);
+  if(!previo || (isFinite(t) && (!isFinite(msDe(previo)) || t>msDe(previo)))) mapa.set(k, {id:reg.id, borrado:true, modificado:reg.modificado});
+}
+function mapaTombstones(listas){
+  const m=new Map();
+  (Array.isArray(listas)?listas:[listas]).forEach(l=>{
+    if(Array.isArray(l)) l.forEach(t=>{ if(esTombstone(t)) anotarTombstone(m,t); });
+    else if(esTombstone(l)) anotarTombstone(m,l);
+  });
+  return m;
+}
+function listaTombstones(mapa){ return [...mapa.values()].map(t=>({id:t.id,borrado:true,modificado:t.modificado})); }
+function tombGana(tomb, reg){
+  if(!tomb) return false;
+  const tt=msDe(tomb); if(!isFinite(tt)) return false;
+  const tr=msDe(reg); if(!isFinite(tr)) return true;   // sin sello: la lápida lo oculta
+  return tt>=tr;
+}
+function compararRegistros(local, remoto){
+  const ml=msDe(local), mr=msDe(remoto);
+  if(!isFinite(ml) && !isFinite(mr)) return 0;
+  if(!isFinite(ml)) return 1;
+  if(!isFinite(mr)) return -1;
+  return mr>ml ? 1 : (mr<ml ? -1 : 0);
+}
+function persistirTombstones(){ try{ localStorage.setItem('a132_tomb_gastos', JSON.stringify(tombGastos)); }catch(e){} }
+function marcarBorrado(lista, id){
+  const k=String(id);
+  lista = lista.filter(t=>String(t.id)!==k);
+  lista.push({id:id, borrado:true, modificado:selloModificado()});
+  return lista;
+}
+function borrarRegistro(id){ tombGastos = marcarBorrado(tombGastos, id); persistirTombstones(); }
+setTimeout(()=>{ try{ purgarTombstones(); }catch(e){} }, 1200);
+function purgarTombstones(){
+  const limite = Date.now() - TOMB_RETENCION_DIAS*24*60*60*1000;
+  const conservar = (t) => { const tt=msDe(t); if(!isFinite(tt)) return true; if(tt>=limite) return true; return gastos.some(v=>v && String(v.id)===String(t.id)); };
+  const antes=tombGastos.length;
+  tombGastos = tombGastos.filter(conservar);
+  if(tombGastos.length!==antes) persistirTombstones();
+  return { liberadas: antes-tombGastos.length };
+}
 let servicios = JSON.parse(localStorage.getItem('a132_servicios')||'null') || {
   '132A': {
     AAA: [
@@ -2178,7 +2234,8 @@ function guardarGasto(btn){
     tipo:'manual',
     es_abono:esAbono,
     cuenta:esAbono?(cuentaNombre||document.getElementById('f-cont').value.trim()):'',
-    monto_total:esAbono?montoTotal:0
+    monto_total:esAbono?montoTotal:0,
+    modificado:new Date().toISOString()   // O1: sello al crear
   });
   if(_fotoSmall){ fotos[nuevoId]=_fotoSmall; if(typeof FOTOS_IDB_ACTIVO!=='undefined' && FOTOS_IDB_ACTIVO && typeof fotosGuardar==='function') fotosGuardar(nuevoId,_fotoSmall); }
   // El gasto solo cuenta como guardado si la persistencia local tuvo éxito. Si la cuota
@@ -3493,7 +3550,9 @@ function eliminarGasto(id){
   gastos=gastos.filter(g=>g.id!==id);
   // Primero se persiste el borrado del gasto. Si la cuota lo impide, no se toca ningún
   // original local ni la cola: el usuario puede liberar espacio y reintentar.
-  if(!guardarConAviso()){ gastos=antes; return; }
+  const tombAntes=tombGastos.slice();
+  borrarRegistro(id);                       // O1: la lápida viaja en el respaldo
+  if(!guardarConAviso()){ gastos=antes; tombGastos=tombAntes; persistirTombstones(); return; }
   delete fotos[id]; fotoHashBorrar(id); if(typeof FOTOS_IDB_ACTIVO!=='undefined' && FOTOS_IDB_ACTIVO && typeof fotosBorrar==='function') fotosBorrar(id);
   { const p=leerRecibosPend(), ks=clavesPendDeGasto(id); ks.forEach(k=>origBorrar(k)); origBorrar(id); ks.forEach(k=>{ delete p[k]; }); if(ks.length) guardarRecibosPend(p); }   // Drive no se toca
   closeModal();renderHistorial();renderDashboard();
@@ -3572,6 +3631,7 @@ function guardarEdicionGasto(id){
   if(monto!==g.monto) g.monto=monto;
   const descNueva=document.getElementById('e-desc').value.trim();
   if(descNueva!==String(g.descripcion||'').trim()) g.descripcion=descNueva;
+  if(JSON.stringify(g)!==JSON.stringify(antes)) g.modificado=new Date().toISOString();   // O1: sello solo si hubo cambio
   if(!guardarConAviso()){ Object.assign(g,antes); return; }
   closeModal();renderHistorial();renderDashboard();
   alert('✅ Gasto actualizado.');
@@ -4994,9 +5054,13 @@ async function backupToDrive(mostrarFeedback=false){
         return;
       }
     }
+    // Un gasto oculto por una lápida más reciente NO es una pérdida: es un borrado intencional.
+    const tombCombinado = mapaTombstones(combinado.tombGastos || []);
     const faltantes = []
       .concat((remoto && Array.isArray(remoto.gastos)) ? remoto.gastos : [], gastos)
-      .filter(g=>g && typeof g==='object' && !idsCombinado.has(String(g.id)) && !clavesCombinado.has(claveContenido(g)));
+      .filter(g=>g && typeof g==='object'
+        && !(tombCombinado.has(String(g.id)) && tombGana(tombCombinado.get(String(g.id)), g))
+        && !idsCombinado.has(String(g.id)) && !clavesCombinado.has(claveContenido(g)));
     if(faltantes.length) throw new Error('el combinado perdería '+faltantes.length+' gasto(s); no se sube');
     const idArchivo = await driveSubir(DRIVE_FILE_NAME, JSON.stringify(combinado), token, DRIVE_FILE_KEY);
     // Verificación por lectura: un HTTP 200 no prueba que el contenido quedó bien. Se vuelve a
@@ -5050,9 +5114,10 @@ function claveContenido(g){
   return normalizarTexto(g.contratista)+'|'+(g.fecha||'')+'|'+Math.round((Number(g.monto)||0)*100);
 }
 
-function fusionarGastos(locales, remotos){
+function fusionarGastos(locales, remotos, tombstones){
   const localesArr = Array.isArray(locales)?locales:[];
   const remotosArr  = Array.isArray(remotos)?remotos:[];
+  const tumbras = mapaTombstones(tombstones||[]);
   const idsLocales  = new Set(localesArr.map(g=>String(g.id)));
   const porClave    = new Map();
   localesArr.forEach(g=>{ const k=claveContenido(g); if(!porClave.has(k)) porClave.set(k,[]); porClave.get(k).push(g); });
@@ -5065,6 +5130,8 @@ function fusionarGastos(locales, remotos){
 
   remotosArr.forEach(r=>{
     if(r === null || typeof r !== 'object') return;      // registro corrupto: se ignora, no rompe
+    // Una lápida más reciente que el registro remoto lo oculta (borrado que viaja).
+    if(tumbras.has(String(r.id)) && tombGana(tumbras.get(String(r.id)), r)) return;
     if(idsLocales.has(String(r.id))){                    // mismo id
       const gemelo = salida.find(l=>String(l.id)===String(r.id));
       // Una semilla SIN TOCAR cede ante el dato real del respaldo. Antes se conservaba la
@@ -5072,6 +5139,12 @@ function fusionarGastos(locales, remotos){
       if(gemelo && esSemilla(gemelo) && !esSemilla(r) && JSON.stringify(gemelo)!==JSON.stringify(r)){
         const i = salida.findIndex(l=>String(l.id)===String(r.id));
         if(i>=0){ salida[i]=r; semillasReemplazadas.push({ id:r.id, semilla:gemelo, real:r }); }
+        return;
+      }
+      // O1: con sello en ambos lados gana el más reciente (una edición no se pierde por un empate).
+      if(gemelo && compararRegistros(gemelo, r) === 1){
+        const i = salida.findIndex(l=>String(l.id)===String(r.id));
+        if(i>=0){ salida[i]=r; }
         return;
       }
       if(JSON.stringify(gemelo)!==JSON.stringify(r)) conflictos.push({ id:r.id, local:gemelo, remoto:r });
@@ -5085,7 +5158,10 @@ function fusionarGastos(locales, remotos){
     if(parecidos.length) posiblesDuplicados.push({ nuevo:r, parecidos });
   });
 
-  return { gastos: salida, agregados, posiblesDuplicados, conflictos, semillasReemplazadas };
+  // Una lápida también oculta un registro que sigue existiendo en ESTE equipo: así el borrado
+  // hecho en el otro dispositivo se aplica aquí al restaurar. Sin esto, el local lo conservaba.
+  const visibles = salida.filter(g => !(tumbras.has(String(g.id)) && tombGana(tumbras.get(String(g.id)), g)));
+  return { gastos: visibles, agregados, posiblesDuplicados, conflictos, semillasReemplazadas };
 }
 
 // Unión de referencias de recibos entre dos dispositivos. Reutiliza la unión por documento
@@ -5109,7 +5185,7 @@ function unirRecibosFusion(local, remoto){
 // Fusiona el estado COMPLETO de dos fuentes (para el respaldo combinado y para restaurar).
 function fusionarEstado(local, remoto){
   const r = (remoto && typeof remoto === 'object') ? remoto : {};
-  const f = fusionarGastos(local.gastos, r.gastos);
+  const f = fusionarGastos(local.gastos, r.gastos, [local.tombGastos, r.tombGastos]);
 
   const vLocales = Array.isArray(local.viajes) ? local.viajes : [];
   const idsViaje = new Set(vLocales.map(v=>String(v.id)));
@@ -5129,8 +5205,10 @@ function fusionarEstado(local, remoto){
   // Referencias a originales en Drive: unión por documento; el principal local se conserva,
   // pero los adicionales/reemplazados del otro dispositivo no se pierden.
   const recibosFusion = unirRecibosFusion(local.recibos, r.recibos);
+  const tombFusion = mapaTombstones([local.tombGastos, r.tombGastos]);
   return {
     gastos: f.gastos, viajes: vLocales.concat(vNuevos), fotos: fotosFusion, recibos: recibosFusion,
+    tombGastos: listaTombstones(tombFusion),
     agregados: f.agregados, viajesAgregados: vNuevos.length,
     posiblesDuplicados: f.posiblesDuplicados, conflictos: f.conflictos, divergentes,
     semillasReemplazadas: f.semillasReemplazadas || [],
@@ -5161,8 +5239,9 @@ async function restaurarDesdeDrive(){
   if(Object.keys(fusion.fotos||{}).length) lineas.push('ℹ️ Las miniaturas son solo vista previa; no se guardan como almacén independiente. Los originales siguen en Drive/IndexedDB.');
   if(!confirm('☁️ Traer datos desde Google Drive\n\n'+lineas.join('\n')+'\n\n¿Continuar?')) return;
 
-  const antes={gastos,viajes,fotos,docs,timeline,presupuesto,recibos:leerRecibos()};
+  const antes={gastos,viajes,fotos,docs,timeline,presupuesto,recibos:leerRecibos(),tombGastos:tombGastos.slice()};
   gastos   = fusion.gastos;
+  tombGastos=(fusion.tombGastos||[]).slice(); persistirTombstones();
   viajes   = fusion.viajes;
   fotos    = fusion.fotos; if(typeof FOTOS_IDB_ACTIVO!=='undefined' && FOTOS_IDB_ACTIVO && typeof fotosVolcar==='function') fotosVolcar(fotos);
   guardarRecibos(fusion.recibos);   // referencias a originales en Drive (unión, nunca se pierde una)
@@ -5175,6 +5254,7 @@ async function restaurarDesdeDrive(){
   }
   if(!guardarConAviso()){
     ({gastos,viajes,fotos,docs,timeline,presupuesto}=antes);
+    tombGastos=antes.tombGastos||[]; persistirTombstones();
     try{ guardarRecibos(antes.recibos); }catch(e){}
     return;
   }
@@ -5198,6 +5278,7 @@ function contenidoBackup(){
     fecha: new Date().toISOString(),
     dispositivo: deviceId(),
     gastos, servicios, contratistas, viajes, fotos, docs, timeline, presupuesto,
+    tombGastos,               // lápidas de borrado (viajan para no resucitar gastos)
     recibos: leerRecibos(),   // referencias verificadas a los originales en Drive
     tucoop: (typeof tuCoop!=='undefined'?tuCoop:null),
     fin: (()=>{ try{ return JSON.parse(localStorage.getItem('a132_fin')||'null'); }catch(e){ return null; } })(),
@@ -5234,8 +5315,9 @@ function importarBackup(){
       if(fusion.semillasReemplazadas.length) avisos.push('✅ '+fusion.semillasReemplazadas.length+' registro(s) de recuperación serán sustituidos por los datos reales del respaldo.');
       if(Object.keys(fusion.fotos||{}).length) avisos.push('ℹ️ Las miniaturas son solo vista previa; no se guardan como almacén independiente. Los originales siguen en Drive/IndexedDB.');
       if(!confirm(`📂 Importar respaldo local\n\nArchivo: ${file.name}\nGastos aquí: ${gastos.length}\nGastos en el archivo: ${data.gastos.length}\nSe añadirían ${fusion.agregados} gasto(s) y ${fusion.viajesAgregados} viaje(s). NADA se borra.\n\n${avisos.join('\n')}\n\n¿Continuar?`)) return;
-      const antes={gastos,viajes,fotos,docs,timeline,presupuesto,recibos:leerRecibos()};
+      const antes={gastos,viajes,fotos,docs,timeline,presupuesto,recibos:leerRecibos(),tombGastos:tombGastos.slice()};
       gastos=fusion.gastos;
+      tombGastos=(fusion.tombGastos||[]).slice(); persistirTombstones();
       viajes=fusion.viajes;
       fotos=fusion.fotos; if(typeof FOTOS_IDB_ACTIVO!=='undefined' && FOTOS_IDB_ACTIVO && typeof fotosVolcar==='function') fotosVolcar(fotos);
       guardarRecibos(fusion.recibos);
@@ -5245,6 +5327,7 @@ function importarBackup(){
       }
       if(!guardarConAviso()){
         ({gastos,viajes,fotos,docs,timeline,presupuesto}=antes);
+        tombGastos=antes.tombGastos||[]; persistirTombstones();
         try{ guardarRecibos(antes.recibos); }catch(e){}
         return;
       }
