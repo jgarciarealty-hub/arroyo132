@@ -2994,7 +2994,7 @@ async function verReciboOriginal(id){
     }catch(e){ cont.textContent=''; const d=document.createElement('div'); d.style.cssText='padding:12px;font-size:12px;color:var(--gray)'; d.textContent='⚠️ No se pudo abrir el recibo original: '+String(e.message||e); cont.appendChild(d); return; }
   } else {
     cont.textContent=''; const d=document.createElement('div'); d.style.cssText='padding:12px;font-size:12px;color:var(--gray);background:rgba(255,255,255,0.03);border-radius:8px;border:1px dashed rgba(201,168,76,0.2)';
-    d.textContent=textoSinOriginal(id)+' (Solo la miniatura, si la hay.)'; cont.appendChild(d); return;
+    d.textContent='No hay una copia para mostrar aquí. Si el recibo está vinculado en otro equipo, conecta Google Drive para traer la referencia; si no, usa «📎 Adjuntar recibo original».'; cont.appendChild(d); return;
   }
   const url=URL.createObjectURL(blob);
   setTimeout(()=>{ try{ URL.revokeObjectURL(url); }catch(e){} }, 10*60*1000);
@@ -4797,7 +4797,7 @@ function driveAction(){
     backupToDrive(true);
   } else {
     // Conectar (interactivo: aquí sí se puede abrir la ventana de Google)
-    asegurarTokenDrive(true).then(t=>{ if(t) updateDriveBtn('✅'); });
+    asegurarTokenDrive(true).then(async t=>{ if(t){ updateDriveBtn('✅'); try{ await adoptarReferenciasDeDrive(); }catch(e){} } });
   }
 }
 
@@ -5352,6 +5352,7 @@ function importarBackup(){
 // Reintento automático del respaldo pendiente. Si el teléfono recupera señal o la sesión de
 // Google se renueva, los cambios sin respaldar se suben solos en cuanto la app vuelve a estar
 // en primer plano. No se pierde nada mientras tanto: los datos viven en localStorage.
+let _avisoRefsMostrado=false;
 // Trae del combinado las referencias de recibos que falten en este dispositivo. Solo une.
 async function adoptarReferenciasDeDrive(){
   const token=localStorage.getItem(DRIVE_TOKEN_KEY); if(!token || !driveTokenValid()) return false;
@@ -5359,7 +5360,10 @@ async function adoptarReferenciasDeDrive(){
   if(!remoto || !remoto.recibos) return false;
   const locales=leerRecibos(), unidos=unirRecibosFusion(locales, remoto.recibos);
   if(JSON.stringify(unidos)===JSON.stringify(locales)) return false;
-  if(!guardarRecibos(unidos)) return false;
+  if(!guardarRecibos(unidos)){
+    if(!_avisoRefsMostrado){ _avisoRefsMostrado=true; try{ alert('⚠️ Drive tiene referencias de recibos que este dispositivo aún no tiene, pero no se pudieron guardar (almacenamiento lleno). Libera espacio con «🧹 Liberar miniaturas históricas» y vuelve a abrir la app.'); }catch(e){} }
+    return false;
+  }
   try{ refrescarPanelRespaldo(); }catch(e){}
   return true;
 }

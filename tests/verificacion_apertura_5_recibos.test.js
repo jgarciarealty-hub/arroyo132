@@ -1,4 +1,4 @@
-// Validación local de apertura de los CINCO recibos desde sus gastos.
+﻿// Validación local de apertura de los CINCO recibos desde sus gastos.
 // Usa el código REAL de index.html (verReciboOriginal) y las 5 referencias externas reales
 // (ids y driveId leídos del central/combinado el 2026-11-03). No abre Google Drive ni usa red:
 // comprueba que el botón «Ver recibo original» de cada gasto construye el enlace correcto.
@@ -99,8 +99,9 @@ function sembrar(refs) {
   dom['orig-recibo-700002'] = new El('div');
   await R('verReciboOriginal("700002")');
   test('un gasto sin recibo vinculado no genera enlace', enlaces(dom['orig-recibo-700002']).length === 0);
-  test('un gasto sin recibo vinculado lo dice', /Sin recibo original/.test(dom['orig-recibo-700002'].textContent), dom['orig-recibo-700002'].textContent);
+  test('un gasto sin recibo vinculado lo dice sin repetir la ficha', /No hay una copia para mostrar aquí/.test(dom['orig-recibo-700002'].textContent), dom['orig-recibo-700002'].textContent);
 
   console.log('\n' + pass + ' pasaron, ' + fail + ' fallaron');
   process.exit(fail ? 1 : 0);
 })().catch((e) => { console.error('ERROR FATAL:', e); process.exit(1); });
+
