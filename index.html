@@ -2669,8 +2669,24 @@ function guardarRecibos(o){
 // Al arrancar: recuperar de IndexedDB lo que no esté en localStorage y reintentar copiarlo allí.
 (async function hidratarRefsIDB(){
   try{
+    // La fuente central es la dueña de las referencias: hidratar por encima de ella podría
+    // reintroducir una referencia que el central ya reemplazó o retiró.
+    // Se lee la BANDERA directamente: modoCentral() depende de CENTRAL_FLAG (const) y durante la
+    // evaluación del script aún no existe (TDZ) → devolvería false y hidrataría en modo central.
+    let flagCentral=false; try{ flagCentral = localStorage.getItem('a132_central')==='1'; }catch(e){}
+    if(flagCentral) return;
     const guardadas=await refsLeerIDB(); if(!guardadas || !Object.keys(guardadas).length) return;
-    const locales=leerRecibos(), unidas=unirRecibosFusion(locales, guardadas);
+    // Borrados: una lápida sin gasto vivo significa que ese gasto ya no existe; su referencia
+    // no debe resucitar desde IndexedDB. Con gasto vivo (re-creado) la referencia sí vale.
+    const vivas={};
+    Object.keys(guardadas).forEach(function(k){
+      const conLapida = (typeof tombGastos!=='undefined' && Array.isArray(tombGastos)) && tombGastos.some(function(t){ return t && String(t.id)===String(k); });
+      const conGasto  = (typeof gastos!=='undefined' && Array.isArray(gastos)) && gastos.some(function(g){ return g && String(g.id)===String(k); });
+      if(conLapida && !conGasto) return;
+      vivas[k]=guardadas[k];
+    });
+    if(!Object.keys(vivas).length) return;
+    const locales=leerRecibos(), unidas=unirRecibosFusion(locales, vivas);
     if(JSON.stringify(unidas)===JSON.stringify(locales)) return;
     _refsMemoria=unidas; _refsMemoriaAutoritativa=true;
     if(escribirVerificado(RECIBOS_KEY,unidas)){ _refsMemoria={}; _refsMemoriaAutoritativa=false; }
@@ -5780,5 +5796,6 @@ document.addEventListener('visibilitychange',()=>{ if(document.visibilityState==
 </script>
 </body>
 </html>
+
 
 
