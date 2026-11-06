@@ -2626,7 +2626,19 @@ const RECIBOS_CARPETA_NOMBRE='Arroyo 132 — Recibos originales';
 function docRefValido(v){ return !!(v && typeof v==='object' && ((typeof v.driveId==='string' && typeof v.sha256==='string') || (v.origen==='externo' && Array.isArray(v.docs)))); }
 // Una referencia puede llevar `adicionales[]` (documentos extra) y `reemplazados[]` (histórico de principales anteriores): se conservan siempre; lo que no sea una referencia válida se descarta.
 function limpiarRecibos(o){ const s={}; if(o && typeof o==='object' && !Array.isArray(o)) Object.keys(o).forEach(k=>{ const v=o[k]; if(docRefValido(v)){ if(v.adicionales===undefined && v.reemplazados===undefined){ s[k]=v; return; } const c=Object.assign({},v); ['adicionales','reemplazados'].forEach(f=>{ if(c[f]!==undefined){ if(Array.isArray(c[f])) c[f]=c[f].filter(docRefValido); else delete c[f]; } }); s[k]=c; } }); return s; }
-function leerRecibos(){ try{ const o=JSON.parse(localStorage.getItem(RECIBOS_KEY)||'{}'); return (o&&typeof o==='object')?o:{}; }catch(e){ return {}; } }
+// ── Referencias de recibos: respaldo en IndexedDB (2026-11-06) ─────────────────────────
+// Las referencias son ~1 KB, pero si localStorage está saturado ni eso cabe y el recibo deja de
+// verse. IndexedDB tiene cuota propia y ya se usa para las copias temporales: aquí guarda SOLO el
+// mapa de referencias (no documentos). Si localStorage vuelve a admitir escrituras, se copia allí.
+let _refsMemoria={}, _refsMemoriaAutoritativa=false, _ultimoErrorAlmacen='';
+const REFS_DB='a132_refs_db', REFS_STORE='refs', REFS_KEY='mapa';
+function refsAbrir(){ return new Promise((res,rej)=>{ if(typeof indexedDB==='undefined'){ rej(new Error('sin IndexedDB')); return; } const rq=indexedDB.open(REFS_DB,1); rq.onupgradeneeded=()=>{ const db=rq.result; if(!db.objectStoreNames.contains(REFS_STORE)) db.createObjectStore(REFS_STORE); }; rq.onsuccess=()=>res(rq.result); rq.onerror=()=>rej(rq.error||new Error('no se pudo abrir la base de referencias')); }); }
+async function refsGuardarIDB(obj){ try{ const db=await refsAbrir(); await new Promise((res,rej)=>{ const tx=db.transaction(REFS_STORE,'readwrite'); tx.objectStore(REFS_STORE).put(obj,REFS_KEY); tx.oncomplete=()=>res(); tx.onerror=()=>rej(tx.error||new Error('IDB error')); tx.onabort=()=>rej(tx.error||new Error('IDB abort')); }); db.close(); return true; }catch(e){ return false; } }
+async function refsLeerIDB(){ try{ const db=await refsAbrir(); const v=await new Promise((res,rej)=>{ const tx=db.transaction(REFS_STORE,'readonly'); const rq=tx.objectStore(REFS_STORE).get(REFS_KEY); rq.onsuccess=()=>res(rq.result); rq.onerror=()=>rej(rq.error); }); db.close(); return (v&&typeof v==='object')?v:null; }catch(e){ return null; } }
+function leerRecibos(){
+  if(typeof _refsMemoriaAutoritativa!=='undefined' && _refsMemoriaAutoritativa) return Object.assign({}, _refsMemoria);
+  try{ const o=JSON.parse(localStorage.getItem(RECIBOS_KEY)||'{}'); return (o&&typeof o==='object')?o:{}; }catch(e){ return {}; }
+}
 let _pendMemoria={}, _pendMemoriaAutoritativa=false;
 function leerRecibosPend(){
   // Si la última escritura de la cola falló por cuota, `_pendMemoria` es la copia completa
@@ -2637,8 +2649,35 @@ function leerRecibosPend(){
   const m=(typeof _pendMemoria!=='undefined')?_pendMemoria:{};
   try{ const o=JSON.parse(localStorage.getItem(RECIBOS_PEND_KEY)||'{}'); return Object.assign({}, (o&&typeof o==='object')?o:{}, m); }catch(e){ return Object.assign({}, m); }
 }
-function escribirVerificado(k,o){ try{ const s=JSON.stringify(o); localStorage.setItem(k,s); return localStorage.getItem(k)===s; }catch(e){ return false; } }
-function guardarRecibos(o){ return escribirVerificado(RECIBOS_KEY,o); }
+function escribirVerificado(k,o){ try{ const s=JSON.stringify(o); localStorage.setItem(k,s); return localStorage.getItem(k)===s; }catch(e){ _ultimoErrorAlmacen=(e&&e.name)||'error'; return false; } }
+// Guarda las referencias. Si localStorage no las admite, manda la copia en memoria y se persisten
+// en IndexedDB (asíncrono). Devuelve false solo si tampoco hay IndexedDB.
+function guardarRecibos(o){
+  const ok=escribirVerificado(RECIBOS_KEY,o);
+  if(ok){
+    try{ if(typeof _refsMemoria!=='undefined'){ _refsMemoria={}; _refsMemoriaAutoritativa=false; } }catch(e){}
+    try{ if(typeof refsGuardarIDB==='function') refsGuardarIDB(o); }catch(e){}
+    return true;
+  }
+  if(typeof _refsMemoria==='undefined' || typeof refsGuardarIDB!=='function') return false;   // entorno sin los ayudantes (pruebas)
+  _refsMemoria=Object.assign({},o);
+  _refsMemoriaAutoritativa=true;
+  if(typeof indexedDB==='undefined') return false;
+  refsGuardarIDB(o).then((bien)=>{ if(!bien){ try{ marcarRespaldoPendiente('referencias de recibos solo en memoria: IndexedDB no admite la escritura ('+(_ultimoErrorAlmacen||'')+')'); }catch(e){} if(!_avisoRefsMostrado){ _avisoRefsMostrado=true; try{ alert('⚠️ Las referencias de recibos no se pudieron guardar ni en localStorage ni en IndexedDB.\\n\\nError real: '+(_ultimoErrorAlmacen||'desconocido')+'\\n\\nNo se borró nada. Las referencias siguen visibles en esta sesión; exporta un respaldo.'); }catch(e){} } } });
+  return true;
+}
+// Al arrancar: recuperar de IndexedDB lo que no esté en localStorage y reintentar copiarlo allí.
+(async function hidratarRefsIDB(){
+  try{
+    const guardadas=await refsLeerIDB(); if(!guardadas || !Object.keys(guardadas).length) return;
+    const locales=leerRecibos(), unidas=unirRecibosFusion(locales, guardadas);
+    if(JSON.stringify(unidas)===JSON.stringify(locales)) return;
+    _refsMemoria=unidas; _refsMemoriaAutoritativa=true;
+    if(escribirVerificado(RECIBOS_KEY,unidas)){ _refsMemoria={}; _refsMemoriaAutoritativa=false; }
+    try{ refrescarPanelRespaldo(); }catch(e){}
+    try{ renderHistorial(); }catch(e){}
+  }catch(e){}
+})();
 function guardarRecibosPend(o){
   // La cola es una caché: la fuente de recuperación son los ORIGINALES de IndexedDB. Si la
   // cuota impide escribirla, se conserva en memoria (reemplazo completo, para representar
@@ -5393,7 +5432,7 @@ async function adoptarReferenciasDeDrive(){
   const locales=leerRecibos(), unidos=unirRecibosFusion(locales, remoto.recibos);
   if(JSON.stringify(unidos)===JSON.stringify(locales)) return false;
   if(!guardarRecibos(unidos)){
-    if(!_avisoRefsMostrado){ _avisoRefsMostrado=true; try{ alert('⚠️ Drive tiene referencias de recibos que este dispositivo aún no tiene, pero no se pudieron guardar (almacenamiento lleno). Libera espacio con «🧹 Liberar miniaturas históricas» y vuelve a abrir la app.'); }catch(e){} }
+    if(!_avisoRefsMostrado){ _avisoRefsMostrado=true; try{ alert('⚠️ Drive tiene referencias de recibos que este dispositivo aún no tiene y no se pudieron guardar ni en localStorage ni en IndexedDB.\n\nError real: '+(_ultimoErrorAlmacen||'desconocido')+'\n\nNo se borró nada. Exporta un respaldo y libera miniaturas; si persiste, envía este mensaje.'); }catch(e){} }
     return false;
   }
   try{ refrescarPanelRespaldo(); }catch(e){}
@@ -5741,4 +5780,5 @@ document.addEventListener('visibilitychange',()=>{ if(document.visibilityState==
 </script>
 </body>
 </html>
+
 
