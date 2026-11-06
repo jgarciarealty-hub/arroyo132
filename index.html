@@ -4688,6 +4688,21 @@ const DRIVE_SCOPE      = 'openid email https://www.googleapis.com/auth/drive.fil
 const DRIVE_INDEX_NAME = 'arroyo132-dispositivos.json';
 const DEVICE_KEY       = 'a132_device_id';
 const CONFLICT_KEY     = 'a132_conflictos';
+// (2026-11-06) El token no debe depender del almacén de los datos. Si localStorage no admite la
+// escritura (cuota), se guarda en sessionStorage y estas mismas lecturas lo encuentran: ningún
+// llamador cambia y la sesión sigue viva mientras dure la pestaña (~58 min de token).
+(function(){
+  try{
+    const orig=Storage.prototype.getItem;
+    Storage.prototype.getItem=function(k){
+      let v=null; try{ v=orig.call(this,k); }catch(e){}
+      if(v===null && (k===DRIVE_TOKEN_KEY || k===DRIVE_EXPIRY_KEY)){
+        try{ const otro=(this===localStorage)?sessionStorage:localStorage; const w=otro.getItem(k); if(w!==null) return w; }catch(e){}
+      }
+      return v;
+    };
+  }catch(e){}
+})();
 const DRIVE_TOKEN_KEY  = 'a132_drive_token';
 const DRIVE_EXPIRY_KEY = 'a132_drive_expiry';
 const DRIVE_FILE_KEY   = 'a132_drive_file_id';        // id del archivo COMBINADO
@@ -4814,17 +4829,23 @@ function initDriveClient(){
       if(resp.access_token){
         // Guardar la sesión puede fallar por cuota. Antes la excepción mataba el callback: ni
         // aviso, ni conexión, ni respaldo — el ícono se quedaba en ⚠️ sin explicación.
-        let guardado=true;
+        const caduca=Date.now() + 3500 * 1000;
+        let guardado=true, destino='local', errorReal='';
         try{
           localStorage.setItem(DRIVE_TOKEN_KEY, resp.access_token);
-          localStorage.setItem(DRIVE_EXPIRY_KEY, String(Date.now() + 3500 * 1000));
-        }catch(e){ guardado=false; }
+          localStorage.setItem(DRIVE_EXPIRY_KEY, String(caduca));
+        }catch(e1){
+          errorReal=((e1&&e1.name)||'error');
+          try{ sessionStorage.setItem(DRIVE_TOKEN_KEY, resp.access_token); sessionStorage.setItem(DRIVE_EXPIRY_KEY, String(caduca)); destino='session'; }
+          catch(e2){ guardado=false; errorReal=((e2&&e2.name)||'error')+': '+((e2&&e2.message)||''); }
+        }
         if(!guardado){
           if(resolver) resolver(null);
-          marcarRespaldoPendiente('Google autorizó la cuenta, pero no se pudo guardar la sesión: almacenamiento lleno');
-          try{ alert('⚠️ Google autorizó la cuenta, pero no se pudo guardar la sesión en este dispositivo (almacenamiento lleno). Exporta un respaldo y libera espacio con «🧹 Liberar miniaturas históricas»; después vuelve a conectar tocando ☁️.'); }catch(e){}
+          marcarRespaldoPendiente('Google autorizó la cuenta, pero no se pudo guardar la sesión ('+errorReal+')');
+          try{ alert('⚠️ Google autorizó la cuenta, pero no se pudo guardar la sesión en este dispositivo.\n\nError real: '+errorReal+'\n\nNo se borró nada. Si el navegador está sin espacio, exporta un respaldo y libera miniaturas; si persiste, envía este mensaje.'); }catch(e){}
           return;
         }
+        if(destino==='session'){ try{ marcarRespaldoPendiente('sesión guardada solo en esta pestaña: localStorage no admite escrituras ('+errorReal+')'); }catch(e){} }
         updateDriveBtn('✅');
         if(resolver) resolver(resp.access_token);
         try{ backupToDrive(true); }catch(e){}
