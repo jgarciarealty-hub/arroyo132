@@ -4863,7 +4863,11 @@ function driveAction(){
     return;
   }
   if(driveTokenValid()){
-    // Ya conectado — hacer backup manual
+    // Ya conectado — hacer backup manual. Si hay uno en curso, se dice (antes: silencio total).
+    if(_respaldoEnCurso && _respaldoInicio && (Date.now()-_respaldoInicio) <= 120000){
+      alert('⏳ Ya hay un respaldo en curso. Espera unos segundos y vuelve a tocar ☁️.');
+      return;
+    }
     backupToDrive(true);
   } else {
     // Conectar (interactivo: aquí sí se puede abrir la ventana de Google)
@@ -4963,8 +4967,8 @@ function hayRespaldoPendiente(){ try{ return localStorage.getItem(DRIVE_PENDING_
 // sigue. Antes, un id obsoleto dejaba el respaldo roto para siempre.
 async function driveBuscarId(nombre, token){
   const q = "name='"+nombre+"' and trashed=false";
-  const search = await fetch('https://www.googleapis.com/drive/v3/files?q='+encodeURIComponent(q)+'&fields=files(id,name)',
-    { headers: { Authorization: 'Bearer '+token } });
+  const search = await fetchConTiempo('https://www.googleapis.com/drive/v3/files?q='+encodeURIComponent(q)+'&fields=files(id,name)',
+    { headers: { Authorization: 'Bearer '+token } }, 30000);
   if(!search.ok) throw new Error('búsqueda en Drive: HTTP '+search.status);
   const found = await search.json();
   return (found.files && found.files.length) ? found.files[0].id : null;
@@ -4974,20 +4978,20 @@ async function driveSubir(nombre, texto, token, claveId){
   let fileId = claveId ? localStorage.getItem(claveId) : null;
   if(!fileId) fileId = await driveBuscarId(nombre, token);
   if(fileId){
-    const r = await fetch('https://www.googleapis.com/upload/drive/v3/files/'+fileId+'?uploadType=media', {
-      method:'PATCH', headers:{ Authorization:'Bearer '+token, 'Content-Type':'application/json' }, body:texto });
+    const r = await fetchConTiempo('https://www.googleapis.com/upload/drive/v3/files/'+fileId+'?uploadType=media', {
+      method:'PATCH', headers:{ Authorization:'Bearer '+token, 'Content-Type':'application/json' }, body:texto }, 90000);
     if(r.ok){ if(claveId) localStorage.setItem(claveId, fileId); return fileId; }
     // El id guardado falló: se olvida y se intenta crear/buscar de nuevo una sola vez.
     if(claveId) localStorage.removeItem(claveId);
   }
-  const meta = await fetch('https://www.googleapis.com/drive/v3/files', {
+  const meta = await fetchConTiempo('https://www.googleapis.com/drive/v3/files', {
     method:'POST', headers:{ Authorization:'Bearer '+token, 'Content-Type':'application/json' },
-    body: JSON.stringify({ name:nombre, mimeType:'application/json' }) });
+    body: JSON.stringify({ name:nombre, mimeType:'application/json' }) }, 30000);
   const metaJson = await meta.json();
   if(!metaJson.id) throw new Error('no se pudo crear '+nombre+' en Drive');
   if(claveId) localStorage.setItem(claveId, metaJson.id);
-  const r2 = await fetch('https://www.googleapis.com/upload/drive/v3/files/'+metaJson.id+'?uploadType=media', {
-    method:'PATCH', headers:{ Authorization:'Bearer '+token, 'Content-Type':'application/json' }, body:texto });
+  const r2 = await fetchConTiempo('https://www.googleapis.com/upload/drive/v3/files/'+metaJson.id+'?uploadType=media', {
+    method:'PATCH', headers:{ Authorization:'Bearer '+token, 'Content-Type':'application/json' }, body:texto }, 90000);
   if(!r2.ok) throw new Error('subida a Drive ('+nombre+'): HTTP '+r2.status);
   return metaJson.id;
 }
@@ -4997,8 +5001,8 @@ async function driveSubir(nombre, texto, token, claveId){
 async function driveDescargar(nombre, token, claveId){
   const fileId = await driveBuscarId(nombre, token);
   if(!fileId) return null;                       // no existe: es un caso normal (primer respaldo)
-  const res = await fetch('https://www.googleapis.com/drive/v3/files/'+fileId+'?alt=media',
-    { headers: { Authorization:'Bearer '+token } });
+  const res = await fetchConTiempo('https://www.googleapis.com/drive/v3/files/'+fileId+'?alt=media',
+    { headers: { Authorization:'Bearer '+token } }, 60000);
   // El archivo EXISTE pero no se pudo leer: NO se devuelve null (eso haría creer que está vacío y un respaldo
   // lo sobrescribiría con menos datos). Se lanza error y el respaldo se aborta, visible y reintentable.
   if(!res.ok) throw new Error('no se pudo leer '+nombre+' en Drive (HTTP '+res.status+'); no se sobrescribe');
@@ -5020,7 +5024,7 @@ function registrarRespaldoLog(resultado, extra){
   }catch(e){}
 }
 async function driveLeerPorId(fileId, token){
-  const res = await fetch('https://www.googleapis.com/drive/v3/files/'+fileId+'?alt=media', { headers:{ Authorization:'Bearer '+token } });
+  const res = await fetchConTiempo('https://www.googleapis.com/drive/v3/files/'+fileId+'?alt=media', { headers:{ Authorization:'Bearer '+token } }, 60000);
   if(!res.ok) throw new Error('relectura de Drive: HTTP '+res.status);
   try{ return await res.json(); }catch(e){ throw new Error('relectura de Drive: contenido ilegible'); }
 }
@@ -5047,11 +5051,18 @@ function verificarEscrituraBackup(esperado, leido){
 }
 
 // Evita que dos guardados seguidos lancen dos respaldos a la vez (y que se pisen entre sí).
-let _respaldoEnCurso=false, _otroRespaldoPendiente=false;
+let _respaldoEnCurso=false, _otroRespaldoPendiente=false, _respaldoInicio=0;
 
 async function backupToDrive(mostrarFeedback=false){
-  if(_respaldoEnCurso){ _otroRespaldoPendiente=true; return; }   // el siguiente recoge los cambios
-  _respaldoEnCurso=true;
+  // Si un respaldo anterior se colgó (red móvil), el bloqueo quedaba puesto para siempre: el botón
+  // tocaba y no hacía nada. A los 2 minutos se considera abandonado y se permite reintentar.
+  if(_respaldoEnCurso){
+    if(_respaldoInicio && (Date.now()-_respaldoInicio) > 120000){
+      try{ registrarRespaldoLog('ABANDONADO', {motivo:'respaldo anterior sin terminar (>2 min); se reintenta'}); }catch(e){}
+      _respaldoEnCurso=false;
+    } else { _otroRespaldoPendiente=true; return; }
+  }
+  _respaldoEnCurso=true; _respaldoInicio=Date.now();
   try{
     // Renovación silenciosa: si el token venció (dura ~58 min) se renueva sin abrir ventana.
     let token = localStorage.getItem(DRIVE_TOKEN_KEY);
@@ -5183,7 +5194,7 @@ async function backupToDrive(mostrarFeedback=false){
     console.error('Drive backup error:', err);
     if(mostrarFeedback) alert('⚠️ No se pudo respaldar a Google Drive.\nTus datos están guardados en este dispositivo y se reintentará solo.\nMotivo: '+(err && err.message ? err.message : err));
   } finally {
-    _respaldoEnCurso=false;
+    _respaldoEnCurso=false; _respaldoInicio=0;
     if(_otroRespaldoPendiente){ _otroRespaldoPendiente=false; backupToDrive(false); }
   }
 }
