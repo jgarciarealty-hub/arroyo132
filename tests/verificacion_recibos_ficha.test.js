@@ -1,4 +1,4 @@
-// Ficha del gasto: adjuntar recibo original a gastos ya registrados (D1/D3) y mensaje de asociación honesto (D4).
+﻿// Ficha del gasto: adjuntar recibo original a gastos ya registrados (D1/D3) y mensaje de asociación honesto (D4).
 // Funciones REALES extraídas de index.html, Drive simulado, DOM mínimo. Sin red, sin IA, sin Drive real. Incluye mutaciones.
 // Uso: node tests/verificacion_coincidencia_recibos.test.js        (incluye mutaciones sobre copias temporales)
 //      A132_HTML=<ruta> node tests/...                              (usado por las mutaciones)
@@ -131,7 +131,7 @@ const ids = r => r.candidatos.map(c => c.gasto.id);
   const detalle = id => { R('showGastoDetail')(id); return ctx.__modal; };
   // ── D1/D3: texto y botón ───────────────────────────────────────────────────────
   let t = R('textoEstadoOriginal')(QID);
-  test('D1: gasto antiguo con archivos[] (metadatos) dice que el original NO está vinculado y nombra el archivo', /NO está vinculado/.test(t) && /A132-REC-033_QUALITYiS/.test(t) && /Adjuntar recibo original/.test(t), t);
+  test('D1: gasto antiguo con archivos[] (metadatos) dice que el original NO está vinculado y nombra el archivo', /no hay una referencia verificada/.test(t) && /A132-REC-033_QUALITYiS/.test(t) && /Adjuntar recibo original/.test(t), t);
   test('D1: gasto sin archivos ni recibo conserva el texto sin recibo', /Sin recibo original/.test(R('textoEstadoOriginal')(700010)));
   let m = detalle(QID);
   test('D3: la ficha de QUALITY iS ofrece «📎 Adjuntar recibo original» con input file image/pdf oculto', /Adjuntar recibo original/.test(m) && /type="file"[^>]*accept="image\/\*,application\/pdf"/.test(m) && m.includes('adjuntarReciboFicha(' + QID + ', this)'), m.slice(-700));
@@ -210,7 +210,7 @@ const ids = r => r.candidatos.map(c => c.gasto.id);
     ['doble clic: sin indicador de reentrada en adjuntar', ["if(_adjuntando[id]) return; _adjuntando[id]=true;", "_adjuntando[id]=true;"], ["  if(_adjuntando[id]) return;\n  const idEstado", "  const idEstado"]],
     ['espera de la cola de solo 30 s', "var _esperaColaMs=300000", "var _esperaColaMs=30000"],
     ['la ficha no se actualiza al terminar una subida tardía', "if(desdeFicha){ const el=document.getElementById(idEstado); if(el) el.textContent=aviso; vigilarAsociacion(gastoId,idEstado); }", "if(desdeFicha){ const el=document.getElementById(idEstado); if(el) el.textContent=aviso; }"],
-    ['D1: el texto no distingue metadatos de original', "el recibo original NO está vinculado a este gasto.", "Sin recibo."],
+    ['D1: el texto no distingue metadatos de original', "no hay una referencia verificada al recibo", "Sin recibo."],
   ];
   let vivos = 0;
   mutaciones.forEach(([nombre, de, a]) => {
@@ -225,3 +225,4 @@ const ids = r => r.candidatos.map(c => c.gasto.id);
   console.log(`\nMutaciones: ${mutaciones.length - vivos}/${mutaciones.length} detectadas`);
   process.exit(fail || vivos ? 1 : 0);
 })();
+

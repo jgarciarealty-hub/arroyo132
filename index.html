@@ -1,4 +1,4 @@
-<!DOCTYPE html>
+﻿<!DOCTYPE html>
 <html lang="es">
 <head>
 <meta charset="UTF-8">
@@ -2958,8 +2958,8 @@ function textoEstadoOriginalBase(id){
 function textoSinOriginal(id){
   const g=(typeof gastos!=='undefined'?gastos:[]).find(x=>String(x.id)===String(id));
   const nombres=g && Array.isArray(g.archivos) ? g.archivos.map(a=>a && a.nombre).filter(Boolean) : [];
-  if(nombres.length) return 'ℹ️ Este gasto solo tiene registrado el nombre del archivo ('+nombres.slice(0,3).map(n=>'«'+String(n).slice(0,60)+'»').join(', ')+'): el recibo original NO está vinculado a este gasto. Usa «📎 Adjuntar recibo original» para vincularlo.';
-  return 'Sin recibo original guardado para este gasto.';
+  if(nombres.length) return 'ℹ️ En este dispositivo no hay una referencia verificada al recibo (solo el nombre del archivo: '+nombres.slice(0,3).map(n=>'«'+String(n).slice(0,60)+'»').join(', ')+'). Si lo vinculaste en otro equipo, conecta Google Drive y trae los datos; si no, usa «📎 Adjuntar recibo original».';
+  return 'Sin recibo original en este dispositivo para este gasto.';
 }
 async function verReciboOriginal(id){
   const cont=document.getElementById('orig-recibo-'+id); if(!cont) return;
@@ -5686,3 +5686,4 @@ document.addEventListener('visibilitychange',()=>{ if(document.visibilityState==
 </script>
 </body>
 </html>
+
