@@ -4812,11 +4812,22 @@ function initDriveClient(){
       if(driveTokenTimer){ clearTimeout(driveTokenTimer); driveTokenTimer=null; }
       const resolver=driveOkCallback; driveOkCallback=null; driveErrCallback=null;
       if(resp.access_token){
-        localStorage.setItem(DRIVE_TOKEN_KEY, resp.access_token);
-        localStorage.setItem(DRIVE_EXPIRY_KEY, String(Date.now() + 3500 * 1000));
+        // Guardar la sesión puede fallar por cuota. Antes la excepción mataba el callback: ni
+        // aviso, ni conexión, ni respaldo — el ícono se quedaba en ⚠️ sin explicación.
+        let guardado=true;
+        try{
+          localStorage.setItem(DRIVE_TOKEN_KEY, resp.access_token);
+          localStorage.setItem(DRIVE_EXPIRY_KEY, String(Date.now() + 3500 * 1000));
+        }catch(e){ guardado=false; }
+        if(!guardado){
+          if(resolver) resolver(null);
+          marcarRespaldoPendiente('Google autorizó la cuenta, pero no se pudo guardar la sesión: almacenamiento lleno');
+          try{ alert('⚠️ Google autorizó la cuenta, pero no se pudo guardar la sesión en este dispositivo (almacenamiento lleno). Exporta un respaldo y libera espacio con «🧹 Liberar miniaturas históricas»; después vuelve a conectar tocando ☁️.'); }catch(e){}
+          return;
+        }
         updateDriveBtn('✅');
         if(resolver) resolver(resp.access_token);
-        backupToDrive(true);
+        try{ backupToDrive(true); }catch(e){}
         try{ procesarColaOriginales(); }catch(e){}   // recupera originales de IndexedDB al conectar Drive
       } else if(resolver){ resolver(null); }
     },
