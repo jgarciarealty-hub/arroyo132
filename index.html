@@ -2287,8 +2287,7 @@ async function handleUpload(e, source){
     _fotoSmall=null;
     if(file.type!=='application/pdf'){
       try{
-        const img=new Image();
-        await new Promise(r=>{img.onload=r;img.src='data:'+file.type+';base64,'+base64;});
+        const img=await cargarImagenConTiempo('data:'+file.type+';base64,'+base64);
         const scale=Math.min(1,320/Math.max(img.width||1,img.height||1));
         const cv=document.createElement('canvas');
         cv.width=Math.round(img.width*scale);cv.height=Math.round(img.height*scale);
@@ -3027,11 +3026,24 @@ function guardarEnCacheIA(huella, extraccion){
 // la lectura por culpa de la optimización.
 // Límite de lo que se manda a la IA (el servidor rechaza cuerpos > 4.2 MB con 413). El ORIGINAL nunca se reduce: se guarda aparte en Drive.
 const IA_MAX_BASE64=3000000;
+// Carga una imagen con límite de tiempo (2026-11-05). Sin esto, una imagen que no dispara
+// onload ni onerror dejaba la app en «Analizando…» para siempre y NUNCA se llamaba a la IA
+// (reproducido: reducirParaIA iniciado y sin resolver, 0 solicitudes al servidor).
+function cargarImagenConTiempo(src, ms){
+  return new Promise((res,rej)=>{
+    const img=new Image();
+    let t=null;
+    const limpiar=()=>{ if(t){ clearTimeout(t); t=null; } };
+    img.onload=()=>{ limpiar(); res(img); };
+    img.onerror=()=>{ limpiar(); rej(new Error('no se pudo decodificar la imagen')); };
+    t=setTimeout(()=>{ limpiar(); rej(new Error('tiempo de espera al decodificar la imagen')); }, ms||8000);
+    img.src=src;
+  });
+}
 async function reducirParaIA(base64, tipoMime){
   const tipo = (tipoMime||'').startsWith('image/') ? tipoMime : 'image/jpeg';
   try{
-    const img=new Image();
-    await new Promise((r,j)=>{ img.onload=r; img.onerror=j; img.src='data:'+tipo+';base64,'+base64; });
+    const img=await cargarImagenConTiempo('data:'+tipo+';base64,'+base64);
     const lado=Math.max(img.width||1, img.height||1);
     if(Math.min(1,1600/lado)>=1 && base64.length<=IA_MAX_BASE64) return {base64:base64, mediaType:tipo};
     // Se reduce por pasos hasta que quepa: 1600 px / 0.85, luego más pequeño y más comprimido.
@@ -3064,8 +3076,7 @@ async function recortarParaIA(base64,tipoMime){
   try{
     if(typeof A132Recorte==='undefined') return null;
     const tipo=(tipoMime||'').startsWith('image/')?tipoMime:'image/jpeg';
-    const img=new Image();
-    await new Promise((res,rej)=>{ img.onload=res; img.onerror=rej; img.src='data:'+tipo+';base64,'+base64; });
+    const img=await cargarImagenConTiempo('data:'+tipo+';base64,'+base64);
     const lado=Math.max(img.width||1,img.height||1), esc=Math.min(1,1600/lado);
     const cv=document.createElement('canvas'); cv.width=Math.max(1,Math.round(img.width*esc)); cv.height=Math.max(1,Math.round(img.height*esc));
     const cx=cv.getContext('2d'); cx.drawImage(img,0,0,cv.width,cv.height);
