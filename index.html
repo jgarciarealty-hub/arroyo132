@@ -5011,6 +5011,13 @@ async function backupToDrive(mostrarFeedback=false){
       return;
     }
     const fusion = fusionarEstado(contenidoBackup(), remoto);
+    // Las referencias de recibos viven en el combinado: al respaldar se ADOPTAN las que falten
+    // aquí (unión por documento; nunca se descarta ninguna). Sin esto, un recibo vinculado en el
+    // otro equipo seguía sin reconocerse en este hasta hacer «Traer datos desde Drive».
+    try{
+      const localesR=leerRecibos(), unidosR=unirRecibosFusion(localesR, fusion.recibos);
+      if(JSON.stringify(unidosR)!==JSON.stringify(localesR)) guardarRecibos(unidosR);
+    }catch(e){}
     if(fusion.conflictos.length || fusion.posiblesDuplicados.length){
       try{ localStorage.setItem(CONFLICT_KEY, JSON.stringify({
         fecha:new Date().toISOString(),
@@ -5345,9 +5352,21 @@ function importarBackup(){
 // Reintento automático del respaldo pendiente. Si el teléfono recupera señal o la sesión de
 // Google se renueva, los cambios sin respaldar se suben solos en cuanto la app vuelve a estar
 // en primer plano. No se pierde nada mientras tanto: los datos viven en localStorage.
+// Trae del combinado las referencias de recibos que falten en este dispositivo. Solo une.
+async function adoptarReferenciasDeDrive(){
+  const token=localStorage.getItem(DRIVE_TOKEN_KEY); if(!token || !driveTokenValid()) return false;
+  const remoto=await driveDescargar(DRIVE_FILE_NAME, token, DRIVE_FILE_KEY);
+  if(!remoto || !remoto.recibos) return false;
+  const locales=leerRecibos(), unidos=unirRecibosFusion(locales, remoto.recibos);
+  if(JSON.stringify(unidos)===JSON.stringify(locales)) return false;
+  if(!guardarRecibos(unidos)) return false;
+  try{ refrescarPanelRespaldo(); }catch(e){}
+  return true;
+}
 async function reintentarRespaldoPendiente(){
   if(!driveTokenValid()) return;   // sin sesión válida no se puede; se reintenta al conectar
   if(Object.keys(leerRecibosPend()).length) await procesarColaOriginales();   // originales pendientes de subir
+  try{ await adoptarReferenciasDeDrive(); }catch(e){}   // referencias vinculadas en otro equipo
   if(!hayRespaldoPendiente()) return;
   await backupToDrive(false);
 }
