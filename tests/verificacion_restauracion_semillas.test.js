@@ -96,6 +96,18 @@ const semillas = () => { const ctx = crear(); return vm.runInContext('JSON.parse
   test('las 11 semillas ceden ante el respaldo real', r.semillasReemplazadas.length === S.length && r.gastos.every(g => String(g.contratista).startsWith('REAL-')), { n: S.length, reemplazadas: r.semillasReemplazadas.length });
 }
 
+// ── 5b. Una semilla reemplazada no debe descartar el gasto real con otro id ──
+{
+  const S = semillas();
+  const seed = clon(S.find(x => String(x.id) === '700010'));
+  const realMismoId = { id: 700010, fecha: '2026-04-28', contratista: 'Ferretería Cosme Inc.', monto: 232.48, descripcion: 'GASTO REAL', tipo: 'manual' };
+  const realOtroId = { id: 1781664550113, fecha: seed.fecha, contratista: seed.contratista, monto: seed.monto, descripcion: seed.descripcion, tipo: 'manual' };
+  const r = fusionar([seed], [realMismoId, realOtroId]);
+  const ids = r.gastos.map(g => String(g.id)).sort();
+  test('la semilla reemplazada no descarta el gasto real con otro id', r.gastos.length === 2 && ids.includes('700010') && ids.includes('1781664550113'), { n: r.gastos.length, ids });
+  test('y el reemplazo se sigue contando', r.semillasReemplazadas.length === 1, r.semillasReemplazadas.length);
+}
+
 // ── 6. Mutación: quitar la preferencia por el dato real debe fallar ─────────
 if (!process.env.A132_HTML) {
   const mut = html.replace("if(gemelo && esSemilla(gemelo) && !esSemilla(r) && JSON.stringify(gemelo)!==JSON.stringify(r)){", "if(false){");

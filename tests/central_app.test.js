@@ -17,7 +17,7 @@ function extraer(nombre) {
   for (; k < script.length; k++) { if (script[k] === '{') n++; else if (script[k] === '}') { n--; if (!n) break; } }
   return script.slice(ini, k + 1);
 }
-const NOMBRES = ['modoCentral', 'centralLeerBase', 'centralLocal', 'centralMarcar', 'centralCambiosPendientes', 'centralMutador', 'centralAdoptar', 'centralAlmacen', 'centralToken', 'centralSincronizar', 'centralProgramar', 'centralTexto', 'centralActivar', 'leerRecibos', 'leerRecibosPend', 'guardarRecibos', 'escribirVerificado', 'limpiarRecibos', 'actualizarPend', 'centralFoto', 'centralClavesCorrupcion', 'centralHayCorrupcion', 'centralCorrupcionRevisada', 'centralBotonesExtra', 'centralConfirmarBorradoMasivo', 'centralRegistrarViajeBorrado', 'centralViajesBorradosPend', 'centralBaseTrasEmpuje', 'eliminarViaje', 'saveViajes', 'centralRevertir', 'restaurarDesdeDrive', 'importarBackup', 'escHtml', 'fechaHoraLocal'];
+const NOMBRES = ['modoCentral', 'centralLeerBase', 'centralLocal', 'centralMarcar', 'centralCambiosPendientes', 'centralMutador', 'centralAdoptar', 'centralAlmacen', 'centralToken', 'centralSincronizar', 'centralProgramar', 'centralTexto', 'centralActivar', 'leerRecibos', 'leerRecibosPend', 'guardarRecibos', 'escribirVerificado', 'limpiarRecibos', 'actualizarPend', 'centralFoto', 'centralClavesCorrupcion', 'centralHayCorrupcion', 'centralCorrupcionRevisada', 'centralBotonesExtra', 'centralConfirmarBorradoMasivo', 'centralRegistrarViajeBorrado', 'centralViajesBorradosPend', 'centralBaseTrasEmpuje', 'eliminarViaje', 'saveViajes', 'centralRevertir', 'restaurarDesdeDrive', 'importarBackup', 'escHtml', 'fechaHoraLocal', 'guardarTextoCuota', 'leerTextoCuota', 'guardarCopiaCentral', 'guardarBaseCentral'];
 
 function dispositivo(nombre, drive, { gastos = [], viajes = [] } = {}) {
   const alm = new Map([['tok', 'T']]);
@@ -30,9 +30,12 @@ function dispositivo(nombre, drive, { gastos = [], viajes = [] } = {}) {
     fetchConTiempo: (u, o) => drive.fetch(u, o), renderDashboard() {}, renderHistorial() {}, renderViajes() {}, refrescarPanelRespaldo() {},
     alert: (m) => avisos.push(String(m)), confirm: (m) => { confirmaciones.push(String(m)); return cfg.confirmar; },
     RECIBOS_KEY: 'a132_recibos', RECIBOS_PEND_KEY: 'a132_recibos_pend',
+    idbKvGuardar: async (k, v) => { alm.set('idb:' + k, String(v)); return true; },
+    idbKvLeer: async (k) => (alm.has('idb:' + k) ? alm.get('idb:' + k) : null),
+    idbKvBorrar: async (k) => { alm.delete('idb:' + k); return true; },
   });
   vm.runInContext("let gastos = " + JSON.stringify(gastos) + ", viajes = " + JSON.stringify(viajes) + ";" +
-    "const RECIBOS_KEY='a132_recibos', RECIBOS_PEND_KEY='a132_recibos_pend', CENTRAL_FLAG='a132_central', CENTRAL_BASE_KEY='a132_central_base', CENTRAL_ESTADO_KEY='a132_central_estado', CENTRAL_ANTES_KEY='a132_antes_central', CENTRAL_VB_KEY='a132_viajes_borrados', CENTRAL_TOPE_KEY='a132_central_borrado_ok'; let _centralEnCurso=false, _centralOtra=false, _centralT=null, _centralToc=null, _centralTope=false;\n" +
+    "const RECIBOS_KEY='a132_recibos', RECIBOS_PEND_KEY='a132_recibos_pend', CENTRAL_FLAG='a132_central', CENTRAL_BASE_KEY='a132_central_base', CENTRAL_ESTADO_KEY='a132_central_estado', CENTRAL_ANTES_KEY='a132_antes_central', CENTRAL_VB_KEY='a132_viajes_borrados', CENTRAL_TOPE_KEY='a132_central_borrado_ok'; let _centralEnCurso=false, _centralOtra=false, _centralT=null, _centralToc=null, _centralTope=false; let _centralBaseTexto=null, _centralBaseEnIDB=false; const _centralBaseLista=Promise.resolve();\n" +
     NOMBRES.map(extraer).join('\n'), ctx);
   const R = (c) => vm.runInContext(c, ctx);
   return { nombre, alm, avisos, confirmaciones, cfg, R, viajes: () => R('JSON.parse(JSON.stringify(viajes))'), activar: () => R('centralActivar()'), sync: () => R('centralSincronizar()'), gastos: () => R('JSON.parse(JSON.stringify(gastos))'),
@@ -161,7 +164,7 @@ const NCEL = cel.gastos.length, SUMA = Math.round(cel.gastos.reduce((s, g) => s 
   a4.anadir(mk(77, 'Después', '2026-03-01', 7)); await a4.sync();
   await a4.activar();   // reactivar
   test('I4: la primera copia previa se conserva intacta al reactivar', a4.alm.get('a132_antes_central') === primera && !!a4.alm.get('a132_antes_central_reciente'));
-  a4.R('centralRevertir()');
+  await a4.R('centralRevertir()');
   test('I4: «volver a la copia previa» restaura los datos anteriores, apaga la bandera y no toca Drive', a4.resumen().gastos === base1.length && a4.flag() === undefined && !!dI4.estado().gastos['77']);
 
   // I5: bandera puesta pero sin base local → no se escribe; se reconstruye desde el central con copia local previa
@@ -230,15 +233,15 @@ const NCEL = cel.gastos.length, SUMA = Math.round(cel.gastos.reduce((s, g) => s 
   {
     const dr = driveSimulado(); const a = dispositivo('rc', dr, { gastos: base1 }); await a.activar();
     a.anadir(mk(88, 'Sin sincronizar', '2026-05-01', 8));
-    a.R('_centralEnCurso = true'); const gAntes = a.gastos().length; a.R('centralRevertir()');
+    a.R('_centralEnCurso = true'); const gAntes = a.gastos().length; await a.R('centralRevertir()');
     test('I-C: se niega a revertir mientras hay una sincronización en curso', a.flag() === '1' && a.gastos().length === gAntes && a.avisos.some((x) => /sincronización en curso/.test(x)), a.avisos);
-    a.R('_centralEnCurso = false'); a.confirmaciones.length = 0; a.R('centralRevertir()');
+    a.R('_centralEnCurso = false'); a.confirmaciones.length = 0; await a.R('centralRevertir()');
     const rec = JSON.parse(a.alm.get('a132_antes_central_reciente') || 'null');
     test('I-C: antes de revertir guarda la vista ACTUAL (con lo no sincronizado) en a132_antes_central_reciente', rec && rec.gastos.some((g) => g.id === 88), rec && rec.gastos.length);
     test('I-C: el texto de confirmación no afirma que lo no sincronizado se conserva en el central', /NO está en el central/.test(a.confirmaciones[0] || '') && !/Los cambios hechos después de activar NO se pierden/.test(a.confirmaciones[0] || '') && /a132_antes_central_reciente/.test(a.confirmaciones[0] || ''), a.confirmaciones[0]);
     test('I-C: revierte a la copia previa y apaga la bandera', a.resumen().gastos === base1.length && a.flag() === undefined);
     const dr2 = driveSimulado(); const b = dispositivo('rc2', dr2, { gastos: base1 }); await b.activar(); await b.activar();
-    const antesReciente = b.alm.get('a132_antes_central_reciente'); b.R('centralRevertir()');
+    const antesReciente = b.alm.get('a132_antes_central_reciente'); await b.R('centralRevertir()');
     test('I-C: la copia «reciente» anterior se conserva con otro nombre (no se pisa evidencia)', [...b.alm.keys()].some((k) => /^a132_antes_central_reciente_\d+$/.test(k) && b.alm.get(k) === antesReciente));
   }
 
@@ -300,7 +303,7 @@ const NCEL = cel.gastos.length, SUMA = Math.round(cel.gastos.reduce((s, g) => s 
   // IMPORTANTE-1 (revisión #3): revertir y reactivar sin sincronizar en medio no pierde el gasto no sincronizado
   const dR = driveSimulado(); const rv = dispositivo('rv', dR, { gastos: base1 });
   await rv.activar(); rv.anadir(mk(777, 'Sin sincronizar', '2026-04-01', 7)); dR.caido = true; await rv.sync();
-  rv.R('centralRevertir()'); dR.caido = false; await rv.activar();
+  await rv.R('centralRevertir()'); dR.caido = false; await rv.activar();
   const copias = [...rv.alm.entries()].filter(([k]) => k.indexOf('a132_antes_central') === 0).map(([, v]) => v);
   test('revertir y reactivar: el gasto aún no sincronizado sigue en alguna copia local', copias.some((v) => /"id":777/.test(v)), [...rv.alm.keys()].filter((k) => k.indexOf('a132_antes') === 0));
 

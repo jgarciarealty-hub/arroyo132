@@ -2640,6 +2640,13 @@ const KV_DB='a132_kv_db', KV_STORE='kv';
 function kvAbrir(){ return new Promise((res,rej)=>{ if(typeof indexedDB==='undefined'){ rej(new Error('sin IndexedDB')); return; } const rq=indexedDB.open(KV_DB,1); rq.onupgradeneeded=()=>{ const db=rq.result; if(!db.objectStoreNames.contains(KV_STORE)) db.createObjectStore(KV_STORE); }; rq.onsuccess=()=>res(rq.result); rq.onerror=()=>rej(rq.error||new Error('no se pudo abrir el almacén de copias')); }); }
 async function idbKvGuardar(clave, texto){ try{ const db=await kvAbrir(); await new Promise((res,rej)=>{ const tx=db.transaction(KV_STORE,'readwrite'); tx.objectStore(KV_STORE).put(texto,String(clave)); tx.oncomplete=()=>res(); tx.onerror=()=>rej(tx.error||new Error('kv error')); tx.onabort=()=>rej(tx.error||new Error('kv abort')); }); db.close(); return true; }catch(e){ return false; } }
 async function idbKvLeer(clave){ try{ const db=await kvAbrir(); const v=await new Promise((res,rej)=>{ const tx=db.transaction(KV_STORE,'readonly'); const rq=tx.objectStore(KV_STORE).get(String(clave)); rq.onsuccess=()=>res(rq.result); rq.onerror=()=>rej(rq.error); }); db.close(); return v==null?null:v; }catch(e){ return null; } }
+async function idbKvBorrar(clave){ try{ const db=await kvAbrir(); await new Promise((res,rej)=>{ const tx=db.transaction(KV_STORE,'readwrite'); tx.objectStore(KV_STORE).delete(String(clave)); tx.oncomplete=()=>res(); tx.onerror=()=>rej(tx.error||new Error('kv error')); tx.onabort=()=>rej(tx.error||new Error('kv abort')); }); db.close(); return true; }catch(e){ return false; } }
+// Guarda un texto en localStorage y, si no cabe, en IndexedDB. Devuelve 'local' | 'idb' | null.
+async function guardarTextoCuota(clave, texto){ try{ localStorage.setItem(clave, texto); if(localStorage.getItem(clave)===texto) return 'local'; }catch(e){} return (await idbKvGuardar(clave, texto)) ? 'idb' : null; }
+// Lee primero localStorage y luego IndexedDB.
+async function leerTextoCuota(clave){ try{ const v=localStorage.getItem(clave); if(v!=null) return v; }catch(e){} return await idbKvLeer(clave); }
+// Copia de seguridad del central: si va a IndexedDB, se retira la copia local vieja para que no la tape.
+async function guardarCopiaCentral(clave, texto){ const donde=await guardarTextoCuota(clave, texto); if(donde==='idb'){ try{ localStorage.removeItem(clave); }catch(e){} } return !!donde; }
 function refsAbrir(){ return new Promise((res,rej)=>{ if(typeof indexedDB==='undefined'){ rej(new Error('sin IndexedDB')); return; } const rq=indexedDB.open(REFS_DB,1); rq.onupgradeneeded=()=>{ const db=rq.result; if(!db.objectStoreNames.contains(REFS_STORE)) db.createObjectStore(REFS_STORE); }; rq.onsuccess=()=>res(rq.result); rq.onerror=()=>rej(rq.error||new Error('no se pudo abrir la base de referencias')); }); }
 async function refsGuardarIDB(obj){ try{ const db=await refsAbrir(); await new Promise((res,rej)=>{ const tx=db.transaction(REFS_STORE,'readwrite'); tx.objectStore(REFS_STORE).put(obj,REFS_KEY); tx.oncomplete=()=>res(); tx.onerror=()=>rej(tx.error||new Error('IDB error')); tx.onabort=()=>rej(tx.error||new Error('IDB abort')); }); db.close(); return true; }catch(e){ return false; } }
 async function refsLeerIDB(){ try{ const db=await refsAbrir(); const v=await new Promise((res,rej)=>{ const tx=db.transaction(REFS_STORE,'readonly'); const rq=tx.objectStore(REFS_STORE).get(REFS_KEY); rq.onsuccess=()=>res(rq.result); rq.onerror=()=>rej(rq.error); }); db.close(); return (v&&typeof v==='object')?v:null; }catch(e){ return null; } }
@@ -2757,8 +2764,9 @@ async function fetchConTiempo(url, opts, ms, senalPadre){
   const timer=ac?setTimeout(()=>{ try{ ac.abort(new Error('tiempo de espera agotado ('+(ms||60000)+' ms)')); }catch(e){} }, ms||60000):null;
   let oyente=null;
   if(ac && senalPadre){
-    if(senalPadre.aborted) ac.abort();
-    else { oyente=()=>{ try{ ac.abort(); }catch(e){} }; senalPadre.addEventListener('abort', oyente, {once:true}); }
+    const motivoPadre=()=>senalPadre.reason||new Error('respaldo cancelado');
+    if(senalPadre.aborted) ac.abort(motivoPadre());
+    else { oyente=()=>{ try{ ac.abort(motivoPadre()); }catch(e){} }; senalPadre.addEventListener('abort', oyente, {once:true}); }
   }
   try{ return await fetch(url, Object.assign({}, opts||{}, ac?{signal:ac.signal}:{})); }
   finally{ if(timer) clearTimeout(timer); if(oyente && senalPadre) senalPadre.removeEventListener('abort', oyente); }
@@ -5277,7 +5285,17 @@ function fusionarGastos(locales, remotos, tombstones){
       // semilla y el gasto real no se restauraba (defecto H1, 2026-11-05).
       if(gemelo && esSemilla(gemelo) && !esSemilla(r) && JSON.stringify(gemelo)!==JSON.stringify(r)){
         const i = salida.findIndex(l=>String(l.id)===String(r.id));
-        if(i>=0){ salida[i]=r; semillasReemplazadas.push({ id:r.id, semilla:gemelo, real:r }); }
+        if(i>=0){
+          // El índice de contenido debe reflejar el reemplazo: si la semilla tenía el mismo
+          // comercio+fecha+importe que otro gasto real con OTRO id, dejar su contenido viejo
+          // en `porClave` haría que ese gasto se descartara como «duplicado».
+          const kOld=claveContenido(gemelo), kNew=claveContenido(r);
+          const lista=porClave.get(kOld);
+          if(lista){ const j=lista.findIndex(l=>String(l.id)===String(gemelo.id)); if(j>=0) lista.splice(j,1); if(!lista.length) porClave.delete(kOld); }
+          if(!porClave.has(kNew)) porClave.set(kNew,[]);
+          porClave.get(kNew).push(r);
+          salida[i]=r; semillasReemplazadas.push({ id:r.id, semilla:gemelo, real:r });
+        }
         return;
       }
       // O1: con sello en ambos lados gana el más reciente (una edición no se pierde por un empate).
@@ -5555,6 +5573,21 @@ renderDocs();
 // secciones sigue como hoy (copia por dispositivo + respaldo v4, que continúa funcionando como red de seguridad).
 const CENTRAL_FLAG='a132_central', CENTRAL_BASE_KEY='a132_central_base', CENTRAL_ESTADO_KEY='a132_central_estado', CENTRAL_ANTES_KEY='a132_antes_central', CENTRAL_VB_KEY='a132_viajes_borrados', CENTRAL_TOPE_KEY='a132_central_borrado_ok';
 let _centralEnCurso=false, _centralOtra=false, _centralT=null, _centralToc=null, _centralTope=false;
+// La base del central puede vivir en localStorage o en IndexedDB. Se mantiene una copia en memoria
+// para que centralLeerBase() siga siendo síncrona; la hidratación se espera al inicio de cada sincronización.
+let _centralBaseTexto=null, _centralBaseEnIDB=false;
+async function hidratarCentralBaseIDB(){
+  try{ if(localStorage.getItem(CENTRAL_BASE_KEY)!=null) return; const t=await idbKvLeer(CENTRAL_BASE_KEY); if(t!=null){ _centralBaseTexto=t; _centralBaseEnIDB=true; } }catch(e){}
+}
+const _centralBaseLista=hidratarCentralBaseIDB();
+async function guardarBaseCentral(estado){
+  const texto=JSON.stringify(estado);
+  const donde=await guardarTextoCuota(CENTRAL_BASE_KEY,texto);
+  if(donde==='idb'){ try{ localStorage.removeItem(CENTRAL_BASE_KEY); }catch(e){} _centralBaseEnIDB=true; }
+  else if(donde==='local'){ _centralBaseEnIDB=false; try{ if(typeof idbKvBorrar==='function') await idbKvBorrar(CENTRAL_BASE_KEY); }catch(e){} }
+  if(donde) _centralBaseTexto=texto;
+  return !!donde;
+}
 function modoCentral(){
   try{ return localStorage.getItem(CENTRAL_FLAG)==='1' && typeof A132Central!=='undefined' && typeof A132Drive!=='undefined'; }catch(e){ return false; }
 }
@@ -5599,7 +5632,11 @@ function centralRegistrarViajeBorrado(id){
   centralProgramar();
 }
 function centralViajesBorradosPend(){ try{ const l=JSON.parse(localStorage.getItem(CENTRAL_VB_KEY)||'[]'); return Array.isArray(l)?l.map(String):[]; }catch(e){ return []; } }
-function centralLeerBase(){ try{ return JSON.parse(localStorage.getItem(CENTRAL_BASE_KEY)||'null'); }catch(e){ return null; } }
+function centralLeerBase(){
+  let t=null; try{ t=localStorage.getItem(CENTRAL_BASE_KEY); }catch(e){}
+  if(t==null && _centralBaseEnIDB) t=_centralBaseTexto;   // solo la copia que realmente vive en IndexedDB
+  try{ return JSON.parse(t||'null'); }catch(e){ return null; }
+}
 function centralLocal(){
   return { version:4, fecha:new Date().toISOString(), gastos:gastos, viajes:viajes, recibos:leerRecibos() };
 }
@@ -5651,24 +5688,27 @@ function centralMutador(estado){
   return estado;
 }
 // Adopta el estado central como vista local (los registros se guardan SIN campos internos _v/_t/_o).
-function centralAdoptar(estado){
+async function centralAdoptar(estado){
   const C=A132Central;
-  gastos=C.vigentes(estado).map(C.strip);
+  const nuevosGastos=C.vigentes(estado).map(C.strip);
   const vbs=new Set((estado.viajesBorrados||[]).map(String));
   const ids=new Set((estado.viajes||[]).map(v=>String(v.id)));
-  viajes=(estado.viajes||[]).filter(v=>!vbs.has(String(v.id))).concat(viajes.filter(v=>v&&!ids.has(String(v.id))&&!vbs.has(String(v.id))));
+  const nuevosViajes=(estado.viajes||[]).filter(v=>!vbs.has(String(v.id))).concat(viajes.filter(v=>v&&!ids.has(String(v.id))&&!vbs.has(String(v.id))));
   if(!guardarRecibos(C.limpiarRecibos(estado.recibos))) throw new Error('no se pudieron guardar las referencias de recibos en este dispositivo (almacenamiento lleno)');
-  try{
-    localStorage.setItem('a132_gastos',JSON.stringify(gastos));
-    localStorage.setItem('a132_viajes',JSON.stringify(viajes));
-    localStorage.setItem(CENTRAL_BASE_KEY,JSON.stringify(estado));
-    const pv=centralViajesBorradosPend().filter(i=>!vbs.has(i)); localStorage.setItem(CENTRAL_VB_KEY,JSON.stringify(pv));
-  }catch(e){ throw new Error('no se pudo guardar la copia local del estado central (almacenamiento lleno)'); }
+  try{ localStorage.setItem('a132_gastos',JSON.stringify(nuevosGastos)); }
+  catch(e){ throw new Error('no se pudo guardar la copia local de gastos (almacenamiento lleno)'); }
+  let viajesPersistidos=false;
+  try{ localStorage.setItem('a132_viajes',JSON.stringify(nuevosViajes)); viajesPersistidos=true; }
+  catch(e){ /* auxiliar: los viajes siguen en el central y en la base; no bloquean gastos/recibos */ }
+  gastos=nuevosGastos; if(viajesPersistidos) viajes=nuevosViajes;   // la vista coincide con lo persistido
+  // La base es auxiliar: si no cabe en localStorage, va a IndexedDB y se retira la copia local vieja.
+  if(!(await guardarBaseCentral(estado))) throw new Error('no se pudo guardar la base local del estado central (ni en localStorage ni en IndexedDB)');
+  try{ const pv=centralViajesBorradosPend().filter(i=>!vbs.has(i)); localStorage.setItem(CENTRAL_VB_KEY,JSON.stringify(pv)); }catch(e){}   // auxiliar: no bloquea la adopción
   try{ renderDashboard(); }catch(e){} try{ renderHistorial(); }catch(e){}
 }
 // M-1: tras un envío correcto cuya vista NO se adopta (el usuario editó durante la subida), la base se actualiza SOLO en lo que
 // se empujó; lo demás del central (altas/ediciones de otros dispositivos) sigue sin adoptar y por eso nunca se confunde con un borrado local.
-function centralBaseTrasEmpuje(estado,toc){
+async function centralBaseTrasEmpuje(estado,toc){
   const C=A132Central, b=C.clon(centralLeerBase()||C.nuevoEstado());
   for(const id of toc.gastos) if(estado.gastos[id]) b.gastos[id]=C.clon(estado.gastos[id]);
   const vids=new Set((b.viajes||[]).map(v=>String(v.id))); b.viajes=b.viajes||[];
@@ -5677,7 +5717,7 @@ function centralBaseTrasEmpuje(estado,toc){
   b.viajes=b.viajes.filter(v=>b.viajesBorrados.indexOf(String(v.id))<0);
   b.recibos=Object.assign({},b.recibos||{}); for(const k of toc.recibos) if(estado.recibos&&estado.recibos[k]) b.recibos[k]=estado.recibos[k];
   b.rev=estado.rev;
-  localStorage.setItem(CENTRAL_BASE_KEY,JSON.stringify(b));
+  if(!(await guardarBaseCentral(b))) throw new Error('no se pudo guardar la base tras el empuje (almacenamiento lleno)');
 }
 function centralAlmacen(token){
   return A132Drive.crearAlmacenDrive({ fetchFn:(u,o)=>fetchConTiempo(u,o,60000), token, fusionar:A132Central.fusionar });
@@ -5701,6 +5741,7 @@ async function centralSincronizar(){
   _centralEnCurso=true;
   const p=(async()=>{
     try{
+      if(typeof _centralBaseLista!=='undefined') await _centralBaseLista;   // la base puede venir de IndexedDB; se espera antes de decidir si hay base
       const token=await centralToken(false);
       if(!token){ centralMarcar('pendiente','Google Drive no conectado: los cambios quedan en este dispositivo y se envían al conectar'); return {ok:false,motivo:'Google Drive no conectado'}; }
       if(centralHayCorrupcion()){ centralMarcar('error','Este dispositivo guardó una copia ilegible de los gastos (a132_gastos_corrupto_*): la sincronización se detiene hasta revisarlo, para no propagar datos dañados'); return {ok:false,motivo:'copia ilegible de los gastos'}; }
@@ -5711,12 +5752,10 @@ async function centralSincronizar(){
         const l=await alm.leer();
         if(!l.estado){ centralMarcar('error','el archivo central no existe en Drive'); return {ok:false,motivo:'el archivo central no existe en Drive'}; }
         const _copia=JSON.stringify({fecha:new Date().toISOString(),dispositivo:deviceId(),gastos,viajes,recibos:leerRecibos()});
-        let _copiada=false;
-        try{ localStorage.setItem(CENTRAL_ANTES_KEY+'_reciente',_copia); _copiada=true; }
-        catch(e){ _copiada=await idbKvGuardar(CENTRAL_ANTES_KEY+'_reciente',_copia); }
+        const _copiada=await guardarCopiaCentral(CENTRAL_ANTES_KEY+'_reciente',_copia);
         if(!_copiada){ centralMarcar('error','no hay espacio para la copia local previa (ni en localStorage ni en IndexedDB)'); return {ok:false,motivo:'no hay espacio para la copia local previa'}; }
         const vb=A132Central.verificarCentral(l.estado); if(!vb.ok) throw new Error('el estado central no es válido: '+vb.motivo);
-        centralAdoptar(l.estado);
+        await centralAdoptar(l.estado);
         centralMarcar('ok','base reconstruida desde el central (copia local previa guardada)',{rev:l.estado.rev,gastos:vb.gastos,suma:vb.suma});
         return {ok:true,estado:l.estado};
       }
@@ -5725,10 +5764,10 @@ async function centralSincronizar(){
       const v=A132Central.verificarCentral(estado);
       if(!v.ok) throw new Error('el estado central no es válido: '+v.motivo);
       if(centralFoto()!==foto){   // el usuario cambió algo mientras se sincronizaba: no se reemplaza su vista; se reenvía en la siguiente vuelta
-        if(empujo&&_centralToc){ try{ centralBaseTrasEmpuje(estado,_centralToc); }catch(e){} }   // lo ya enviado queda como base (si no, un borrado hecho durante la subida podría revertirse)
+        if(empujo&&_centralToc){ try{ await centralBaseTrasEmpuje(estado,_centralToc); }catch(e){} }   // lo ya enviado queda como base (si no, un borrado hecho durante la subida podría revertirse)
         centralMarcar('pendiente','hubo cambios mientras se sincronizaba; se envían de nuevo'); _centralOtra=true; return {ok:false,motivo:'hubo cambios mientras se sincronizaba'};
       }
-      centralAdoptar(estado);
+      await centralAdoptar(estado);
       centralMarcar('ok','sincronizado',{rev:estado.rev,gastos:v.gastos,suma:v.suma,conflictos:(estado.conflictos||[]).length});
       return {ok:true,estado};
     }catch(e){
@@ -5782,6 +5821,7 @@ async function centralActivar(){
   if(typeof A132Central==='undefined'||typeof A132Drive==='undefined'){ alert('La fuente central no está disponible en esta versión.'); return; }
   const token=await centralToken(true);
   if(!token){ alert('Primero conecta Google Drive tocando el ícono ☁️.'); return; }
+  let driveEscrito=false, adoptado=false;
   try{
     const alm=centralAlmacen(token), C=A132Central, l=await alm.leer(), local=centralLocal();
     const resL=C.resumen({gastos:Object.fromEntries(gastos.map(g=>[String(g.id),g]))});
@@ -5800,38 +5840,52 @@ async function centralActivar(){
     if(centralHayCorrupcion()) msg+='\n\n⚠️ Este dispositivo tiene una copia ilegible de los gastos (a132_gastos_corrupto_*): con la fuente central activa, la sincronización se detendrá hasta que la revises y pulses «Ya revisé la copia ilegible».';
     if(!confirm('🗂️ Activar fuente central única\n\n'+msg+'\n\n¿Continuar?')) return;
     let kAntes=CENTRAL_ANTES_KEY;   // la primera copia (previa a la primera activación) nunca se pisa
-    if(localStorage.getItem(CENTRAL_ANTES_KEY)){
+    const primera=await leerTextoCuota(CENTRAL_ANTES_KEY);
+    if(primera!=null){
       kAntes=CENTRAL_ANTES_KEY+'_reciente';
-      const previa=localStorage.getItem(kAntes);   // tampoco se pisa la «reciente» anterior (p. ej. la que guardó «Volver a la copia previa»)
-      if(previa){ let _ok=false; try{ localStorage.setItem(kAntes+'_'+Date.now(),previa); _ok=true; }catch(e){ _ok=await idbKvGuardar(kAntes+'_'+Date.now(),previa); } if(!_ok){ alert('No hay espacio para conservar la copia anterior (ni en localStorage ni en IndexedDB); no se activa.'); return; } }
+      const previa=await leerTextoCuota(kAntes);   // tampoco se pisa la «reciente» anterior (p. ej. la que guardó «Volver a la copia previa»)
+      if(previa!=null){ if(!await guardarCopiaCentral(kAntes+'_'+Date.now(),previa)){ alert('No hay espacio para conservar la copia anterior (ni en localStorage ni en IndexedDB); no se activa.'); return; } }
     }
-    { const _t=JSON.stringify({fecha:new Date().toISOString(),dispositivo:deviceId(),gastos,viajes,recibos:leerRecibos()}); let _ok=false;
-      try{ localStorage.setItem(kAntes,_t); _ok=true; }catch(e){ _ok=await idbKvGuardar(kAntes,_t); }
-      if(!_ok){ alert('No hay espacio para la copia local previa (ni en localStorage ni en IndexedDB); no se activa.'); return; } }
+    { const _t=JSON.stringify({fecha:new Date().toISOString(),dispositivo:deviceId(),gastos,viajes,recibos:leerRecibos()});
+      if(!await guardarCopiaCentral(kAntes,_t)){ alert('No hay espacio para la copia local previa (ni en localStorage ni en IndexedDB); no se activa.'); return; } }
     let final=l.estado;
-    if(!l.estado || JSON.stringify(C.incorporarPerfilLocal(l.estado,local).estado)!==JSON.stringify(l.estado)) final=(await C.actualizar(alm,mutador)).estado;
+    if(!l.estado || JSON.stringify(C.incorporarPerfilLocal(l.estado,local).estado)!==JSON.stringify(l.estado)){ final=(await C.actualizar(alm,mutador)).estado; driveEscrito=true; }
     const v=C.verificarCentral(final); if(!v.ok) throw new Error('el estado central no es válido: '+v.motivo);
-    centralAdoptar(final);                               // la vista local pasa a ser la del central (la copia previa ya está guardada)
-    localStorage.setItem(CENTRAL_FLAG,'1');
+    await centralAdoptar(final); adoptado=true;           // la vista local pasa a ser la del central (la copia previa ya está guardada)
+    try{ localStorage.setItem(CENTRAL_FLAG,'1'); }catch(e){ throw new Error('el estado central se guardó, pero no se pudo marcar este dispositivo como activo (almacenamiento lleno)'); }
     centralMarcar('ok','activada',{rev:final.rev,gastos:v.gastos,suma:v.suma,conflictos:(final.conflictos||[]).length});
     alert('✅ Fuente central activa. Revisa el panel de respaldo: debe mostrar los mismos gastos e importes que los demás dispositivos.');
-  }catch(e){ alert('⚠️ No se activó la fuente central: '+(e&&e.message?e.message:e)+'\nNo se modificó nada.'); }
+  }catch(e){
+    const detalle = driveEscrito
+      ? (adoptado ? 'El central se actualizó en Google Drive y la copia local se guardó, pero no se pudo completar la activación.' : 'El central se creó/actualizó en Google Drive, pero este dispositivo NO quedó activado.')
+      : 'No se modificó nada.';
+    alert('⚠️ No se activó la fuente central: '+(e&&e.message?e.message:e)+'\n'+detalle+'\nNo se borró ningún dato.');
+  }
 }
 // Reversión local: vuelve a la copia previa a la activación. No toca Drive; los cambios hechos después siguen en el central.
-function centralRevertir(){
+async function centralRevertir(){
   if(_centralEnCurso){ alert('Hay una sincronización en curso; espera a que termine y vuelve a intentarlo.'); return; }
-  let c=null; try{ c=JSON.parse(localStorage.getItem(CENTRAL_ANTES_KEY)||'null'); }catch(e){}
+  let c=null; try{ c=JSON.parse((await leerTextoCuota(CENTRAL_ANTES_KEY))||'null'); }catch(e){}
   if(!c||!Array.isArray(c.gastos)){ alert('No hay una copia previa a la activación en este dispositivo.'); return; }
   if(!confirm('↩️ Volver a la copia previa a la fuente central\n\nEste dispositivo vuelve a sus '+c.gastos.length+' gastos de '+fechaHoraLocal(c.fecha)+'. Lo que ya se había sincronizado sigue en el archivo central de Drive (que no se toca). Lo que hiciste aquí y aún NO se había sincronizado NO está en el central: se guarda solo en este dispositivo, en la copia «a132_antes_central_reciente» (tus '+gastos.length+' gastos actuales). La fuente central se apaga aquí.\n\n¿Continuar?')) return;
   try{   // se guarda la vista ACTUAL antes de reemplazarla; la «reciente» anterior (si había) se conserva con otro nombre
-    const kr=CENTRAL_ANTES_KEY+'_reciente', prev=localStorage.getItem(kr);
-    if(prev) localStorage.setItem(kr+'_'+Date.now(),prev);
-    localStorage.setItem(kr,JSON.stringify({fecha:new Date().toISOString(),dispositivo:deviceId(),gastos,viajes,recibos:leerRecibos()}));
+    const kr=CENTRAL_ANTES_KEY+'_reciente', prev=await leerTextoCuota(kr);
+    if(prev!=null) await guardarCopiaCentral(kr+'_'+Date.now(),prev);
+    if(!await guardarCopiaCentral(kr,JSON.stringify({fecha:new Date().toISOString(),dispositivo:deviceId(),gastos,viajes,recibos:leerRecibos()}))) throw new Error('sin espacio');
   }catch(e){ alert('No hay espacio para guardar la vista actual; no se revirtió.'); return; }
-  gastos=c.gastos; viajes=c.viajes||[];
+  const nuevosGastos=c.gastos, nuevosViajes=c.viajes||[];
+  const prevG=localStorage.getItem('a132_gastos'), prevV=localStorage.getItem('a132_viajes');
+  try{ localStorage.setItem('a132_gastos',JSON.stringify(nuevosGastos)); localStorage.setItem('a132_viajes',JSON.stringify(nuevosViajes)); }
+  catch(e){
+    try{ if(prevG!=null) localStorage.setItem('a132_gastos',prevG); else localStorage.removeItem('a132_gastos'); }catch(e2){}
+    try{ if(prevV!=null) localStorage.setItem('a132_viajes',prevV); else localStorage.removeItem('a132_viajes'); }catch(e2){}
+    alert('No se pudo guardar la copia local; no se revirtió.'); return;
+  }
+  gastos=nuevosGastos; viajes=nuevosViajes;
   guardarRecibos(c.recibos||{});
-  try{ localStorage.setItem('a132_gastos',JSON.stringify(gastos)); localStorage.setItem('a132_viajes',JSON.stringify(viajes)); }catch(e){ alert('No se pudo guardar la copia local; no se revirtió.'); return; }
   localStorage.removeItem(CENTRAL_FLAG); localStorage.removeItem(CENTRAL_BASE_KEY);
+  try{ await idbKvBorrar(CENTRAL_BASE_KEY); }catch(e){}
+  _centralBaseTexto=null; _centralBaseEnIDB=false;
   try{ renderDashboard(); }catch(e){} try{ renderHistorial(); }catch(e){} try{ refrescarPanelRespaldo(); }catch(e){}
   alert('✅ Revertido: este dispositivo usa otra vez su copia previa. Drive no se modificó.');
 }
