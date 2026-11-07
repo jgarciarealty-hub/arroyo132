@@ -2632,6 +2632,14 @@ function limpiarRecibos(o){ const s={}; if(o && typeof o==='object' && !Array.is
 // mapa de referencias (no documentos). Si localStorage vuelve a admitir escrituras, se copia allí.
 let _refsMemoria={}, _refsMemoriaAutoritativa=false, _ultimoErrorAlmacen='';
 const REFS_DB='a132_refs_db', REFS_STORE='refs', REFS_KEY='mapa';
+// ── Almacén clave-valor en IndexedDB (2026-11-07) ─────────────────────────────────────
+// Las copias de seguridad del central (previa a sincronizar / a activar) son ~80 KB y con
+// localStorage lleno no caben: sin ellas el central no confirma y el combinado se pausa.
+// Se guardan en IndexedDB — misma protección, otro almacén — y la sincronización continúa.
+const KV_DB='a132_kv_db', KV_STORE='kv';
+function kvAbrir(){ return new Promise((res,rej)=>{ if(typeof indexedDB==='undefined'){ rej(new Error('sin IndexedDB')); return; } const rq=indexedDB.open(KV_DB,1); rq.onupgradeneeded=()=>{ const db=rq.result; if(!db.objectStoreNames.contains(KV_STORE)) db.createObjectStore(KV_STORE); }; rq.onsuccess=()=>res(rq.result); rq.onerror=()=>rej(rq.error||new Error('no se pudo abrir el almacén de copias')); }); }
+async function idbKvGuardar(clave, texto){ try{ const db=await kvAbrir(); await new Promise((res,rej)=>{ const tx=db.transaction(KV_STORE,'readwrite'); tx.objectStore(KV_STORE).put(texto,String(clave)); tx.oncomplete=()=>res(); tx.onerror=()=>rej(tx.error||new Error('kv error')); tx.onabort=()=>rej(tx.error||new Error('kv abort')); }); db.close(); return true; }catch(e){ return false; } }
+async function idbKvLeer(clave){ try{ const db=await kvAbrir(); const v=await new Promise((res,rej)=>{ const tx=db.transaction(KV_STORE,'readonly'); const rq=tx.objectStore(KV_STORE).get(String(clave)); rq.onsuccess=()=>res(rq.result); rq.onerror=()=>rej(rq.error); }); db.close(); return v==null?null:v; }catch(e){ return null; } }
 function refsAbrir(){ return new Promise((res,rej)=>{ if(typeof indexedDB==='undefined'){ rej(new Error('sin IndexedDB')); return; } const rq=indexedDB.open(REFS_DB,1); rq.onupgradeneeded=()=>{ const db=rq.result; if(!db.objectStoreNames.contains(REFS_STORE)) db.createObjectStore(REFS_STORE); }; rq.onsuccess=()=>res(rq.result); rq.onerror=()=>rej(rq.error||new Error('no se pudo abrir la base de referencias')); }); }
 async function refsGuardarIDB(obj){ try{ const db=await refsAbrir(); await new Promise((res,rej)=>{ const tx=db.transaction(REFS_STORE,'readwrite'); tx.objectStore(REFS_STORE).put(obj,REFS_KEY); tx.oncomplete=()=>res(); tx.onerror=()=>rej(tx.error||new Error('IDB error')); tx.onabort=()=>rej(tx.error||new Error('IDB abort')); }); db.close(); return true; }catch(e){ return false; } }
 async function refsLeerIDB(){ try{ const db=await refsAbrir(); const v=await new Promise((res,rej)=>{ const tx=db.transaction(REFS_STORE,'readonly'); const rq=tx.objectStore(REFS_STORE).get(REFS_KEY); rq.onsuccess=()=>res(rq.result); rq.onerror=()=>rej(rq.error); }); db.close(); return (v&&typeof v==='object')?v:null; }catch(e){ return null; } }
@@ -2746,7 +2754,7 @@ function jsArg(v){ return escHtml(JSON.stringify(v)); }
 // fetch con tiempo máximo: una subida colgada no puede bloquear la cola para siempre.
 async function fetchConTiempo(url, opts, ms, senalPadre){
   const ac=(typeof AbortController!=='undefined')?new AbortController():null;
-  const timer=ac?setTimeout(()=>ac.abort(), ms||60000):null;
+  const timer=ac?setTimeout(()=>{ try{ ac.abort(new Error('tiempo de espera agotado ('+(ms||60000)+' ms)')); }catch(e){} }, ms||60000):null;
   let oyente=null;
   if(ac && senalPadre){
     if(senalPadre.aborted) ac.abort();
@@ -5073,7 +5081,7 @@ async function backupToDrive(mostrarFeedback=false){
     // puede superar los 2 minutos: el umbral es 5. Al vencer se ABORTA la corrida anterior y se sube
     // la generación, así que no puede escribir ni marcar estado después de que arranque la nueva.
     if(_respaldoInicio && (Date.now()-_respaldoInicio) > 300000){
-      try{ if(_respaldoAbort) _respaldoAbort.abort(); }catch(e){}
+      try{ if(_respaldoAbort) _respaldoAbort.abort(new Error('respaldo reemplazado por uno nuevo')); }catch(e){}
       try{ registrarRespaldoLog('ABANDONADO', {motivo:'respaldo anterior sin terminar (>5 min); se cancela y se reintenta'}); }catch(e){}
       _respaldoEnCurso=false;
     } else { _otroRespaldoPendiente=true; return; }
@@ -5702,7 +5710,11 @@ async function centralSincronizar(){
       if(!centralLeerBase()){   // bandera puesta pero sin base: no se escribe nada (podría resucitar borrados o pisar ediciones); se reconstruye desde el central
         const l=await alm.leer();
         if(!l.estado){ centralMarcar('error','el archivo central no existe en Drive'); return {ok:false,motivo:'el archivo central no existe en Drive'}; }
-        try{ localStorage.setItem(CENTRAL_ANTES_KEY+'_reciente',JSON.stringify({fecha:new Date().toISOString(),dispositivo:deviceId(),gastos,viajes,recibos:leerRecibos()})); }catch(e){ centralMarcar('error','no hay espacio para la copia local previa'); return {ok:false,motivo:'no hay espacio para la copia local previa'}; }
+        const _copia=JSON.stringify({fecha:new Date().toISOString(),dispositivo:deviceId(),gastos,viajes,recibos:leerRecibos()});
+        let _copiada=false;
+        try{ localStorage.setItem(CENTRAL_ANTES_KEY+'_reciente',_copia); _copiada=true; }
+        catch(e){ _copiada=await idbKvGuardar(CENTRAL_ANTES_KEY+'_reciente',_copia); }
+        if(!_copiada){ centralMarcar('error','no hay espacio para la copia local previa (ni en localStorage ni en IndexedDB)'); return {ok:false,motivo:'no hay espacio para la copia local previa'}; }
         const vb=A132Central.verificarCentral(l.estado); if(!vb.ok) throw new Error('el estado central no es válido: '+vb.motivo);
         centralAdoptar(l.estado);
         centralMarcar('ok','base reconstruida desde el central (copia local previa guardada)',{rev:l.estado.rev,gastos:vb.gastos,suma:vb.suma});
@@ -5791,9 +5803,11 @@ async function centralActivar(){
     if(localStorage.getItem(CENTRAL_ANTES_KEY)){
       kAntes=CENTRAL_ANTES_KEY+'_reciente';
       const previa=localStorage.getItem(kAntes);   // tampoco se pisa la «reciente» anterior (p. ej. la que guardó «Volver a la copia previa»)
-      if(previa){ try{ localStorage.setItem(kAntes+'_'+Date.now(),previa); }catch(e){ alert('No hay espacio para conservar la copia anterior; no se activa.'); return; } }
+      if(previa){ let _ok=false; try{ localStorage.setItem(kAntes+'_'+Date.now(),previa); _ok=true; }catch(e){ _ok=await idbKvGuardar(kAntes+'_'+Date.now(),previa); } if(!_ok){ alert('No hay espacio para conservar la copia anterior (ni en localStorage ni en IndexedDB); no se activa.'); return; } }
     }
-    try{ localStorage.setItem(kAntes,JSON.stringify({fecha:new Date().toISOString(),dispositivo:deviceId(),gastos,viajes,recibos:leerRecibos()})); }catch(e){ alert('No hay espacio para la copia local previa; no se activa.'); return; }
+    { const _t=JSON.stringify({fecha:new Date().toISOString(),dispositivo:deviceId(),gastos,viajes,recibos:leerRecibos()}); let _ok=false;
+      try{ localStorage.setItem(kAntes,_t); _ok=true; }catch(e){ _ok=await idbKvGuardar(kAntes,_t); }
+      if(!_ok){ alert('No hay espacio para la copia local previa (ni en localStorage ni en IndexedDB); no se activa.'); return; } }
     let final=l.estado;
     if(!l.estado || JSON.stringify(C.incorporarPerfilLocal(l.estado,local).estado)!==JSON.stringify(l.estado)) final=(await C.actualizar(alm,mutador)).estado;
     const v=C.verificarCentral(final); if(!v.ok) throw new Error('el estado central no es válido: '+v.motivo);
