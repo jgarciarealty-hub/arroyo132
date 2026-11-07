@@ -4934,7 +4934,12 @@ function updateDriveBtn(icon){
   // caso el aviso se queda visible (antes se perdía a los 3 s y el fallo quedaba invisible).
   if(icon !== '☁️') setTimeout(()=>{
     if(!btn) return;
-    if(hayRespaldoPendiente()){ marcarRespaldoPendiente(); return; }
+    if(hayRespaldoPendiente()){
+      // Conservar el motivo: llamar sin motivo lo borraba a los 3 s y el aviso quedaba mudo.
+      let m=''; try{ m=localStorage.getItem(DRIVE_PENDING_MOTIVO_KEY)||''; }catch(e){ m=''; }
+      if(m) marcarRespaldoPendiente(m); else marcarRespaldoPendiente();
+      return;
+    }
     btn.textContent = driveTokenValid()?'🟢':'☁️';
   }, 3000);
 }
@@ -5503,7 +5508,10 @@ setTimeout(reintentarRespaldoPendiente, 4000);
   if(btn && DRIVE_CLIENT_ID) btn.textContent = driveTokenValid() ? '🟢' : '☁️';
   else if(btn) btn.title = 'Drive no configurado';
   // Si quedó un respaldo pendiente de la sesión anterior, el aviso se ve desde que abre.
-  if(hayRespaldoPendiente()) marcarRespaldoPendiente();
+  if(hayRespaldoPendiente()){
+    let m=''; try{ m=localStorage.getItem(DRIVE_PENDING_MOTIVO_KEY)||''; }catch(e){ m=''; }
+    if(m) marcarRespaldoPendiente(m); else marcarRespaldoPendiente();
+  }
 })();
 
 // ============ PWA INSTALL ============
